@@ -20,8 +20,8 @@
 
 #include "Function.h"
 #include "Module.h"
-#include "PlatformArm32.h"
-#include "CodeGeneratorArm32.h"
+#include "PlatformArm64.h"
+#include "CodeGeneratorArm64.h"
 #include "InstSelectorArm32.h"
 #include "SimpleRegisterAllocator.h"
 #include "ILocArm32.h"
@@ -32,23 +32,30 @@
 
 /// @brief 构造函数
 /// @param tab 符号表
-CodeGeneratorArm32::CodeGeneratorArm32(Module * _module) : CodeGeneratorAsm(_module)
+CodeGeneratorArm64::CodeGeneratorArm64(Module * _module) : CodeGeneratorAsm(_module)
 {}
 
 /// @brief 析构函数
-CodeGeneratorArm32::~CodeGeneratorArm32()
+CodeGeneratorArm64::~CodeGeneratorArm64()
 {}
 
 /// @brief 产生汇编头部分
-void CodeGeneratorArm32::genHeader()
+void CodeGeneratorArm64::genHeader()
 {
-    fprintf(fp, "%s\n", ".arch armv7ve");
-    fprintf(fp, "%s\n", ".arm");
-    fprintf(fp, "%s\n", ".fpu vfpv4");
+	//指定目标架构为 ARMv8-A
+    fprintf(fp, "%s\n", ".arch armv8-a");
+	//代码段
+	fprintf(fp, "%s\n", ".text");
+	//代码段按四字节对齐
+	fprintf(fp, "%s\n", ".align 2");
+	// 若有浮点运算需求，可添加如下指令支持高级SIMD和浮点单元
+    fprintf(fp, "%s\n", ".fpu neonfp-armv8");
+	//生成的汇编代码将使用 ARM 指令集的指令
+    fprintf(fp, "%s\n", ".arm64");
 }
 
 /// @brief 全局变量Section，主要包含初始化的和未初始化过的
-void CodeGeneratorArm32::genDataSection()
+void CodeGeneratorArm64::genDataSection()
 {
     // 生成代码段
     fprintf(fp, ".text\n");
@@ -81,7 +88,7 @@ void CodeGeneratorArm32::genDataSection()
 /// @brief 获取IR变量相关信息字符串
 /// @param str
 ///
-void CodeGeneratorArm32::getIRValueStr(Value * val, std::string & str)
+void CodeGeneratorArm64::getIRValueStr(Value * val, std::string & str)
 {
     std::string name = val->getName();
     std::string IRName = val->getIRName();
@@ -111,7 +118,7 @@ void CodeGeneratorArm32::getIRValueStr(Value * val, std::string & str)
 
 /// @brief 针对函数进行汇编指令生成，放到.text代码段中
 /// @param func 要处理的函数
-void CodeGeneratorArm32::genCodeSection(Function * func)
+void CodeGeneratorArm64::genCodeSection(Function * func)
 {
     // 寄存器分配以及栈内局部变量的站内地址重新分配
     registerAllocation(func);
@@ -172,7 +179,7 @@ void CodeGeneratorArm32::genCodeSection(Function * func)
 
 /// @brief 寄存器分配
 /// @param func 函数指针
-void CodeGeneratorArm32::registerAllocation(Function * func)
+void CodeGeneratorArm64::registerAllocation(Function * func)
 {
     // 内置函数不需要处理
     if (func->isBuiltin()) {
@@ -217,7 +224,7 @@ void CodeGeneratorArm32::registerAllocation(Function * func)
 
 /// @brief 寄存器分配前对函数内的指令进行调整，以便方便寄存器分配
 /// @param func 要处理的函数
-void CodeGeneratorArm32::adjustFormalParamInsts(Function * func)
+void CodeGeneratorArm64::adjustFormalParamInsts(Function * func)
 {
     // 函数形参的前四个实参值临时变量采用的是寄存器传值
     // 前四个之后通过栈传递
@@ -249,7 +256,7 @@ void CodeGeneratorArm32::adjustFormalParamInsts(Function * func)
 
 /// @brief 寄存器分配前对函数内的指令进行调整，以便方便寄存器分配
 /// @param func 要处理的函数
-void CodeGeneratorArm32::adjustFuncCallInsts(Function * func)
+void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
 {
     std::vector<Instruction *> newInsts;
 
@@ -341,7 +348,7 @@ void CodeGeneratorArm32::adjustFuncCallInsts(Function * func)
 
 /// @brief 栈空间分配
 /// @param func 要处理的函数
-void CodeGeneratorArm32::stackAlloc(Function * func)
+void CodeGeneratorArm64::stackAlloc(Function * func)
 {
     // 遍历函数内的所有指令，查找没有寄存器分配的变量，然后进行栈内空间分配
 

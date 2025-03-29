@@ -16,10 +16,10 @@
 #include <cstdio>
 #include <string>
 
-#include "ILocArm32.h"
+#include "ILocArm64.h"
 #include "Common.h"
 #include "Function.h"
-#include "PlatformArm32.h"
+#include "PlatformArm64.h"
 #include "Module.h"
 
 ArmInst::ArmInst(std::string _opcode,
@@ -116,13 +116,13 @@ std::string ArmInst::outPut()
 
 /// @brief 构造函数
 /// @param _module 符号表
-ILocArm32::ILocArm32(Module * _module)
+ILocArm64::ILocArm64(Module * _module)
 {
     this->module = _module;
 }
 
 /// @brief 析构函数
-ILocArm32::~ILocArm32()
+ILocArm64::~ILocArm64()
 {
     std::list<ArmInst *>::iterator pIter;
 
@@ -132,7 +132,7 @@ ILocArm32::~ILocArm32()
 }
 
 /// @brief 删除无用的Label指令
-void ILocArm32::deleteUsedLabel()
+void ILocArm64::deleteUsedLabel()
 {
     std::list<ArmInst *> labelInsts;
     for (ArmInst * arm: code) {
@@ -146,6 +146,8 @@ void ILocArm32::deleteUsedLabel()
 
         for (ArmInst * arm: code) {
             // TODO 转移语句的指令标识符根据定义修改判断
+			// 判断当前指令是否为未被标记为无效的转移指令，且转移目标为当前标签指令。
+			// 在 ARM 汇编中，转移指令的操作码通常以 b 开头。
             if ((!arm->dead) && (arm->opcode[0] == 'b') && (arm->result == labelArm->opcode)) {
                 labelUsed = true;
                 break;
@@ -161,7 +163,7 @@ void ILocArm32::deleteUsedLabel()
 /// @brief 输出汇编
 /// @param file 输出的文件指针
 /// @param outputEmpty 是否输出空语句
-void ILocArm32::outPut(FILE * file, bool outputEmpty)
+void ILocArm64::outPut(FILE * file, bool outputEmpty)
 {
     for (auto arm: code) {
 
@@ -183,7 +185,7 @@ void ILocArm32::outPut(FILE * file, bool outputEmpty)
 
 /// @brief 获取当前的代码序列
 /// @return 代码序列
-std::list<ArmInst *> & ILocArm32::getCode()
+std::list<ArmInst *> & ILocArm64::getCode()
 {
     return code;
 }
@@ -191,7 +193,7 @@ std::list<ArmInst *> & ILocArm32::getCode()
 /**
  * 数字变字符串，若flag为真，则变为立即数寻址（加#）
  */
-std::string ILocArm32::toStr(int num, bool flag)
+std::string ILocArm64::toStr(int64_t num, bool flag)
 {
     std::string ret;
 
@@ -207,7 +209,7 @@ std::string ILocArm32::toStr(int num, bool flag)
 /*
     产生标签
 */
-void ILocArm32::label(std::string name)
+void ILocArm64::label(std::string name)
 {
     // .L1:
     emit(name, ":");
@@ -216,7 +218,7 @@ void ILocArm32::label(std::string name)
 /// @brief 0个源操作数指令
 /// @param op 操作码
 /// @param rs 操作数
-void ILocArm32::inst(std::string op, std::string rs)
+void ILocArm64::inst(std::string op, std::string rs)
 {
     emit(op, rs);
 }
@@ -225,7 +227,7 @@ void ILocArm32::inst(std::string op, std::string rs)
 /// @param op 操作码
 /// @param rs 操作数
 /// @param arg1 源操作数
-void ILocArm32::inst(std::string op, std::string rs, std::string arg1)
+void ILocArm64::inst(std::string op, std::string rs, std::string arg1)
 {
     emit(op, rs, arg1);
 }
@@ -235,7 +237,7 @@ void ILocArm32::inst(std::string op, std::string rs, std::string arg1)
 /// @param rs 操作数
 /// @param arg1 源操作数
 /// @param arg2 源操作数
-void ILocArm32::inst(std::string op, std::string rs, std::string arg1, std::string arg2)
+void ILocArm64::inst(std::string op, std::string rs, std::string arg1, std::string arg2)
 {
     emit(op, rs, arg1, arg2);
 }
@@ -243,7 +245,7 @@ void ILocArm32::inst(std::string op, std::string rs, std::string arg1, std::stri
 ///
 /// @brief 注释指令，不包含分号
 ///
-void ILocArm32::comment(std::string str)
+void ILocArm64::comment(std::string str)
 {
     emit("@", str);
 }
@@ -251,41 +253,54 @@ void ILocArm32::comment(std::string str)
 /*
     加载立即数 ldr r0,=#100
 */
-void ILocArm32::load_imm(int rs_reg_no, int constant)
+void ILocArm64::load_imm(int rs_reg_no, int64_t constant)
 {
-    // movw:把 16 位立即数放到寄存器的低16位，高16位清0
-    // movt:把 16 位立即数放到寄存器的高16位，低 16位不影响
-    if (0 == ((constant >> 16) & 0xFFFF)) {
-        // 如果高16位本来就为0，直接movw
-        emit("movw", PlatformArm32::regName[rs_reg_no], "#:lower16:" + std::to_string(constant));
-    } else {
-        // 如果高16位不为0，先movw，然后movt
-        emit("movw", PlatformArm32::regName[rs_reg_no], "#:lower16:" + std::to_string(constant));
-        emit("movt", PlatformArm32::regName[rs_reg_no], "#:upper16:" + std::to_string(constant));
+    // movz: 将 16 位立即数零扩展到 64 位寄存器
+    // movk: 将 16 位立即数插入到寄存器的指定 16 位位置而不影响其他位
+
+    // 处理低 16 位
+    emit("movz", PlatformArm64::regName[rs_reg_no], "#" + std::to_string(constant & 0xFFFF), "lsl #0");
+
+    // 处理接下来的 16 位
+    if ((constant >> 16) & 0xFFFF) {
+        emit("movk", PlatformArm64::regName[rs_reg_no], "#" + std::to_string((constant >> 16) & 0xFFFF), "lsl #16");
+    }
+
+    // 处理再接下来的 16 位
+    if ((constant >> 32) & 0xFFFF) {
+        emit("movk", PlatformArm64::regName[rs_reg_no], "#" + std::to_string((constant >> 32) & 0xFFFF), "lsl #32");
+    }
+
+    // 处理最高的 16 位
+    if ((constant >> 48) & 0xFFFF) {
+        emit("movk", PlatformArm64::regName[rs_reg_no], "#" + std::to_string((constant >> 48) & 0xFFFF), "lsl #48");
     }
 }
 
 /// @brief 加载符号值 ldr r0,=g ldr r0,=.L1
 /// @param rs_reg_no 结果寄存器编号
 /// @param name 符号名
-void ILocArm32::load_symbol(int rs_reg_no, std::string name)
+//TODO
+void ILocArm64::load_symbol(int rs_reg_no, std::string name)
 {
-    // movw r10, #:lower16:a
-    // movt r10, #:upper16:a
-    emit("movw", PlatformArm32::regName[rs_reg_no], "#:lower16:" + name);
-    emit("movt", PlatformArm32::regName[rs_reg_no], "#:upper16:" + name);
+    // adrp 指令加载符号所在页的基地址到指定寄存器
+    emit("adrp", PlatformArm64::regName[rs_reg_no], name);
+
+    // add 指令将符号在页内的偏移量加到基地址上
+    // :lo12: 表示取符号地址的低 12 位作为偏移量
+    emit("add", PlatformArm64::regName[rs_reg_no], PlatformArm64::regName[rs_reg_no], ":" + name + ":lo12");
 }
 
 /// @brief 基址寻址 ldr r0,[fp,#100]
 /// @param rsReg 结果寄存器
 /// @param base_reg_no 基址寄存器
 /// @param offset 偏移
-void ILocArm32::load_base(int rs_reg_no, int base_reg_no, int offset)
+void ILocArm64::load_base(int rs_reg_no, int base_reg_no, int64_t offset)
 {
-    std::string rsReg = PlatformArm32::regName[rs_reg_no];
-    std::string base = PlatformArm32::regName[base_reg_no];
+    std::string rsReg = PlatformArm64::regName[rs_reg_no];
+    std::string base = PlatformArm64::regName[base_reg_no];
 
-    if (PlatformArm32::isDisp(offset)) {
+    if (PlatformArm64::isDisp(offset)) {
         // 有效的偏移常量
         if (offset) {
             // [fp,#-16] [fp]
@@ -303,21 +318,21 @@ void ILocArm32::load_base(int rs_reg_no, int base_reg_no, int offset)
     // 内存寻址
     base = "[" + base + "]";
 
-    // ldr r8,[fp,#-16]
-    // ldr r8,[fp,r8]
+    // ldr x8,[fp,#-16]
+    // ldr x8,[fp,x8]
     emit("ldr", rsReg, base);
 }
 
-/// @brief 基址寻址 str r0,[fp,#100]
+/// @brief 基址寻址 str x0,[fp,#100]
 /// @param srcReg 源寄存器
 /// @param base_reg_no 基址寄存器
 /// @param disp 偏移
 /// @param tmp_reg_no 可能需要临时寄存器编号
-void ILocArm32::store_base(int src_reg_no, int base_reg_no, int disp, int tmp_reg_no)
+void ILocArm64::store_base(int src_reg_no, int base_reg_no, int64_t disp, int tmp_reg_no)
 {
-    std::string base = PlatformArm32::regName[base_reg_no];
+    std::string base = PlatformArm64::regName[base_reg_no];
 
-    if (PlatformArm32::isDisp(disp)) {
+    if (PlatformArm64::isDisp(disp)) {
         // 有效的偏移常量
 
         // 若disp为0，则直接采用基址，否则采用基址+偏移
@@ -328,40 +343,40 @@ void ILocArm32::store_base(int src_reg_no, int base_reg_no, int disp, int tmp_re
     } else {
         // 先把立即数赋值给指定的寄存器tmpReg，然后采用基址+寄存器的方式进行
 
-        // ldr r9,=-4096
+        // ldr x9,=-4096
         load_imm(tmp_reg_no, disp);
 
-        // fp,r9
-        base += "," + PlatformArm32::regName[tmp_reg_no];
+        // fp,x9
+        base += "," + PlatformArm64::regName[tmp_reg_no];
     }
 
     // 内存间接寻址
     base = "[" + base + "]";
 
-    // str r8,[fp,#-16]
-    // str r8,[fp,r9]
-    emit("str", PlatformArm32::regName[src_reg_no], base);
+    // str x8,[fp,#-16]
+    // str x8,[fp,x9]
+    emit("str", PlatformArm64::regName[src_reg_no], base);
 }
 
 /// @brief 寄存器Mov操作
 /// @param rs_reg_no 结果寄存器
 /// @param src_reg_no 源寄存器
-void ILocArm32::mov_reg(int rs_reg_no, int src_reg_no)
+void ILocArm64::mov_reg(int rs_reg_no, int src_reg_no)
 {
-    emit("mov", PlatformArm32::regName[rs_reg_no], PlatformArm32::regName[src_reg_no]);
+    emit("mov", PlatformArm64::regName[rs_reg_no], PlatformArm64::regName[src_reg_no]);
 }
 
 /// @brief 加载变量到寄存器，保证将变量放到reg中
 /// @param rs_reg_no 结果寄存器
 /// @param src_var 源操作数
-void ILocArm32::load_var(int rs_reg_no, Value * src_var)
+void ILocArm64::load_var(int rs_reg_no, Value * src_var)
 {
 
     if (Instanceof(constVal, ConstInt *, src_var)) {
         // 整型常量
 
         // TODO 目前只考虑整数类型 100
-        // ldr r8,#100
+        // ldr x8,#100
         load_imm(rs_reg_no, constVal->getVal());
     } else if (src_var->getRegId() != -1) {
 
@@ -370,19 +385,19 @@ void ILocArm32::load_var(int rs_reg_no, Value * src_var)
 
         if (src_regId != rs_reg_no) {
 
-            // mov r8,r2 | 这里有优化空间——消除r8
-            emit("mov", PlatformArm32::regName[rs_reg_no], PlatformArm32::regName[src_regId]);
+            // mov x8,x2 | 这里有优化空间——消除r8
+            emit("mov", PlatformArm64::regName[rs_reg_no], PlatformArm64::regName[src_regId]);
         }
     } else if (Instanceof(globalVar, GlobalVariable *, src_var)) {
         // 全局变量
 
         // 读取全局变量的地址
-        // movw r8, #:lower16:a
-        // movt r8, #:lower16:a
+        // adrp x8, symbol@PAGE
+        // add x8, x8, symbol@PAGEOFF
         load_symbol(rs_reg_no, globalVar->getName());
 
-        // ldr r8, [r8]
-        emit("ldr", PlatformArm32::regName[rs_reg_no], "[" + PlatformArm32::regName[rs_reg_no] + "]");
+        // ldr x8, [x8]
+        emit("ldr", PlatformArm64::regName[rs_reg_no], "[" + PlatformArm64::regName[rs_reg_no] + "]");
 
     } else {
 
@@ -400,7 +415,7 @@ void ILocArm32::load_var(int rs_reg_no, Value * src_var)
         // 对于栈内分配的局部数组，可直接在栈指针上进行移动与运算
         // 但对于形参，其保存的是调用函数栈的数组的地址，需要读取出来
 
-        // ldr r8,[sp,#16]
+        // ldr x8,[sp,#16]
         load_base(rs_reg_no, var_baseRegId, var_offset);
     }
 }
@@ -408,7 +423,7 @@ void ILocArm32::load_var(int rs_reg_no, Value * src_var)
 /// @brief 加载变量地址到寄存器
 /// @param rs_reg_no
 /// @param var
-void ILocArm32::lea_var(int rs_reg_no, Value * var)
+void ILocArm64::lea_var(int rs_reg_no, Value * var)
 {
     // 被加载的变量肯定不是常量！
     // 被加载的变量肯定不是寄存器变量！
@@ -424,15 +439,15 @@ void ILocArm32::lea_var(int rs_reg_no, Value * var)
         minic_log(LOG_ERROR, "BUG");
     }
 
-    // lea r8, [fp,#-16]
+    // lea x8, [fp,#-16]
     leaStack(rs_reg_no, var_baseRegId, var_offset);
 }
 
-/// @brief 保存寄存器到变量，保证将计算结果（r8）保存到变量
+/// @brief 保存寄存器到变量，保证将计算结果（x8）保存到变量
 /// @param src_reg_no 源寄存器
 /// @param dest_var  变量
 /// @param tmp_reg_no 第三方寄存器
-void ILocArm32::store_var(int src_reg_no, Value * dest_var, int tmp_reg_no)
+void ILocArm64::store_var(int src_reg_no, Value * dest_var, int tmp_reg_no)
 {
     // 被保存目标变量肯定不是常量
 
@@ -446,18 +461,18 @@ void ILocArm32::store_var(int src_reg_no, Value * dest_var, int tmp_reg_no)
         // 寄存器不一样才需要mov操作
         if (src_reg_no != dest_reg_id) {
 
-            // mov r2,r8 | 这里有优化空间——消除r8
-            emit("mov", PlatformArm32::regName[dest_reg_id], PlatformArm32::regName[src_reg_no]);
+            // mov x2,x8 | 这里有优化空间——消除r8
+            emit("mov", PlatformArm64::regName[dest_reg_id], PlatformArm64::regName[src_reg_no]);
         }
 
     } else if (Instanceof(globalVar, GlobalVariable *, dest_var)) {
         // 全局变量
 
-        // 读取符号的地址到寄存器r10
+        // 读取符号的地址到寄存器x10
         load_symbol(tmp_reg_no, globalVar->getName());
 
-        // str r8, [r10]
-        emit("str", PlatformArm32::regName[src_reg_no], "[" + PlatformArm32::regName[tmp_reg_no] + "]");
+        // str x8, [x10]
+        emit("str", PlatformArm64::regName[src_reg_no], "[" + PlatformArm64::regName[tmp_reg_no] + "]");
 
     } else {
 
@@ -474,8 +489,8 @@ void ILocArm32::store_var(int src_reg_no, Value * dest_var, int tmp_reg_no)
             minic_log(LOG_ERROR, "BUG");
         }
 
-        // str r8,[r9]
-        // str r8, [fp, # - 16]
+        // str x8,[x9]
+        // str x8, [fp, # - 16]
         store_base(src_reg_no, dest_baseRegId, dest_offset, tmp_reg_no);
     }
 }
@@ -484,19 +499,19 @@ void ILocArm32::store_var(int src_reg_no, Value * dest_var, int tmp_reg_no)
 /// @param rsReg 结果寄存器号
 /// @param base_reg_no 基址寄存器
 /// @param off 偏移
-void ILocArm32::leaStack(int rs_reg_no, int base_reg_no, int off)
+void ILocArm64::leaStack(int rs_reg_no, int base_reg_no, int64_t off)
 {
-    std::string rs_reg_name = PlatformArm32::regName[rs_reg_no];
-    std::string base_reg_name = PlatformArm32::regName[base_reg_no];
+    std::string rs_reg_name = PlatformArm64::regName[rs_reg_no];
+    std::string base_reg_name = PlatformArm64::regName[base_reg_no];
 
-    if (PlatformArm32::constExpr(off))
-        // add r8,fp,#-16
+    if (PlatformArm64::constExpr(off))
+        // add x8,fp,#-16
         emit("add", rs_reg_name, base_reg_name, toStr(off));
     else {
-        // ldr r8,=-257
+        // ldr x8,=-257
         load_imm(rs_reg_no, off);
 
-        // add r8,fp,r8
+        // add x8,fp,r8
         emit("add", rs_reg_name, base_reg_name, rs_reg_name);
     }
 }
@@ -504,7 +519,7 @@ void ILocArm32::leaStack(int rs_reg_no, int base_reg_no, int off)
 /// @brief 函数内栈内空间分配（局部变量、形参变量、函数参数传值，或不能寄存器分配的临时变量等）
 /// @param func 函数
 /// @param tmp_reg_No
-void ILocArm32::allocStack(Function * func, int tmp_reg_no)
+void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 {
     // 超过四个的函数调用参数个数，多余4个，则需要栈传值
     int funcCallArgCnt = func->getMaxFuncCallArgCnt() - 4;
@@ -521,7 +536,7 @@ void ILocArm32::allocStack(Function * func, int tmp_reg_no)
     if (0 == off)
         return;
 
-    if (PlatformArm32::constExpr(off)) {
+    if (PlatformArm64::constExpr(off)) {
         // sub sp,sp,#16
         emit("sub", "sp", "sp", toStr(off));
     } else {
@@ -529,23 +544,23 @@ void ILocArm32::allocStack(Function * func, int tmp_reg_no)
         load_imm(tmp_reg_no, off);
 
         // sub sp,sp,r8
-        emit("sub", "sp", "sp", PlatformArm32::regName[tmp_reg_no]);
+        emit("sub", "sp", "sp", PlatformArm64::regName[tmp_reg_no]);
     }
 
     // 函数调用通过栈传递的基址寄存器设置
-    inst("add", PlatformArm32::regName[ARM32_FP_REG_NO], "sp", toStr(funcCallArgCnt * 4));
+    inst("add", PlatformArm64::regName[ARM64_FP_REG_NO], "sp", toStr(funcCallArgCnt * 4));
 }
 
 /// @brief 调用函数fun
 /// @param fun
-void ILocArm32::call_fun(std::string name)
+void ILocArm64::call_fun(std::string name)
 {
     // 函数返回值在r0,不需要保护
     emit("bl", name);
 }
 
 /// @brief NOP操作
-void ILocArm32::nop()
+void ILocArm64::nop()
 {
     // FIXME 无操作符，要确认是否用nop指令
     emit("");
@@ -555,7 +570,7 @@ void ILocArm32::nop()
 /// @brief 无条件跳转指令
 /// @param label 目标Label名称
 ///
-void ILocArm32::jump(std::string label)
+void ILocArm64::jump(std::string label)
 {
     emit("b", label);
 }

@@ -1,5 +1,5 @@
 ﻿///
-/// @file ILocArm32.h
+/// @file ILocArm64.h
 /// @brief 指令序列管理的头文件，ILOC的全称为Intermediate Language for Optimizing Compilers
 /// @author zenglj (zenglj@live.com)
 /// @version 1.0
@@ -23,7 +23,7 @@
 
 #define Instanceof(res, type, var) auto res = dynamic_cast<type>(var)
 
-/// @brief 底层汇编指令：ARM32
+/// @brief 底层汇编指令：ARM64
 struct ArmInst {
 
     /// @brief 操作码
@@ -81,8 +81,8 @@ struct ArmInst {
     std::string outPut();
 };
 
-/// @brief 底层汇编序列-ARM32
-class ILocArm32 {
+/// @brief 底层汇编序列-ARM64
+class ILocArm64 {
 
     /// @brief ARM汇编序列
     std::list<ArmInst *> code;
@@ -90,12 +90,12 @@ class ILocArm32 {
     /// @brief 符号表
     Module * module;
 
-    /// @brief 加载立即数 ldr r0,=#100
+    /// @brief 加载立即数 ldr x0,=#100
     /// @param rs_reg_no 结果寄存器号
     /// @param num 立即数
-    void load_imm(int rs_reg_no, int num);
+    void load_imm(int rs_reg_no, int64_t num);
 
-    /// @brief 加载符号值 ldr r0,=g; ldr r0,[r0]
+    /// @brief 加载符号值 ldr x0,=g; ldr x0,[x0]
     /// @param rsReg 结果寄存器号
     /// @param name Label名字
     void load_symbol(int rs_reg_no, std::string name);
@@ -104,15 +104,15 @@ class ILocArm32 {
     /// @param rsReg 结果寄存器号
     /// @param base_reg_no 基址寄存器
     /// @param off 偏移
-    void leaStack(int rs_reg_no, int base_reg_no, int offset);
+    void leaStack(int rs_reg_no, int base_reg_no, int64_t offset);
 
 public:
     /// @brief 构造函数
     /// @param _module 符号表-模块
-    ILocArm32(Module * _module);
+    ILocArm64(Module * _module);
 
     /// @brief 析构函数
-    ~ILocArm32();
+    ~ILocArm64();
 
     ///
     /// @brief 注释指令，不包含分号
@@ -124,24 +124,24 @@ public:
     /// @param num 立即数
     /// @param flag 是否家#
     /// @return 字符串
-    std::string toStr(int num, bool flag = true);
+    std::string toStr(int64_t num, bool flag = true);
 
     /// @brief 获取当前的代码序列
     /// @return 代码序列
     std::list<ArmInst *> & getCode();
 
-    /// @brief Load指令，基址寻址 ldr r0,[fp,#100]
+    /// @brief Load指令，基址寻址 ldr x0,[fp,#100]
     /// @param rs_reg_no 结果寄存器
     /// @param base_reg_no 基址寄存器
     /// @param disp 偏移
-    void load_base(int rs_reg_no, int base_reg_no, int disp);
+    void load_base(int rs_reg_no, int base_reg_no, int64_t disp);
 
-    /// @brief Store指令，基址寻址 str r0,[fp,#100]
+    /// @brief Store指令，基址寻址 str x0,[fp,#100]
     /// @param src_reg_no 源寄存器
     /// @param base_reg_no 基址寄存器
     /// @param disp 偏移
     /// @param tmp_reg_no 可能需要临时寄存器编号
-    void store_base(int src_reg_no, int base_reg_no, int disp, int tmp_reg_no);
+    void store_base(int src_reg_no, int base_reg_no, int64_t disp, int tmp_reg_no);
 
     /// @brief 标签指令
     /// @param name

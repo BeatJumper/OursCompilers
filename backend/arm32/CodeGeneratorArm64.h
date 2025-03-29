@@ -16,15 +16,15 @@
 #include "CodeGeneratorAsm.h"
 #include "SimpleRegisterAllocator.h"
 
-class CodeGeneratorArm32 : public CodeGeneratorAsm {
+class CodeGeneratorArm64 : public CodeGeneratorAsm {
 
 public:
     /// @brief 构造函数
     /// @param tab 符号表
-    CodeGeneratorArm32(Module * module);
+    CodeGeneratorArm64(Module * module);
 
     /// @brief 析构函数
-    ~CodeGeneratorArm32() override;
+    ~CodeGeneratorArm64() override;
 
 protected:
     /// @brief 产生汇编头部分
