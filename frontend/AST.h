@@ -36,7 +36,7 @@ enum class ast_operator_type : int {
     /// @brief 无符号整数字面量叶子节点
     AST_OP_LEAF_LITERAL_UINT,
 
-    /// @brief  无符号整数字面量叶子节点
+    /// @brief  无符号整数字面量叶子节点 ~这个应该是浮点数
     AST_OP_LEAF_LITERAL_FLOAT,
 
     /// @brief 变量ID叶子节点

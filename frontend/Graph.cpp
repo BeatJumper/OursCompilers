@@ -122,6 +122,11 @@ Agnode_t * genLeafGraphNode(Agraph_t * g, ast_node * astnode)
         // 设置矩形框内的填充色，红色。必须线设置style，后设置fillcolor，否则fillcolor属性设置无效
         agsafeset(node, (char *) "style", (char *) "filled", (char *) "");
         agsafeset(node, (char *) "fillcolor", (char *) "yellow", (char *) "");
+
+        // 如果是初值节点，设置特殊的颜色或形状
+        if (astnode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+            agsafeset(node, (char *) "fillcolor", (char *) "lightblue", (char *) "");
+        }
     }
 
     return node;

@@ -21,11 +21,9 @@
 #include "Antlr4Executor.h"
 #include "CodeGenerator.h"
 #include "CodeGeneratorArm32.h"
-#include "FlexBisonExecutor.h"
 #include "FrontEndExecutor.h"
 #include "Graph.h"
 #include "IRGenerator.h"
-#include "RecursiveDescentExecutor.h"
 #include "Module.h"
 #include "getopt-port.h"
 
@@ -55,19 +53,9 @@ static bool gShowASM = false;
 static bool gShowSymbol = false;
 
 ///
-/// @brief 前端分析器，默认选Flex和Bison
-///
-static bool gFrontEndFlexBison = true;
-
-///
 /// @brief 前端分析器Antlr4，是否选中
 ///
-static bool gFrontEndAntlr4 = false;
-
-///
-/// @brief 前端分析器用递归下降分析法，是否选中
-///
-static bool gFrontEndRecursiveDescentParsing = false;
+static bool gFrontEndAntlr4 = true;
 
 ///
 /// @brief 在输出汇编时是否输出中间IR作为注释
@@ -136,14 +124,10 @@ lb_check:
             case 'A':
                 // 选用antlr4
                 gFrontEndAntlr4 = true;
-                gFrontEndFlexBison = false;
-                gFrontEndRecursiveDescentParsing = false;
                 break;
             case 'D':
                 // 选用递归下降分析法与词法手动实现
                 gFrontEndAntlr4 = false;
-                gFrontEndFlexBison = false;
-                gFrontEndRecursiveDescentParsing = true;
                 break;
             case 'O':
                 // 优化级别分析，暂时没有用，如开启优化时请使用
@@ -245,16 +229,7 @@ static int compile(std::string inputFile, std::string outputFile)
 
         // 创建词法语法分析器
         FrontEndExecutor * frontEndExecutor;
-        if (gFrontEndAntlr4) {
-            // Antlr4
-            frontEndExecutor = new Antlr4Executor(inputFile);
-        } else if (gFrontEndRecursiveDescentParsing) {
-            // 递归下降分析法
-            frontEndExecutor = new RecursiveDescentExecutor(inputFile);
-        } else {
-            // 默认为Flex+Bison
-            frontEndExecutor = new FlexBisonExecutor(inputFile);
-        }
+        frontEndExecutor = new Antlr4Executor(inputFile);
 
         // 前端执行：词法分析、语法分析后产生抽象语法树，其root为全局变量ast_root
         subResult = frontEndExecutor->run();
