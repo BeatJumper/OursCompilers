@@ -205,6 +205,8 @@
 		"**/utils/getopt-port*"
 	],
 	"files.associations": {
-		"cstdint": "cpp"
+		"cstdint": "cpp",
+		"any": "cpp",
+		"string": "cpp"
 	}
 }

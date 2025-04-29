@@ -44,7 +44,7 @@ bool Antlr4Executor::run()
     // 利用antlr4进行分析，从compileUnit开始分析输入字符串
     MiniCParser parser{&tokenStream};
 
-    // 从具体语法树的根结点进行深度优先遍历，生成抽象语法树
+    // 从具体语法树的根结点进行深度优先遍历，生成抽象语法树 ~这个应该是具体语法树
     auto cstRoot = parser.compileUnit();
     if (!cstRoot) {
         minic_log(LOG_ERROR, "Antlr4的词语与语法分析错误");

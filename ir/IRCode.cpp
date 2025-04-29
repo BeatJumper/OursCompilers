@@ -39,11 +39,22 @@ void InterCode::addInst(InterCode & block)
 void InterCode::addInst(Instruction * inst)
 {
     code.push_back(inst);
+
+    // 打印生成的 IR 指令
+    std::string irStr;
+    inst->toString(irStr);
+    printf("Added IR Instruction: %s\n", irStr.c_str());
 }
 
 /// @brief 获取指令序列
 /// @return 指令序列
 std::vector<Instruction *> & InterCode::getInsts()
+{
+    return code;
+}
+
+/// @brief 获取指令序列（只读）
+const std::vector<Instruction *> & InterCode::getCode() const
 {
     return code;
 }

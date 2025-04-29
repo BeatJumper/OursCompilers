@@ -44,7 +44,7 @@ ast_node * MiniCCSTVisitor::run(MiniCParser::CompileUnitContext * root)
 std::any MiniCCSTVisitor::visitCompileUnit(MiniCParser::CompileUnitContext * ctx)
 {
     // compileUnit: (funcDef | varDecl)* EOF
-
+    // 最开始ctx是cstroot
     // 请注意这里必须先遍历全局变量后遍历函数。肯定可以确保全局变量先声明后使用的规则，但有些情况却不能检查出。
     // 事实上可能函数A后全局变量B后函数C，这时在函数A中是不能使用变量B的，需要报语义错误，但目前的处理不会。
     // 因此在进行语义检查时，可能追加检查行号和列号，如果函数的行号/列号在全局变量的行号/列号的前面则需要报语义错误
@@ -360,7 +360,7 @@ std::any MiniCCSTVisitor::visitVarDecl(MiniCParser::VarDeclContext * ctx)
 
 std::any MiniCCSTVisitor::visitVarDef(MiniCParser::VarDefContext * ctx)
 {
-    // varDef: T_ID;
+    // varDef: T_ID (T_ASSIGN expr)?;
 
     auto varId = ctx->T_ID()->getText();
 
@@ -372,10 +372,16 @@ std::any MiniCCSTVisitor::visitVarDef(MiniCParser::VarDefContext * ctx)
 
     // 如果存在初值
     if (ctx->expr()) {
+        // 遍历表达式节点
         auto initExprNode = std::any_cast<ast_node *>(visitExpr(ctx->expr()));
-        varNode->insert_son_node(initExprNode);
+        // 创建赋值节点，将变量名和初值作为子节点
+        auto assignNode = ast_node::New(ast_operator_type::AST_OP_ASSIGN, varNode, initExprNode, nullptr);
+
+        // varNode->insert_son_node(initExprNode);
+        return assignNode;
     }
 
+    // 没有初值，直接返回变量名节点
     return varNode;
 }
 

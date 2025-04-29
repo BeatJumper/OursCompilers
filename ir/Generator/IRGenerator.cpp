@@ -81,6 +81,12 @@ bool IRGenerator::run()
     // 从根节点进行遍历
     node = ir_visit_ast_node(root);
 
+    if (node) {
+        printf("Debug: Successfully processed root node.\n");
+    } else {
+        printf("Debug: Failed to process root node.\n");
+    }
+
     return node != nullptr;
 }
 
@@ -96,6 +102,7 @@ ast_node * IRGenerator::ir_visit_ast_node(ast_node * node)
 
     bool result;
 
+    // 根据节点类型查找对应的翻译函数
     std::unordered_map<ast_operator_type, ast2ir_handler_t>::const_iterator pIter;
     pIter = ast2ir_handlers.find(node->node_type);
     if (pIter == ast2ir_handlers.end()) {
@@ -186,6 +193,8 @@ bool IRGenerator::ir_function_define(ast_node * node)
     InterCode & irCode = newFunc->getInterCode();
 
     // 这里也可增加一个函数入口Label指令，便于后续基本块划分
+    LabelInstruction * entryLabelInst = new LabelInstruction(newFunc);
+    irCode.addInst(entryLabelInst);
 
     // 创建并加入Entry入口指令
     irCode.addInst(new EntryInstruction(newFunc));
@@ -468,16 +477,15 @@ bool IRGenerator::ir_assign(ast_node * node)
 
     // 赋值运算符的左侧操作数
     ast_node * left = ir_visit_ast_node(son1_node);
-    if (!left) {
-        // 某个变量没有定值
-        // 这里缺省设置变量不存在则创建，因此这里不会错误
+    if (!left || !left->val) {
+        printf("Error: Left operand has no Value in ir_assign.\n");
         return false;
     }
 
     // 赋值运算符的右侧操作数
     ast_node * right = ir_visit_ast_node(son2_node);
-    if (!right) {
-        // 某个变量没有定值
+    if (!right || !right->val) {
+        printf("Error: Right operand has no Value in ir_assign.\n");
         return false;
     }
 
@@ -490,6 +498,11 @@ bool IRGenerator::ir_assign(ast_node * node)
     node->blockInsts.addInst(right->blockInsts);
     node->blockInsts.addInst(left->blockInsts);
     node->blockInsts.addInst(movInst);
+
+    // 打印生成的 IR 指令
+    std::string irStr;
+    movInst->toString(irStr);
+    printf("Generated IR: %s\n", irStr.c_str());
 
     // 这里假定赋值的类型是一致的
     node->val = movInst;
@@ -593,6 +606,8 @@ bool IRGenerator::ir_declare_statment(ast_node * node)
         if (!result) {
             break;
         }
+        // 收集子节点生成的 IR
+        node->blockInsts.addInst(child->blockInsts);
     }
 
     return result;
@@ -607,7 +622,69 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
 
     // TODO 这里可强化类型等检查
 
-    node->val = module->newVarValue(node->sons[0]->type, node->sons[1]->name);
+    // 确保节点有两个子节点：类型节点和变量名或赋值节点
+    if (node->sons.size() < 2) {
+        printf("Error: Invalid node structure in ir_variable_declare.\n");
+        return false;
+    }
+
+    ast_node * typeNode = node->sons[0];
+    ast_node * varOrAssignNode = node->sons[1];
+
+    if (!typeNode || !varOrAssignNode) {
+        printf("Error: Null typeNode or varOrAssignNode in ir_variable_declare.\n");
+        return false;
+    }
+
+    // 如果是赋值节点（AST_OP_ASSIGN）
+    if (varOrAssignNode->node_type == ast_operator_type::AST_OP_ASSIGN) {
+        // 获取赋值节点的子节点：变量名和初值表达式
+        ast_node * varNode = varOrAssignNode->sons[0];
+        ast_node * initExprNode = varOrAssignNode->sons[1];
+
+        if (!varNode || !initExprNode) {
+            printf("Error: Invalid assignment structure in ir_variable_declare.\n");
+            return false;
+        }
+
+        // 在符号表中为变量分配 Value
+        Value * varValue = module->newVarValue(typeNode->type, varNode->name);
+        if (!varValue) {
+            printf("Error: Failed to allocate variable in ir_variable_declare.\n");
+            return false;
+        }
+
+        // 将变量名节点的 Value 设置为分配的 Value
+        varNode->val = varValue;
+
+        // 调用 ir_assign 处理赋值逻辑
+        if (!ir_assign(varOrAssignNode)) {
+            printf("Error: Failed to process assignment in ir_variable_declare.\n");
+            return false;
+        }
+
+        // 手动遍历并打印 IR 指令
+        printf("Generated IR in ir_variable_declare:\n");
+        for (const auto & inst: varOrAssignNode->blockInsts.getCode()) { // 假设 blockInsts 有 getCode 方法
+            std::string instStr;
+            inst->toString(instStr); // 假设每个指令都有 toString 方法
+            printf("%s\n", instStr.c_str());
+        }
+
+        // 将生成的 IR 指令添加到当前节点
+        node->blockInsts.addInst(varOrAssignNode->blockInsts);
+
+    } else {
+        // 如果是普通变量声明（没有初值）
+        ast_node * varNode = varOrAssignNode;
+
+        // 在符号表中为变量分配 Value
+        Value * varValue = module->newVarValue(typeNode->type, varNode->name);
+        if (!varValue) {
+            printf("Error: Failed to allocate variable in ir_variable_declare.\n");
+            return false;
+        }
+    }
 
     return true;
 }

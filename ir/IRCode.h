@@ -48,4 +48,8 @@ public:
 
     /// @brief 删除所有指令
     void Delete();
+
+    /// @brief 获取指令序列（只读）
+    /// @return 指令序列的常量引用
+    const std::vector<Instruction *> & getCode() const;
 };

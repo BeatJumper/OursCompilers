@@ -78,7 +78,7 @@ static std::string gOutputFile;
 /// @param exeName
 static void showHelp(const std::string & exeName)
 {
-    std::cout << exeName + " -S [-A | -D] [-T | -I] [-o output] source\n";
+    std::cout << exeName + " -S -A [-T | -I] [-o output] source\n";
 }
 
 /// @brief 参数解析与有效性检查
@@ -124,10 +124,6 @@ lb_check:
             case 'A':
                 // 选用antlr4
                 gFrontEndAntlr4 = true;
-                break;
-            case 'D':
-                // 选用递归下降分析法与词法手动实现
-                gFrontEndAntlr4 = false;
                 break;
             case 'O':
                 // 优化级别分析，暂时没有用，如开启优化时请使用
@@ -303,6 +299,8 @@ static int compile(std::string inputFile, std::string outputFile)
         }
 
         // 这里可追加中间代码优化，体系结果无关的优化等
+        // TODO: 机器无关优化
+        // 所有优化方法放在opt文件夹内，每个文件一个方法，下面通过for循环依次调用
 
         // 后端处理，体系结果相关的操作
         // 这里提供一种面向ARM32的汇编产生器CodeGeneratorArm32作为参考

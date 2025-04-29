@@ -31,7 +31,7 @@ varDecl: basicType varDef (T_COMMA varDef)* T_SEMICOLON;
 // 基本类型
 basicType: T_INT;
 
-// 变量定义 ~可以带初值
+// 变量定义 ~可以带初值?
 varDef: T_ID (T_ASSIGN expr)?;
 
 // 目前语句支持return和赋值语句

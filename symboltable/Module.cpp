@@ -314,11 +314,13 @@ void Module::outputIR(const std::string & filePath)
     }
 
     // 全局变量遍历输出对应的declare指令
+    printf("Debug: Outputting global variables...\n");
     for (auto var: globalVariableVector) {
 
         std::string str;
         var->toDeclareString(str);
         fprintf(fp, "%s\n", str.c_str());
+        printf("Debug: Global Variable IR: %s\n", str.c_str());
     }
 
     // 遍历所有的线性IR指令，文本输出
@@ -327,7 +329,9 @@ void Module::outputIR(const std::string & filePath)
         std::string instStr;
         func->toString(instStr);
         fprintf(fp, "%s", instStr.c_str());
+        printf("Debug: Function IR: %s\n", instStr.c_str());
     }
 
     fclose(fp);
+    printf("Debug: Finished outputting IR to file: %s\n", filePath.c_str());
 }
