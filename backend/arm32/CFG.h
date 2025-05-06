@@ -26,15 +26,25 @@ public:
     /// @return 所求Label列表
     std::set<std::string> & get_son_label_list();
 
+    /// @brief 获取子节点列表
+    /// @return 基本块的子节点列表
+    std::set<Node_CFG *> & get_next_nodes();
+
+    /// @brief 活跃变量分析
+    std::set<Value *> liveIN;
+    /// @brief 活跃变量分析
+    std::set<Value *> liveOUT;
+
+    /// @brief def集
+    std::set<Value *> def_set;
+    /// @brief use集
+    std::set<Value *> use_set;
+
 private:
     /// @brief 节点对应的基本块编号
     int no;
     /// @brief 节点自己的邻接表
     std::set<Node_CFG *> next_nodes;
-    /// @brief def集
-    std::set<Value *> def_set;
-    /// @brief use集
-    std::set<Value *> use_set;
     /**
      * @brief  直接后继节点的Label名称集合
      * @note 添加这个集合的原因：控制流图中有的Label对应的控制流块可能还没初始化，
@@ -62,6 +72,10 @@ public:
     /// @param label 要查找的Label
     /// @return 存在--返回控制流块 不存在--返回nullptr
     Node_CFG * get_CFG_from_label(std::string label);
+
+    /// @brief 获取CFG的节点
+    /// @return 节点表
+    std::vector<Node_CFG *> & get_node_list();
 
 private:
     /// @brief Label到控制流节点的映射表

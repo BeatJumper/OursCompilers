@@ -1,7 +1,6 @@
 #include "CFG.h"
 #include "GotoInstruction.h"
 #include "Instruction.h"
-#include "ILocArm32.h"
 
 ControlFlowGraph::ControlFlowGraph(Function * func)
 {
@@ -81,4 +80,14 @@ void Node_CFG::add_label_for_successor(std::string label)
 std::set<std::string> & Node_CFG::get_son_label_list()
 {
     return son_labels;
+}
+
+std::vector<Node_CFG *> & ControlFlowGraph::get_node_list()
+{
+    return node_list;
+}
+
+std::set<Node_CFG *> & Node_CFG::get_next_nodes()
+{
+    return next_nodes;
 }
