@@ -1,3 +1,4 @@
+int r = 15;
 int main()
 {
     int a;
