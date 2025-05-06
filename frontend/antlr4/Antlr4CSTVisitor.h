@@ -160,4 +160,39 @@ protected:
     /// @return std::any AST的节点
     ///
     std::any visitExpressionStatement(MiniCParser::ExpressionStatementContext * context) override;
+
+    /// @brief 非终结符IfElseStatement的分析
+    /// @param ctx CST上下文
+    /// @return std::any AST的节点
+    std::any visitIfElseStatement(MiniCParser::IfElseStatementContext * ctx) override;
+
+    /// @brief 非终结符WhileStatement的分析
+    /// @param ctx CST上下文
+    /// @return std::any AST的节点
+    std::any visitWhileStatement(MiniCParser::WhileStatementContext * ctx) override;
+
+    /// @brief 非终结符Cond的分析
+    /// @param ctx CST上下文
+    /// @return std::any AST的节点
+    std::any visitCond(MiniCParser::CondContext * ctx) override;
+
+    /// @brief 非终结符RelExp的分析
+    /// @param ctx CST上下文
+    /// @return std::any AST的节点
+    std::any visitRelExp(MiniCParser::RelExpContext * ctx) override;
+
+    /// @brief 非终结符RelOp的分析
+    /// @param ctx CST上下文
+    /// @return std::any AST的节点
+    std::any visitRelOp(MiniCParser::RelOpContext * ctx) override;
+
+    /// @brief 非终结符BreakStatement的分析
+    /// @param ctx CST上下文
+    /// @return std::any AST的节点
+    std::any visitBreakStatement(MiniCParser::BreakStatementContext * ctx) override;
+
+    /// @brief 非终结符ContinueStatement的分析
+    /// @param ctx CST上下文
+    /// @return std::any AST的节点
+    std::any visitContinueStatement(MiniCParser::ContinueStatementContext * ctx) override;
 };

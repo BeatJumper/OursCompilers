@@ -51,6 +51,27 @@ enum class IRInstOperator : std::int8_t {
 
     /* 后续可追加其他的IR指令 */
 
+    /// @brief ==
+    IRINST_OP_EQ,
+
+    /// @brief !=
+    IRINST_OP_NE,
+
+    /// @brief <
+    IRINST_OP_LT,
+
+    /// @brief <=
+    IRINST_OP_LE,
+
+    /// @brief >
+    IRINST_OP_GT,
+
+    /// @brief >=
+    IRINST_OP_GE,
+
+    /// @brief 分支指令
+    IRINST_OP_BRANCH,
+
     /// @brief 最大指令码，也是无效指令
     IRINST_OP_MAX
 };

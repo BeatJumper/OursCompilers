@@ -122,6 +122,21 @@ protected:
     /// @return 成功返回node节点，否则返回nullptr
     ast_node * ir_visit_ast_node(ast_node * node);
 
+    /// @brief 关系表达式AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_rel_exp(ast_node * node);
+
+    /// @brief while语句AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_while(ast_node * node);
+
+    /// @brief if-else语句AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_if_else(ast_node * node);
+
     /// @brief AST的节点操作函数
     typedef bool (IRGenerator::*ast2ir_handler_t)(ast_node *);
 

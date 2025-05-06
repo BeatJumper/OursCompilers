@@ -63,6 +63,34 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitIfElseStatement(MiniCParser::IfElseStatementContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitWhileStatement(MiniCParser::WhileStatementContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitBreakStatement(MiniCParser::BreakStatementContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitContinueStatement(MiniCParser::ContinueStatementContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitCond(MiniCParser::CondContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitRelExp(MiniCParser::RelExpContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitRelOp(MiniCParser::RelOpContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitExpr(MiniCParser::ExprContext *ctx) override {
     return visitChildren(ctx);
   }

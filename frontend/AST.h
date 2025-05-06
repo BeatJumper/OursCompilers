@@ -90,6 +90,35 @@ enum class ast_operator_type : int {
     AST_OP_SUB, //
 
     // TODO 抽象语法树其它内部节点运算符追加
+    /// @brief if
+    AST_OP_IF,
+
+    /// @brief while
+    AST_OP_WHILE,
+
+    /// @brief break
+    AST_OP_BREAK,
+
+    /// @brief continue
+    AST_OP_CONTINUE,
+
+    /// @brief 条件表达式运算符
+    AST_OP_COND,
+
+    /// @brief 关系表达式运算符
+    AST_OP_REL_EXP,
+
+    /// @brief 小于运算符
+    AST_OP_LT,
+
+    /// @brief 大于运算符
+    AST_OP_GT,
+
+    /// @brief 小于等于运算符
+    AST_OP_LE,
+
+    /// @brief 大于等于运算符
+    AST_OP_GE,
 
     /// @brief 最大标识符，表示非法运算符
     AST_OP_MAX,
@@ -280,3 +309,23 @@ ast_node * create_var_decl_stmt_node(type_attr & type, var_id_attr & id);
 /// @return ast_node* 变量声明语句节点
 ///
 ast_node * add_var_decl_node(ast_node * stmt_node, var_id_attr & id);
+
+/// @brief 创建if语句的AST节点
+/// @param cond 条件表达式节点
+/// @param then_stmt then分支语句块
+/// @param else_stmt else分支语句块（可选）
+/// @return 创建的if语句节点
+ast_node * create_if_node(ast_node * cond, ast_node * then_stmt, ast_node * else_stmt = nullptr);
+
+/// @brief 创建while语句的AST节点
+/// @param cond 条件表达式节点
+/// @param body 循环体语句块
+/// @return 创建的while语句节点
+ast_node * create_while_node(ast_node * cond, ast_node * body);
+
+/// @brief 创建条件表达式的AST节点
+/// @param left 左操作数
+/// @param op 关系运算符
+/// @param right 右操作数
+/// @return 创建的条件表达式节点
+ast_node * create_cond_node(ast_node * left, ast_operator_type op, ast_node * right);

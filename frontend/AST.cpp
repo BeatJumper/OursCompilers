@@ -405,3 +405,61 @@ ast_node * add_var_decl_node(ast_node * stmt_node, var_id_attr & id)
 
     return stmt_node;
 }
+
+/// @brief 创建if语句的AST节点
+/// @param cond 条件表达式节点
+/// @param then_stmt then分支语句块
+/// @param else_stmt else分支语句块（可选）
+/// @return 创建的if语句节点
+ast_node * create_if_node(ast_node * cond, ast_node * then_stmt, ast_node * else_stmt)
+{
+    ast_node * if_node = new ast_node(ast_operator_type::AST_OP_IF);
+
+    // 插入条件表达式节点
+    if_node->insert_son_node(cond);
+
+    // 插入then分支
+    if_node->insert_son_node(then_stmt);
+
+    // 插入else分支（如果存在）
+    if (else_stmt) {
+        if_node->insert_son_node(else_stmt);
+    }
+
+    return if_node;
+}
+
+/// @brief 创建while语句的AST节点
+/// @param cond 条件表达式节点
+/// @param body 循环体语句块
+/// @return 创建的while语句节点
+ast_node * create_while_node(ast_node * cond, ast_node * body)
+{
+    ast_node * while_node = new ast_node(ast_operator_type::AST_OP_WHILE);
+
+    // 插入条件表达式节点
+    while_node->insert_son_node(cond);
+
+    // 插入循环体
+    while_node->insert_son_node(body);
+
+    return while_node;
+}
+
+/// @brief 创建条件表达式的AST节点
+/// @param left 左操作数
+/// @param op 关系运算符
+/// @param right 右操作数
+/// @return 创建的条件表达式节点
+ast_node * create_cond_node(ast_node * left, ast_operator_type op, ast_node * right)
+{
+    ast_node * cond_node = new ast_node(op);
+
+    // 插入左操作数
+    cond_node->insert_son_node(left);
+
+    // 插入右操作数
+    cond_node->insert_son_node(right);
+
+    return cond_node;
+}

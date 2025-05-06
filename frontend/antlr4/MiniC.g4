@@ -25,7 +25,7 @@ blockItemList: blockItem+;
 // 每个Item可以是一个语句，或者变量声明语句
 blockItem: statement | varDecl;
 
-// 变量声明，目前不支持变量含有初值
+// 变量声明，目前不支持变量含有初值 现在支持了
 varDecl: basicType varDef (T_COMMA varDef)* T_SEMICOLON;
 
 // 基本类型
@@ -36,10 +36,22 @@ varDef: T_ID (T_ASSIGN expr)?;
 
 // 目前语句支持return和赋值语句
 statement:
-	T_RETURN expr T_SEMICOLON			# returnStatement
-	| lVal T_ASSIGN expr T_SEMICOLON	# assignStatement
-	| block								# blockStatement
-	| expr? T_SEMICOLON					# expressionStatement;
+	T_RETURN expr T_SEMICOLON										# returnStatement
+	| lVal T_ASSIGN expr T_SEMICOLON								# assignStatement
+	| block															# blockStatement
+	| expr? T_SEMICOLON												# expressionStatement
+	| T_IF T_L_PAREN cond T_R_PAREN statement (T_ELSE statement)?	# ifElseStatement
+	| T_WHILE T_L_PAREN cond T_R_PAREN statement					# whileStatement
+	| T_BREAK T_SEMICOLON											# breakStatement
+	| T_CONTINUE T_SEMICOLON										# continueStatement;
+
+cond: relExp;
+
+// 关系表达式
+relExp: addExp (relOp addExp)*;
+
+// 关系运算符
+relOp: T_LT | T_GT | T_LE | T_GE;
 
 // 表达式文法 expr : AddExp 表达式目前只支持加法与减法运算
 expr: addExp;
@@ -76,10 +88,20 @@ T_COMMA: ',';
 T_ADD: '+';
 T_SUB: '-';
 
+T_LT: '<';
+T_GT: '>';
+T_LE: '<=';
+T_GE: '>=';
+
 // 要注意关键字同样也属于T_ID，因此必须放在T_ID的前面，否则会识别成T_ID
 T_RETURN: 'return';
 T_INT: 'int';
 T_VOID: 'void';
+T_IF: 'if';
+T_ELSE: 'else';
+T_WHILE: 'while';
+T_BREAK: 'break';
+T_CONTINUE: 'continue';
 
 T_ID: [a-zA-Z_][a-zA-Z0-9_]*;
 T_DIGIT: '0' | [1-9][0-9]*;

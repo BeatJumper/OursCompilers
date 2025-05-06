@@ -82,6 +82,37 @@ string getNodeName(ast_node * astnode)
             nodeName = "real-params";
             break;
             // TODO 这里追加其它类型的结点，返回对应结点的字符串
+            //第一批添加 关系表达式 控制流语句
+        case ast_operator_type::AST_OP_IF:
+            nodeName = "if";
+            break;
+        case ast_operator_type::AST_OP_WHILE:
+            nodeName = "while";
+            break;
+        case ast_operator_type::AST_OP_BREAK:
+            nodeName = "break";
+            break;
+        case ast_operator_type::AST_OP_CONTINUE:
+            nodeName = "continue";
+            break;
+        case ast_operator_type::AST_OP_COND:
+            nodeName = "cond";
+            break;
+        case ast_operator_type::AST_OP_REL_EXP:
+            nodeName = "rel-exp";
+            break;
+        case ast_operator_type::AST_OP_LT:
+            nodeName = "<";
+            break;
+        case ast_operator_type::AST_OP_GT:
+            nodeName = ">";
+            break;
+        case ast_operator_type::AST_OP_LE:
+            nodeName = "<=";
+            break;
+        case ast_operator_type::AST_OP_GE:
+            nodeName = ">=";
+            break;
 
         default:
             nodeName = "unknown";

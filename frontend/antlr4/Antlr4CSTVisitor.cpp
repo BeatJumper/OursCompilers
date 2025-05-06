@@ -157,16 +157,64 @@ std::any MiniCCSTVisitor::visitBlockItem(MiniCParser::BlockItemContext * ctx)
 /// @param ctx CST上下文
 std::any MiniCCSTVisitor::visitStatement(MiniCParser::StatementContext * ctx)
 {
-    // 识别的文法产生式：statement: T_ID T_ASSIGN expr T_SEMICOLON  # assignStatement
-    // | T_RETURN expr T_SEMICOLON # returnStatement
-    // | block  # blockStatement
-    // | expr ? T_SEMICOLON #expressionStatement;
+    // 识别的文法产生式：
+    /*
+    statement:
+    T_RETURN expr T_SEMICOLON										# returnStatement
+    | lVal T_ASSIGN expr T_SEMICOLON								# assignStatement
+    | block															# blockStatement
+    | expr? T_SEMICOLON												# expressionStatement
+    | T_IF T_L_PAREN cond T_R_PAREN statement (T_ELSE statement)?	# ifElseStatement
+    | T_WHILE T_L_PAREN cond T_R_PAREN statement					# whileStatement
+    | T_BREAK T_SEMICOLON											# breakStatement
+    | T_CONTINUE T_SEMICOLON										# continueStatement;
+    */
+    // 打印当前访问的语句内容（调试用）
+    std::cout << "Visiting statement:" << ctx->getText() << std::endl;
+
+    // 检查是否是 break 语句
+    if (Instanceof(breakCtx, MiniCParser::BreakStatementContext *, ctx)) {
+        std::cout << "Detected break statement" << std::endl;
+        return visitBreakStatement(breakCtx);
+    }
+
+    // 检查是否是 continue 语句
+    if (Instanceof(continueCtx, MiniCParser::ContinueStatementContext *, ctx)) {
+        std::cout << "Detected continue statement" << std::endl;
+        return visitContinueStatement(continueCtx);
+    }
+
+    // 检查是否是赋值语句
     if (Instanceof(assignCtx, MiniCParser::AssignStatementContext *, ctx)) {
         return visitAssignStatement(assignCtx);
-    } else if (Instanceof(returnCtx, MiniCParser::ReturnStatementContext *, ctx)) {
+    }
+
+    // 检查是否是 return 语句
+    if (Instanceof(returnCtx, MiniCParser::ReturnStatementContext *, ctx)) {
         return visitReturnStatement(returnCtx);
     }
 
+    // 检查是否是块语句
+    if (Instanceof(blockCtx, MiniCParser::BlockStatementContext *, ctx)) {
+        return visitBlockStatement(blockCtx);
+    }
+
+    // 检查是否是表达式语句
+    if (Instanceof(exprCtx, MiniCParser::ExpressionStatementContext *, ctx)) {
+        return visitExpressionStatement(exprCtx);
+    }
+
+    // 检查是否是 if-else 语句
+    if (Instanceof(ifElseCtx, MiniCParser::IfElseStatementContext *, ctx)) {
+        return visitIfElseStatement(ifElseCtx);
+    }
+
+    // 检查是否是 while 语句
+    if (Instanceof(whileCtx, MiniCParser::WhileStatementContext *, ctx)) {
+        return visitWhileStatement(whileCtx);
+    }
+
+    // 如果没有匹配的语句类型，返回空指针
     return nullptr;
 }
 
@@ -427,4 +475,98 @@ std::any MiniCCSTVisitor::visitExpressionStatement(MiniCParser::ExpressionStatem
         // 直接返回空指针，需要再把语句加入到语句块时要注意判断，空语句不要加入
         return nullptr;
     }
+}
+
+std::any MiniCCSTVisitor::visitIfElseStatement(MiniCParser::IfElseStatementContext * ctx)
+{
+    // 遍历条件表达式
+    auto condNode = std::any_cast<ast_node *>(visitCond(ctx->cond()));
+
+    // 遍历then分支
+    auto thenNode = std::any_cast<ast_node *>(visitStatement(ctx->statement(0)));
+
+    // 遍历else分支（如果存在）
+    ast_node * elseNode = nullptr;
+    if (ctx->statement().size() > 1) {
+        elseNode = std::any_cast<ast_node *>(visitStatement(ctx->statement(1)));
+    }
+
+    // 创建if语句AST节点
+    return create_if_node(condNode, thenNode, elseNode);
+}
+
+std::any MiniCCSTVisitor::visitWhileStatement(MiniCParser::WhileStatementContext * ctx)
+{
+    // 遍历条件表达式
+    auto condNode = std::any_cast<ast_node *>(visitCond(ctx->cond()));
+
+    // 遍历循环体
+    auto bodyNode = std::any_cast<ast_node *>(visitStatement(ctx->statement()));
+
+    // 创建while语句AST节点
+    return create_while_node(condNode, bodyNode);
+}
+
+std::any MiniCCSTVisitor::visitCond(MiniCParser::CondContext * ctx)
+{
+    // 条件表达式直接是关系表达式
+    return visitRelExp(ctx->relExp());
+}
+
+std::any MiniCCSTVisitor::visitRelExp(MiniCParser::RelExpContext * ctx)
+{
+    // 识别文法产生式：relExp: addExp (relOp addExp)*;
+
+    if (ctx->relOp().empty()) {
+        // 没有关系运算符，直接返回addExp的AST节点
+        return visitAddExp(ctx->addExp(0));
+    }
+
+    ast_node * left = std::any_cast<ast_node *>(visitAddExp(ctx->addExp(0)));
+
+    for (size_t i = 0; i < ctx->relOp().size(); ++i) {
+        // 获取关系运算符
+        auto op = std::any_cast<ast_operator_type>(visitRelOp(ctx->relOp(i)));
+
+        // 获取右操作数
+        auto right = std::any_cast<ast_node *>(visitAddExp(ctx->addExp(i + 1)));
+
+        // 创建条件表达式节点
+        left = create_cond_node(left, op, right);
+    }
+
+    return left;
+}
+
+std::any MiniCCSTVisitor::visitRelOp(MiniCParser::RelOpContext * ctx)
+{
+    if (ctx->T_LT()) {
+        return ast_operator_type::AST_OP_LT; // 小于
+    } else if (ctx->T_GT()) {
+        return ast_operator_type::AST_OP_GT; // 大于
+    } else if (ctx->T_LE()) {
+        return ast_operator_type::AST_OP_LE; // 小于等于
+    } else if (ctx->T_GE()) {
+        return ast_operator_type::AST_OP_GE; // 大于等于
+    }
+
+    return nullptr;
+}
+
+/// @brief 非终结符BreakStatement的分析
+/// @param ctx CST上下文
+/// @return std::any AST的节点
+std::any MiniCCSTVisitor::visitBreakStatement(MiniCParser::BreakStatementContext * ctx)
+{
+    // 创建一个AST_OP_BREAK类型的节点
+    return ast_node::New(ast_operator_type::AST_OP_BREAK, nullptr, ctx->T_BREAK()->getSymbol()->getLine());
+}
+
+/// @brief 非终结符ContinueStatement的分析
+/// @param ctx CST上下文
+/// @return std::any AST的节点
+std::any MiniCCSTVisitor::visitContinueStatement(MiniCParser::ContinueStatementContext * ctx)
+{
+    // 创建一个AST_OP_CONTINUE类型的节点
+    return ast_node::New(ast_operator_type::AST_OP_CONTINUE, nullptr, ctx->T_CONTINUE()->getSymbol()->getLine());
 }

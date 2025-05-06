@@ -33,6 +33,8 @@
 #include "BinaryInstruction.h"
 #include "MoveInstruction.h"
 #include "GotoInstruction.h"
+#include "RelInstruction.h"
+#include "BranchInstruction.h"
 
 /// @brief 构造函数
 /// @param _root AST的根
@@ -48,6 +50,12 @@ IRGenerator::IRGenerator(ast_node * _root, Module * _module) : root(_root), modu
     ast2ir_handlers[ast_operator_type::AST_OP_SUB] = &IRGenerator::ir_sub;
     ast2ir_handlers[ast_operator_type::AST_OP_ADD] = &IRGenerator::ir_add;
 
+    /* 关系表达式运算 */
+    ast2ir_handlers[ast_operator_type::AST_OP_LT] = &IRGenerator::ir_rel_exp;
+    ast2ir_handlers[ast_operator_type::AST_OP_GT] = &IRGenerator::ir_rel_exp;
+    ast2ir_handlers[ast_operator_type::AST_OP_LE] = &IRGenerator::ir_rel_exp;
+    ast2ir_handlers[ast_operator_type::AST_OP_GE] = &IRGenerator::ir_rel_exp;
+
     /* 语句 */
     ast2ir_handlers[ast_operator_type::AST_OP_ASSIGN] = &IRGenerator::ir_assign;
     ast2ir_handlers[ast_operator_type::AST_OP_RETURN] = &IRGenerator::ir_return;
@@ -62,6 +70,12 @@ IRGenerator::IRGenerator(ast_node * _root, Module * _module) : root(_root), modu
     /* 变量定义语句 */
     ast2ir_handlers[ast_operator_type::AST_OP_DECL_STMT] = &IRGenerator::ir_declare_statment;
     ast2ir_handlers[ast_operator_type::AST_OP_VAR_DECL] = &IRGenerator::ir_variable_declare;
+
+    /* while 语句 */
+    ast2ir_handlers[ast_operator_type::AST_OP_WHILE] = &IRGenerator::ir_while;
+
+    /* if-else 语句 */
+    ast2ir_handlers[ast_operator_type::AST_OP_IF] = &IRGenerator::ir_if_else;
 
     /* 语句块 */
     ast2ir_handlers[ast_operator_type::AST_OP_BLOCK] = &IRGenerator::ir_block;
@@ -685,6 +699,183 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
             return false;
         }
     }
+
+    return true;
+}
+
+/// @brief 关系表达式AST节点翻译成线性中间IR
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_rel_exp(ast_node * node)
+{
+    // 确保节点有两个子节点：左操作数和右操作数
+    if (node->sons.size() != 2) {
+        printf("Error: Invalid node structure in ir_rel_exp.\n");
+        return false;
+    }
+
+    // 获取左操作数和右操作数
+    ast_node * leftNode = node->sons[0];
+    ast_node * rightNode = node->sons[1];
+
+    // 递归生成左操作数和右操作数的 IR
+    if (!ir_visit_ast_node(leftNode) || !ir_visit_ast_node(rightNode)) {
+        return false;
+    }
+
+    // 获取操作符类型
+    IRInstOperator op;
+    switch (node->node_type) {
+        case ast_operator_type::AST_OP_LT:
+            op = IRInstOperator::IRINST_OP_LT;
+            break;
+        case ast_operator_type::AST_OP_GT:
+            op = IRInstOperator::IRINST_OP_GT;
+            break;
+        case ast_operator_type::AST_OP_LE:
+            op = IRInstOperator::IRINST_OP_LE;
+            break;
+        case ast_operator_type::AST_OP_GE:
+            op = IRInstOperator::IRINST_OP_GE;
+            break;
+        default:
+            printf("Error: Unsupported operator in ir_rel_exp.\n");
+            return false;
+    }
+
+    // 创建关系表达式指令
+    auto * relInst =
+        new RelInstruction(module->getCurrentFunction(), op, leftNode->val, rightNode->val, IntegerType::getTypeBool());
+
+    // 将指令添加到当前节点的指令块
+    node->blockInsts.addInst(leftNode->blockInsts);
+    node->blockInsts.addInst(rightNode->blockInsts);
+    node->blockInsts.addInst(relInst);
+
+    // 设置当前节点的值为比较指令的结果
+    node->val = relInst;
+
+    return true;
+}
+
+bool IRGenerator::ir_while(ast_node * node)
+{
+    // 确保节点有两个子节点：条件表达式和循环体
+    if (node->sons.size() != 2) {
+        printf("Error: Invalid node structure in ir_while.\n");
+        return false;
+    }
+
+    ast_node * condNode = node->sons[0]; // 条件表达式
+    ast_node * bodyNode = node->sons[1]; // 循环体
+
+    // 获取当前函数
+    Function * currentFunc = module->getCurrentFunction();
+
+    // 创建循环的入口、条件、和退出标签
+    LabelInstruction * entryLabel = new LabelInstruction(currentFunc);
+    LabelInstruction * condLabel = new LabelInstruction(currentFunc);
+    LabelInstruction * bodyLabel = new LabelInstruction(currentFunc);
+    LabelInstruction * exitLabel = new LabelInstruction(currentFunc);
+
+    // 添加入口标签
+    node->blockInsts.addInst(entryLabel);
+
+    // 跳转到条件检查
+    node->blockInsts.addInst(new GotoInstruction(currentFunc, condLabel));
+
+    // 条件检查标签
+    node->blockInsts.addInst(condLabel);
+
+    // 生成条件表达式的 IR
+    if (!ir_visit_ast_node(condNode)) {
+        return false;
+    }
+    node->blockInsts.addInst(condNode->blockInsts);
+
+    // 条件跳转指令：条件为真跳转到循环体，为假跳转到退出标签
+    node->blockInsts.addInst(new BranchInstruction(currentFunc, condNode->val, bodyLabel, exitLabel));
+
+    // 循环体标签
+    node->blockInsts.addInst(bodyLabel);
+
+    // 生成循环体的 IR
+    if (!ir_visit_ast_node(bodyNode)) {
+        return false;
+    }
+    node->blockInsts.addInst(bodyNode->blockInsts);
+
+    // 跳转回条件检查
+    node->blockInsts.addInst(new GotoInstruction(currentFunc, condLabel));
+
+    // 退出标签
+    node->blockInsts.addInst(exitLabel);
+
+    return true;
+}
+
+bool IRGenerator::ir_if_else(ast_node * node)
+{
+    // 确保节点有两个或三个子节点：条件表达式、then分支、（可选的）else分支
+    if (node->sons.size() < 2 || node->sons.size() > 3) {
+        printf("Error: Invalid node structure in ir_if_else.\n");
+        return false;
+    }
+
+    ast_node * condNode = node->sons[0];                                      // 条件表达式
+    ast_node * thenNode = node->sons[1];                                      // then分支
+    ast_node * elseNode = (node->sons.size() == 3) ? node->sons[2] : nullptr; // else分支（可选）
+
+    // 获取当前函数
+    Function * currentFunc = module->getCurrentFunction();
+
+    // 创建条件、then分支、else分支（可选）和结束标签
+    LabelInstruction * condLabel = new LabelInstruction(currentFunc);
+    LabelInstruction * thenLabel = new LabelInstruction(currentFunc);
+    LabelInstruction * elseLabel = elseNode ? new LabelInstruction(currentFunc) : nullptr;
+    LabelInstruction * endLabel = new LabelInstruction(currentFunc);
+
+    // 条件检查标签
+    node->blockInsts.addInst(condLabel);
+
+    // 生成条件表达式的 IR
+    if (!ir_visit_ast_node(condNode)) {
+        return false;
+    }
+    node->blockInsts.addInst(condNode->blockInsts);
+
+    // 条件跳转指令：条件为真跳转到then分支，为假跳转到else分支或结束标签
+    node->blockInsts.addInst(
+        new BranchInstruction(currentFunc, condNode->val, thenLabel, elseLabel ? elseLabel : endLabel));
+
+    // then分支标签
+    node->blockInsts.addInst(thenLabel);
+
+    // 生成then分支的 IR
+    if (!ir_visit_ast_node(thenNode)) {
+        return false;
+    }
+    node->blockInsts.addInst(thenNode->blockInsts);
+
+    // 跳转到结束标签
+    node->blockInsts.addInst(new GotoInstruction(currentFunc, endLabel));
+
+    // else分支标签（如果存在）
+    if (elseNode) {
+        node->blockInsts.addInst(elseLabel);
+
+        // 生成else分支的 IR
+        if (!ir_visit_ast_node(elseNode)) {
+            return false;
+        }
+        node->blockInsts.addInst(elseNode->blockInsts);
+
+        // 跳转到结束标签
+        node->blockInsts.addInst(new GotoInstruction(currentFunc, endLabel));
+    }
+
+    // 结束标签
+    node->blockInsts.addInst(endLabel);
 
     return true;
 }

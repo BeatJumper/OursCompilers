@@ -4,14 +4,13 @@
 	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
 	"version": "0.2.0",
 	"configurations": [
-	
 		{
 			"type": "antlr-debug",
 			"request": "launch",
 			// 调试的名称，可修改
 			"name": "Debug minic Antlr4 Grammar",
 			// 文法解析的输入文件
-			"input": "tests/ClaimWithInitial.c",
+			"input": "tests/Control.c",
 			// 分析树可视化，也就是具体语法树AST
 			"visualParseTree": true,
 			// 文本输出分析树
