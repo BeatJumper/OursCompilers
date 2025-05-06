@@ -19,16 +19,18 @@
 #include <vector>
 
 #include "Function.h"
+#include "IRCode.h"
 #include "Module.h"
 #include "PlatformArm64.h"
 #include "CodeGeneratorArm64.h"
-#include "InstSelectorArm32.h"
+#include "InstSelectorArm64.h"
 #include "SimpleRegisterAllocator.h"
-#include "ILocArm32.h"
+#include "ILocArm64.h"
 #include "RegVariable.h"
 #include "FuncCallInstruction.h"
 #include "ArgInstruction.h"
 #include "MoveInstruction.h"
+#include "Instruction.h"
 
 /// @brief 构造函数
 /// @param tab 符号表
@@ -214,12 +216,66 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     // 这一步是必须的
     adjustFormalParamInsts(func);
 
+    GenBasicBlocks(func);
+
 #if 0
     // 临时输出调整后的IR指令，用于查看当前的寄存器分配、栈内变量分配、实参入栈等信息的正确性
     std::string irCodeStr;
     func->toString(irCodeStr);
     std::cout << irCodeStr << std::endl;
 #endif
+}
+
+/// @brief 划分基本块
+/// @param func 函数指针
+void CodeGeneratorArm64::GenBasicBlocks(Function * func)
+{
+    // 首先获取函数的所有指令
+    std::vector<Instruction *> insts = func->getInterCode().getInsts();
+
+    InterCode * BasicBlock = new InterCode();
+    Instruction * lastInst = nullptr;
+    // 遍历func所有指令
+    for (Instruction * inst: insts) {
+        // 找出所有首指令
+        // 函数入口指令
+        if (inst->getOp() == IRInstOperator::IRINST_OP_ENTRY) {
+             // 如果当前基本块不为空，添加到函数中
+            if (!BasicBlock->getInsts().empty()) {
+                func->addBasicBlock(BasicBlock);
+                BasicBlock = new InterCode();
+            }
+            BasicBlock->addInst(inst);
+        }
+        // 无条件分支指令
+        else if (inst->getOp() == IRInstOperator::IRINST_OP_GOTO) {
+            BasicBlock->addInst(inst);
+            func->addBasicBlock(BasicBlock);
+            BasicBlock->Delete();
+        }
+        // 紧跟在一个条件或无条件转移指令之后的指令
+        else if (lastInst != nullptr && lastInst->getOp() == IRInstOperator::IRINST_OP_GOTO) {
+            // 如果当前基本块不为空，添加到函数中
+            if (!BasicBlock->getInsts().empty()) {
+                func->addBasicBlock(BasicBlock);
+            }
+            BasicBlock->Delete();
+            BasicBlock->addInst(inst);
+        }
+        else {
+            BasicBlock->addInst(inst);
+        }
+        // 记录前一条指令
+        lastInst = inst;
+
+        // 添加最后一个基本块
+		if (!BasicBlock->getInsts().empty()) {
+			func->addBasicBlock(BasicBlock);
+        }
+
+    	// 释放暂存基本块的内存
+        delete BasicBlock;
+    }
 }
 
 /// @brief 寄存器分配前对函数内的指令进行调整，以便方便寄存器分配

@@ -53,7 +53,7 @@ const std::string PlatformArm64::regName[PlatformArm64::maxRegNum] = {
 };
 
 RegVariable * PlatformArm64::intRegVal[PlatformArm64::maxRegNum] = {
-     new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[0], 0),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[0], 0),
     new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[1], 1),
     new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[2], 2),
     new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[3], 3),

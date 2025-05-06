@@ -19,7 +19,7 @@
 
 #include "BitMap.h"
 #include "Value.h"
-#include "PlatformArm32.h"
+#include "PlatformArm64.h"
 
 class SimpleRegisterAllocator {
 
@@ -67,7 +67,7 @@ protected:
     ///
     /// @brief 寄存器位图：1已被占用，0未被使用
     ///
-    BitMap<PlatformArm32::maxUsableRegNum> regBitmap;
+    BitMap<PlatformArm64::maxUsableRegNum> regBitmap;
 
     ///
     /// @brief 寄存器被那个Value占用。按照时间次序加入
@@ -77,5 +77,5 @@ protected:
     ///
     /// @brief 使用过的所有寄存器编号
     ///
-    BitMap<PlatformArm32::maxUsableRegNum> usedBitmap;
+    BitMap<PlatformArm64::maxUsableRegNum> usedBitmap;
 };

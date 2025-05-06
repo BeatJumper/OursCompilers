@@ -1,5 +1,5 @@
 ﻿///
-/// @file ILocArm32.cpp
+/// @file ILocArm64.cpp
 /// @brief 指令序列管理的实现，ILOC的全称为Intermediate Language for Optimizing Compilers
 /// @author zenglj (zenglj@live.com)
 /// @version 1.0
@@ -280,7 +280,6 @@ void ILocArm64::load_imm(int rs_reg_no, int64_t constant)
 /// @brief 加载符号值 ldr r0,=g ldr r0,=.L1
 /// @param rs_reg_no 结果寄存器编号
 /// @param name 符号名
-//TODO
 void ILocArm64::load_symbol(int rs_reg_no, std::string name)
 {
     // adrp 指令加载符号所在页的基地址到指定寄存器
@@ -318,7 +317,7 @@ void ILocArm64::load_base(int rs_reg_no, int base_reg_no, int64_t offset)
     // 内存寻址
     base = "[" + base + "]";
 
-    // ldr x8,[fp,#-16]
+    // ldr x8,[fp,#-8]
     // ldr x8,[fp,x8]
     emit("ldr", rsReg, base);
 }
@@ -353,7 +352,7 @@ void ILocArm64::store_base(int src_reg_no, int base_reg_no, int64_t disp, int tm
     // 内存间接寻址
     base = "[" + base + "]";
 
-    // str x8,[fp,#-16]
+    // str x8,[fp,#-8]
     // str x8,[fp,x9]
     emit("str", PlatformArm64::regName[src_reg_no], base);
 }
@@ -385,7 +384,7 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
 
         if (src_regId != rs_reg_no) {
 
-            // mov x8,x2 | 这里有优化空间——消除r8
+            // mov x8,x2 | 这里有优化空间——消除x8
             emit("mov", PlatformArm64::regName[rs_reg_no], PlatformArm64::regName[src_regId]);
         }
     } else if (Instanceof(globalVar, GlobalVariable *, src_var)) {
@@ -415,7 +414,7 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
         // 对于栈内分配的局部数组，可直接在栈指针上进行移动与运算
         // 但对于形参，其保存的是调用函数栈的数组的地址，需要读取出来
 
-        // ldr x8,[sp,#16]
+        // ldr x8,[sp,#8]
         load_base(rs_reg_no, var_baseRegId, var_offset);
     }
 }
@@ -439,7 +438,7 @@ void ILocArm64::lea_var(int rs_reg_no, Value * var)
         minic_log(LOG_ERROR, "BUG");
     }
 
-    // lea x8, [fp,#-16]
+    // lea x8, [fp,#8]
     leaStack(rs_reg_no, var_baseRegId, var_offset);
 }
 
@@ -490,7 +489,7 @@ void ILocArm64::store_var(int src_reg_no, Value * dest_var, int tmp_reg_no)
         }
 
         // str x8,[x9]
-        // str x8, [fp, # - 16]
+        // str x8, [fp, # - 8]
         store_base(src_reg_no, dest_baseRegId, dest_offset, tmp_reg_no);
     }
 }
@@ -521,15 +520,11 @@ void ILocArm64::leaStack(int rs_reg_no, int base_reg_no, int64_t off)
 /// @param tmp_reg_No
 void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 {
-    // 超过四个的函数调用参数个数，多余4个，则需要栈传值
-    int funcCallArgCnt = func->getMaxFuncCallArgCnt() - 4;
-    if (funcCallArgCnt < 0) {
-        funcCallArgCnt = 0;
-    }
+    // 超过八个的函数调用参数个数，多于8个，则需要栈传值
+    int64_t funcCallArgCnt = int64_t(std::max(func->getMaxFuncCallArgCnt() - 8, 0));
 
     // 计算栈帧大小
-    int off = func->getMaxDep();
-
+    int64_t off = func->getMaxDep();
     off += funcCallArgCnt * 4;
 
     // 不需要在栈内额外分配空间，则什么都不做
@@ -563,7 +558,7 @@ void ILocArm64::call_fun(std::string name)
 void ILocArm64::nop()
 {
     // FIXME 无操作符，要确认是否用nop指令
-    emit("");
+    emit("nop");
 }
 
 ///

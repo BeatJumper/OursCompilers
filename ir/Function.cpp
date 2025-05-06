@@ -333,3 +333,11 @@ void Function::realArgCountReset()
 {
     this->realArgCount = 0;
 }
+
+///
+/// @brief 用于添加基本块
+///
+void Function::addBasicBlock(InterCode * BasicBlock)
+{
+    this->BasicBlocks.push_back(BasicBlock);
+}

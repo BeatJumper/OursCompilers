@@ -170,6 +170,11 @@ public:
     ///
     void realArgCountReset();
 
+    ///
+    /// @brief 用于添加基本块
+    ///
+    void addBasicBlock(InterCode * BasicBlock);
+
 private:
     ///
     /// @brief 函数的返回值类型，有点冗余，可删除，直接从type中取得即可
@@ -190,6 +195,11 @@ private:
     /// @brief 线性IR指令块，可包含多条IR指令
     ///
     InterCode code;
+
+    ///
+    /// @brief 基本块表，可包含多个基本块
+    ///
+	std::vector<InterCode *> BasicBlocks;
 
     ///
     /// @brief 函数内变量的向量表，可能重名，请注意
