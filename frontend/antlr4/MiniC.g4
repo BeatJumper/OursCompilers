@@ -51,7 +51,7 @@ cond: relExp;
 relExp: addExp (relOp addExp)*;
 
 // 关系运算符
-relOp: T_LT | T_GT | T_LE | T_GE;
+relOp: T_LT | T_GT | T_LE | T_GE | T_EQ | T_NE;
 
 // 表达式文法 expr : AddExp 表达式目前只支持加法与减法运算
 expr: addExp;
@@ -92,6 +92,8 @@ T_LT: '<';
 T_GT: '>';
 T_LE: '<=';
 T_GE: '>=';
+T_EQ: '==';
+T_NE: '!=';
 
 // 要注意关键字同样也属于T_ID，因此必须放在T_ID的前面，否则会识别成T_ID
 T_RETURN: 'return';

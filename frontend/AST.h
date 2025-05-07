@@ -105,7 +105,7 @@ enum class ast_operator_type : int {
     /// @brief 条件表达式运算符
     AST_OP_COND,
 
-    /// @brief 关系表达式运算符
+    /// @brief 关系表达式运算符，这个节点貌似废弃了
     AST_OP_REL_EXP,
 
     /// @brief 小于运算符
@@ -119,6 +119,12 @@ enum class ast_operator_type : int {
 
     /// @brief 大于等于运算符
     AST_OP_GE,
+
+    /// @brief ==
+    AST_OP_EQ,
+
+    /// @brief !=
+    AST_OP_NE,
 
     /// @brief 最大标识符，表示非法运算符
     AST_OP_MAX,

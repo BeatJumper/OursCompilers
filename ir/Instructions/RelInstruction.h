@@ -19,7 +19,7 @@ class RelInstruction : public Instruction {
 public:
     /// @brief 构造函数
     /// @param _func 所属函数
-    /// @param _op 操作符（如 <, <=, >, >=）
+    /// @param _op 操作符（如==, != <, <=, >, >=）
     /// @param _srcVal1 左操作数
     /// @param _srcVal2 右操作数
     /// @param _type 结果类型（通常为布尔类型 i1）

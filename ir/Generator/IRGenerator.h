@@ -17,6 +17,8 @@
 #pragma once
 
 #include <unordered_map>
+#include <stack>
+#include <LabelInstruction.h>
 
 #include "AST.h"
 #include "Module.h"
@@ -137,6 +139,16 @@ protected:
     /// @return 翻译是否成功，true：成功，false：失败
     bool ir_if_else(ast_node * node);
 
+    /// @brief break语句AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_break(ast_node * node);
+
+    /// @brief continue语句AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_continue(ast_node * node);
+
     /// @brief AST的节点操作函数
     typedef bool (IRGenerator::*ast2ir_handler_t)(ast_node *);
 
@@ -149,4 +161,11 @@ private:
 
     /// @brief 符号表:模块
     Module * module;
+
+    /// @brief 循环标签栈，为了break/continue语句服务
+    struct LoopLabels {
+        LabelInstruction * condLabel;
+        LabelInstruction * exitLabel;
+    };
+    std::stack<LoopLabels> loopLabelStack;
 };

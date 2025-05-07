@@ -98,7 +98,7 @@ string getNodeName(ast_node * astnode)
         case ast_operator_type::AST_OP_COND:
             nodeName = "cond";
             break;
-        case ast_operator_type::AST_OP_REL_EXP:
+        case ast_operator_type::AST_OP_REL_EXP: //这个分支貌似废弃了
             nodeName = "rel-exp";
             break;
         case ast_operator_type::AST_OP_LT:
@@ -112,6 +112,12 @@ string getNodeName(ast_node * astnode)
             break;
         case ast_operator_type::AST_OP_GE:
             nodeName = ">=";
+            break;
+        case ast_operator_type::AST_OP_EQ:
+            nodeName = "==";
+            break;
+        case ast_operator_type::AST_OP_NE:
+            nodeName = "!=";
             break;
 
         default:

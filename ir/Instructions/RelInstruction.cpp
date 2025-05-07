@@ -41,6 +41,12 @@ void RelInstruction::toString(std::string & str)
         case IRInstOperator::IRINST_OP_GE:
             str = getIRName() + " = cmp ge " + left->getIRName() + ", " + right->getIRName();
             break;
+        case IRInstOperator::IRINST_OP_EQ:
+            str = getIRName() + " = cmp eq " + left->getIRName() + ", " + right->getIRName();
+            break;
+        case IRInstOperator::IRINST_OP_NE:
+            str = getIRName() + " = cmp ne " + left->getIRName() + ", " + right->getIRName();
+            break;
         default:
             str = "unknown rel instruction";
             break;

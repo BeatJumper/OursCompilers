@@ -548,6 +548,10 @@ std::any MiniCCSTVisitor::visitRelOp(MiniCParser::RelOpContext * ctx)
         return ast_operator_type::AST_OP_LE; // 小于等于
     } else if (ctx->T_GE()) {
         return ast_operator_type::AST_OP_GE; // 大于等于
+    } else if (ctx->T_EQ()) {
+        return ast_operator_type::AST_OP_EQ; // 等于
+    } else if (ctx->T_NE()) {
+        return ast_operator_type::AST_OP_NE; // 不等于
     }
 
     return nullptr;

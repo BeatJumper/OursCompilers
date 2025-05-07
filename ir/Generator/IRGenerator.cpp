@@ -55,6 +55,8 @@ IRGenerator::IRGenerator(ast_node * _root, Module * _module) : root(_root), modu
     ast2ir_handlers[ast_operator_type::AST_OP_GT] = &IRGenerator::ir_rel_exp;
     ast2ir_handlers[ast_operator_type::AST_OP_LE] = &IRGenerator::ir_rel_exp;
     ast2ir_handlers[ast_operator_type::AST_OP_GE] = &IRGenerator::ir_rel_exp;
+    ast2ir_handlers[ast_operator_type::AST_OP_EQ] = &IRGenerator::ir_rel_exp;
+    ast2ir_handlers[ast_operator_type::AST_OP_NE] = &IRGenerator::ir_rel_exp;
 
     /* 语句 */
     ast2ir_handlers[ast_operator_type::AST_OP_ASSIGN] = &IRGenerator::ir_assign;
@@ -76,6 +78,10 @@ IRGenerator::IRGenerator(ast_node * _root, Module * _module) : root(_root), modu
 
     /* if-else 语句 */
     ast2ir_handlers[ast_operator_type::AST_OP_IF] = &IRGenerator::ir_if_else;
+
+    /* break, continune */
+    ast2ir_handlers[ast_operator_type::AST_OP_BREAK] = &IRGenerator::ir_break;
+    ast2ir_handlers[ast_operator_type::AST_OP_CONTINUE] = &IRGenerator::ir_continue;
 
     /* 语句块 */
     ast2ir_handlers[ast_operator_type::AST_OP_BLOCK] = &IRGenerator::ir_block;
@@ -738,6 +744,12 @@ bool IRGenerator::ir_rel_exp(ast_node * node)
         case ast_operator_type::AST_OP_GE:
             op = IRInstOperator::IRINST_OP_GE;
             break;
+        case ast_operator_type::AST_OP_EQ:
+            op = IRInstOperator::IRINST_OP_EQ;
+            break;
+        case ast_operator_type::AST_OP_NE:
+            op = IRInstOperator::IRINST_OP_NE;
+            break;
         default:
             printf("Error: Unsupported operator in ir_rel_exp.\n");
             return false;
@@ -778,6 +790,9 @@ bool IRGenerator::ir_while(ast_node * node)
     LabelInstruction * bodyLabel = new LabelInstruction(currentFunc);
     LabelInstruction * exitLabel = new LabelInstruction(currentFunc);
 
+    // 条件检查标签和推出标签压栈
+    loopLabelStack.push({condLabel, exitLabel});
+
     // 添加入口标签
     node->blockInsts.addInst(entryLabel);
 
@@ -810,6 +825,9 @@ bool IRGenerator::ir_while(ast_node * node)
 
     // 退出标签
     node->blockInsts.addInst(exitLabel);
+
+    // 弹出循环标签栈
+    loopLabelStack.pop();
 
     return true;
 }
@@ -876,6 +894,38 @@ bool IRGenerator::ir_if_else(ast_node * node)
 
     // 结束标签
     node->blockInsts.addInst(endLabel);
+
+    return true;
+}
+
+bool IRGenerator::ir_break(ast_node * node)
+{
+    if (loopLabelStack.empty()) {
+        printf("Error: break statement not inside a loop.\n");
+        return false;
+    }
+
+    // 获取当前循环的退出标签
+    LabelInstruction * exitLabel = loopLabelStack.top().exitLabel;
+
+    // 生成跳转到退出标签的指令
+    node->blockInsts.addInst(new GotoInstruction(module->getCurrentFunction(), exitLabel));
+
+    return true;
+}
+
+bool IRGenerator::ir_continue(ast_node * node)
+{
+    if (loopLabelStack.empty()) {
+        printf("Error: continue statement not inside a loop.\n");
+        return false;
+    }
+
+    // 获取当前循环的条件检查标签
+    LabelInstruction * condLabel = loopLabelStack.top().condLabel;
+
+    // 生成跳转到条件检查标签的指令
+    node->blockInsts.addInst(new GotoInstruction(module->getCurrentFunction(), condLabel));
 
     return true;
 }
