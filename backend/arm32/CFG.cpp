@@ -1,6 +1,7 @@
-#include "CFG.h"
 #include "GotoInstruction.h"
 #include "Instruction.h"
+#include "Liveness.h"
+#include <cassert>
 
 ControlFlowGraph::ControlFlowGraph(Function * func)
 {
@@ -23,28 +24,22 @@ ControlFlowGraph::ControlFlowGraph(Function * func)
 Node_CFG::Node_CFG(ControlFlowGraph * _graph, InterCode & BasicIRBlock)
 {
     for (Instruction * inst: (BasicIRBlock.getCode())) {
-        // TODO 还需要添加条件跳转指令（前端还没有条件跳转指令的实现）
+        // TODO 还需要添加条件跳转指令
+
+        // 添加语句对应的数据流节点
+        dataflow_list.push_back(new Node_Dataflow(inst));
         switch (inst->getOp()) {
-            case IRInstOperator::IRINST_OP_GOTO:
+            case IRInstOperator::IRINST_OP_GOTO: {
                 // 无条件跳转指令的目标Label名
                 std::string target_label = ((GotoInstruction *) inst)->getTarget()->getIRName();
                 // 记录子节点Label名
                 add_label_for_successor(target_label);
                 break;
+            }
             case IRInstOperator::IRINST_OP_LABEL:
                 //检测控制流的Label并贴上
                 std::string label = ((LabelInstruction *) inst)->getIRName();
                 _graph->add_label_for_CFG(label, this);
-                break;
-            default:
-                //对于其它节点，相当于发生了一次计算，所以统计计算的def和use
-                def_set.insert(inst);
-                for (auto usee: inst->getOperandsValue()) {
-                    if (def_set.count(usee) == 0) {
-                        // use集中不能包含刚刚def的元素
-                        use_set.insert(usee);
-                    }
-                }
                 break;
         }
     }
@@ -52,17 +47,11 @@ Node_CFG::Node_CFG(ControlFlowGraph * _graph, InterCode & BasicIRBlock)
 
 void Node_CFG::add_successor(Node_CFG * successor)
 {
-    next_nodes.insert(successor);
-}
-
-bool ControlFlowGraph::add_label_for_CFG(std::string label, Node_CFG * node)
-{
-    if (LabelToNodeCFG.find(label) != LabelToNodeCFG.end()) {
-        // 如果该Label已经被使用则粘贴失败
-        return false;
+    if (next_nodes[0]) {
+        next_nodes[1] = successor;
+    } else {
+        next_nodes[0] = successor;
     }
-    LabelToNodeCFG[label] = node;
-    return true;
 }
 
 Node_CFG * ControlFlowGraph::get_CFG_from_label(std::string label)
@@ -72,6 +61,7 @@ Node_CFG * ControlFlowGraph::get_CFG_from_label(std::string label)
     }
     return nullptr;
 }
+
 void Node_CFG::add_label_for_successor(std::string label)
 {
     son_labels.insert(label);
@@ -87,7 +77,28 @@ std::vector<Node_CFG *> & ControlFlowGraph::get_node_list()
     return node_list;
 }
 
-std::set<Node_CFG *> & Node_CFG::get_next_nodes()
+Node_CFG ** Node_CFG::get_next_nodes()
 {
     return next_nodes;
+}
+
+Node_Dataflow::Node_Dataflow(Instruction * _inst) : inst(_inst)
+{
+    def_set.insert(inst);
+    for (auto usee: inst->getOperandsValue()) {
+        if (def_set.count(usee) == 0) {
+            // use集中不能包含刚刚def的元素
+            use_set.insert(usee);
+        }
+    }
+}
+
+std::vector<Node_Dataflow *> & Node_CFG::get_dataflow_list()
+{
+    return dataflow_list;
+}
+
+std::set<Value *> & ControlFlowGraph::get_value_list()
+{
+    return value_list;
 }

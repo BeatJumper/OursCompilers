@@ -4,6 +4,11 @@
 
 #include "Function.h"
 
+class Node_CFG;
+class ControlFlowGraph;
+class Node_Dataflow;
+
+/// @brief 控制流图中的节点
 class Node_CFG {
 public:
     /// @brief 构造函数
@@ -28,31 +33,31 @@ public:
 
     /// @brief 获取子节点列表
     /// @return 基本块的子节点列表
-    std::set<Node_CFG *> & get_next_nodes();
+    Node_CFG ** get_next_nodes();
 
-    /// @brief 活跃变量分析
-    std::set<Value *> liveIN;
-    /// @brief 活跃变量分析
-    std::set<Value *> liveOUT;
+    /// @brief dataflow_list的getter
+    /// @return 基本块内的数据流语句清单
+    std::vector<Node_Dataflow *> & get_dataflow_list();
 
-    /// @brief def集
-    std::set<Value *> def_set;
-    /// @brief use集
-    std::set<Value *> use_set;
+    // 定义友元函数，使其直接能访问private
+    friend void LiveVariableAnalysis(ControlFlowGraph * _graph);
 
 private:
-    /// @brief 节点对应的基本块编号
-    int no;
+    /// @brief 一个基本块最多有2个后继
+    static const int MAX_NUM_OF_SON = 2;
     /// @brief 节点自己的邻接表
-    std::set<Node_CFG *> next_nodes;
+    Node_CFG * next_nodes[MAX_NUM_OF_SON] = {nullptr, nullptr};
     /**
      * @brief  直接后继节点的Label名称集合
      * @note 添加这个集合的原因：控制流图中有的Label对应的控制流块可能还没初始化，
      * 此时无法正确把Label转为控制流块，只能等到所有块初始化好后再进行Label转换。
      */
     std::set<std::string> son_labels;
+    /// @brief 基本块内所有IR语句的列表（包含数据流信息）
+    std::vector<Node_Dataflow *> dataflow_list;
 };
 
+/// @brief 控制流图
 class ControlFlowGraph {
 public:
     /// @brief 构造函数
@@ -77,9 +82,35 @@ public:
     /// @return 节点表
     std::vector<Node_CFG *> & get_node_list();
 
+    /// @brief Value表的getter
+    /// @return Value表
+    std::set<Value *> & get_value_list();
+
 private:
     /// @brief Label到控制流节点的映射表
     std::map<std::string, Node_CFG *> LabelToNodeCFG;
     /// @brief 控制流图中的节点列表
     std::vector<Node_CFG *> node_list;
+    /// @brief 控制流图中出现过的所有Value
+    std::set<Value *> value_list;
+};
+
+/// @brief IR语句对应的数据流
+struct Node_Dataflow {
+public:
+    /// @brief 构造函数
+    /// @param _inst 原始IR语句
+    Node_Dataflow(Instruction * _inst);
+    /// @brief 析构函数
+    ~Node_Dataflow();
+    /// @brief 活跃变量分析
+    std::set<Value *> liveIN;
+    /// @brief 活跃变量分析
+    std::set<Value *> liveOUT;
+    /// @brief 对应的原始IR语句
+    Instruction * inst;
+    /// @brief def集
+    std::set<Value *> def_set;
+    /// @brief use集
+    std::set<Value *> use_set;
 };
