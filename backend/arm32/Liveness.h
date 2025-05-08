@@ -34,30 +34,3 @@ bool merge_set(std::set<T> & a, std::set<T> & b);
 template <typename T>
 std::set<T> set_difference(std::set<T> & a, std::set<T> & b);
 
-/// @brief 干涉图的节点
-struct node_IG {
-    /// @brief 干涉图节点对应的Value
-    Value * val;
-    /// @brief 干涉图节点的邻接表
-    std::set<node_IG *> neighbors;
-    /// @brief 构造函数
-    /// @param _val 节点对应的Value
-    node_IG(Value * _val);
-    /// @brief 给干涉图节点添加邻居
-    /// @param neighbor 邻居的指针
-    void add_neighbor(node_IG * neighbor);
-};
-/// @brief 干涉图
-struct InterferenceGraph {
-    /// @brief 干涉图中的节点列表
-    std::vector<node_IG *> node_list;
-    /// @brief 干涉图中添加一条无向边
-    /// @param node1 干涉图的一个节点
-    /// @param node2 干涉图的另一个节点
-    static void add_edge(node_IG * node1, node_IG * node2);
-    /// @brief 对一个活跃分析后的控制流图创建干涉图
-    /// @param graph 控制流图
-    InterferenceGraph(ControlFlowGraph * graph);
-    /// @brief 析构函数
-    ~InterferenceGraph();
-};
