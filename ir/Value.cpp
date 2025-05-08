@@ -46,7 +46,9 @@ std::string Value::getName() const
 ///
 void Value::setName(std::string _name)
 {
+    printf("setName开始执行\n");
     this->name = _name;
+    printf("setName执行成功\n");
 }
 
 /// @brief 获取名字

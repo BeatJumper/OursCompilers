@@ -21,6 +21,7 @@
 #include "GlobalValue.h"
 #include "FunctionType.h"
 #include "FormalParam.h"
+#include "Instruction.h"
 #include "LocalVariable.h"
 #include "MemVariable.h"
 #include "IRCode.h"

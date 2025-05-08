@@ -41,6 +41,15 @@ void InterCode::addInst(Instruction * inst)
     code.push_back(inst);
 }
 
+///
+/// @brief 删除容器内所有中间指令
+/// @param inst IR指令
+///
+void InterCode::deleteInst()
+{
+    code.clear();
+}
+
 /// @brief 获取指令序列
 /// @return 指令序列
 std::vector<Instruction *> & InterCode::getInsts()

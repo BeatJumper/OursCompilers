@@ -76,6 +76,10 @@ void InstSelectorArm64::run()
 /// @param inst IR指令
 void InstSelectorArm64::translate(Instruction * inst)
 {
+    if (inst == nullptr) {
+        printf("Error: inst is nullptr!\n");
+        return;
+    }
     // 操作符
     IRInstOperator op = inst->getOp();
 
@@ -439,7 +443,7 @@ void InstSelectorArm64::translate_arg(Instruction * inst)
             minic_log(LOG_ERROR, "第%d个ARG指令对象不是SP寄存器寻址", argCount + 1);
         } else {
             // 计算栈偏移
-            int64_t offset = (realArgCount - 8) * 8;
+            int64_t offset = (realArgCount - 8) * int64_t(8);
             // 生成将源操作数存储到栈上的指令
             iloc.store_base(regId, ARM64_SP_REG_NO, offset, -1);
         }

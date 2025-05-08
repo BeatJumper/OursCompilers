@@ -29,7 +29,7 @@ public:
     ///
     enum TypeID {
         // PrimitiveTypes
-        FloatTyID, ///< 32-bit floating point type
+        FloatTyID, ///< 64-bit floating point type
         VoidTyID,  ///< type with no size
         LabelTyID, ///< Labels
         TokenTyID, ///< Tokens
@@ -162,7 +162,7 @@ public:
 
     ///
     /// @brief 获得类型所占内存空间大小
-    /// @return int32_t
+    /// @return int64_t
     ///
     [[nodiscard]] virtual int32_t getSize() const
     {

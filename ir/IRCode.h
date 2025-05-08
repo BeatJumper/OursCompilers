@@ -42,6 +42,10 @@ public:
     /// @param inst IR指令
     void addInst(Instruction * inst);
 
+	/// @brief 删除一条中间指令
+	/// @param inst IR指令
+	void deleteInst();
+
     /// @brief 获取指令序列
     /// @return 指令序列
     std::vector<Instruction *> & getInsts();
