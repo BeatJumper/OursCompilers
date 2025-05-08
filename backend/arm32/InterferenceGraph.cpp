@@ -73,6 +73,27 @@ InterferenceGraph::InterferenceGraph(ControlFlowGraph * graph)
     }
 }
 
+void InterferenceGraph::flush_all_color()
+{
+    for (node_IG * node: node_set) {
+        node->color = 0;
+    }
+}
+
+static int least_color_for_node(node_IG * node, int color_size)
+{
+    std::vector<bool> used(color_size + 1, false);
+    for (node_IG * neighbor: node->neighbors) {
+        used[neighbor->color] = true;
+    }
+    for (int color = 1; color <= color_size; color++) {
+        if (!used[color]) {
+            return color;
+        }
+    }
+    return 0;
+}
+
 static bool welsh_powell(InterferenceGraph * graph, int color_size)
 {
     std::vector<node_IG *> remain_nodes(graph->node_set.begin(), graph->node_set.end());
@@ -86,16 +107,9 @@ static bool welsh_powell(InterferenceGraph * graph, int color_size)
     // 按照某序列依次给每个节点染上目前能染的最小编号颜色
     // 时间复杂度：O(m + n * min(c,n))，m为边数，c为颜色数，n为节点数
     for (node_IG * node: remain_nodes) {
-        std::vector<bool> used(color_size + 1, false);
-        for (node_IG * neighbor: node->neighbors) {
-            used[neighbor->color] = true;
-        }
-        for (int color = 1; color <= color_size; color++) {
-            if (!used[color]) {
-                node->color = color;
-                break;
-            }
-        }
+
+        // 尝试染上目前能染的最小编号颜色
+        node->color = least_color_for_node(node, color_size);
 
         // 中途有某个节点无颜色可用，则染色失败
         if (node->color == 0) {
@@ -128,6 +142,7 @@ static bool backtrack_color(InterferenceGraph * graph, int color_size, std::set<
             iter--;
         }
     }
+    node->color = 0;
     return false;
 }
 
@@ -154,4 +169,19 @@ bool InterferenceGraph::color_graph(InterferenceGraph * graph, int color_size)
             suc = backtrack_color(graph, color_size, graph->node_set.begin());
             break;
     }
+
+    while (!removed_nodes.empty()) {
+        node_IG * node = removed_nodes.top();
+        removed_nodes.pop();
+        graph->restore_node(node);
+        if (suc) {
+            node->color = least_color_for_node(node, color_size);
+        }
+    }
+
+    if (!suc) {
+        graph->flush_all_color();
+    }
+
+    return suc;
 }

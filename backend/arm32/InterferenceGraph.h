@@ -35,6 +35,8 @@ struct InterferenceGraph {
     /// @brief 恢复 remove_node 删除的节点
     /// @param node 要恢复的节点
     void restore_node(node_IG * node);
+    /// @brief 擦除图中所有颜色
+    void flush_all_color();
     /// @brief 对一个活跃分析后的控制流图创建干涉图
     /// @param graph 控制流图
     InterferenceGraph(ControlFlowGraph * graph);
@@ -50,6 +52,12 @@ struct InterferenceGraph {
     /// @brief 目前选择的染色算法（默认是WELSH_POWELL算法）
     static const color_method method_chosen = color_method::WELSH_POWELL;
 };
+
+/// @brief 对一个干涉图节点，寻找其目前能染的编号最小的颜色
+/// @param node 干涉图节点
+/// @param color_size 所有颜色总个数（假设颜色编号1~color_size)
+/// @return 寻找到的最小颜色（找不到则返回0）
+static int least_color_for_node(node_IG * node, int color_size);
 
 /// @brief Welsh-Powell算法
 /// @param graph 要染色的图
