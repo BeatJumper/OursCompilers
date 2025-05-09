@@ -525,7 +525,7 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 
     // 计算栈帧大小
     int64_t off = func->getMaxDep();
-    off += funcCallArgCnt * 4;
+    off += funcCallArgCnt * 8;
 
     // 不需要在栈内额外分配空间，则什么都不做
     if (0 == off)
@@ -535,10 +535,10 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
         // sub sp,sp,#16
         emit("sub", "sp", "sp", toStr(off));
     } else {
-        // ldr r8,=257
+        // ldr x8,=257
         load_imm(tmp_reg_no, off);
 
-        // sub sp,sp,r8
+        // sub sp,sp,x8
         emit("sub", "sp", "sp", PlatformArm64::regName[tmp_reg_no]);
     }
 

@@ -92,6 +92,54 @@ protected:
     void translate_arg(Instruction * inst);
 
     ///
+    /// @brief 关系比较指令翻译成ARM64汇编
+    /// @param inst
+    ///
+    void translate_rel(Instruction * inst, IRInstOperator op);
+
+    ///
+    /// @brief 关系比较指令：[等于]翻译成ARM64汇编
+    /// @param inst
+    ///
+    void translate_eq(Instruction * inst);
+
+    ///
+	/// @brief [不等于]关系操作符翻译成ARM64汇编
+	/// @param inst
+	///
+    void translate_ne(Instruction * inst);
+
+    ///
+	/// @brief [大于]关系操作符翻译成ARM64汇编
+	/// @param inst
+	///
+    void translate_gt(Instruction * inst);
+
+    ///
+	/// @brief [小于]关系操作符翻译成ARM64汇编
+	/// @param inst
+	///
+    void translate_lt(Instruction * inst);
+
+    ///
+	/// @brief [大于等于]关系操作符翻译成ARM64汇编
+	/// @param inst
+	///
+    void translate_ge(Instruction * inst);
+
+    ///
+	/// @brief [小于等于]关系操作符翻译成ARM64汇编
+	/// @param inst
+	///
+	void translate_le(Instruction * inst);
+
+    ///
+	/// @brief 分支指令翻译成ARM64汇编
+	/// @param inst
+	///
+	void translate_br(Instruction * inst);
+
+    ///
     /// @brief 输出IR指令
     ///
     void outputIRInstruction(Instruction * inst);

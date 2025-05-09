@@ -13,11 +13,13 @@
 /// <tr><td>2024-11-21 <td>1.0     <td>zenglj  <td>新做
 /// </table>
 ///
+#include <cstdint>
 #include <cstdio>
 
 #include "Common.h"
 #include "ILocArm64.h"
 #include "InstSelectorArm64.h"
+#include "Instruction.h"
 #include "PlatformArm64.h"
 
 #include "PointerType.h"
@@ -52,6 +54,15 @@ InstSelectorArm64::InstSelectorArm64(vector<Instruction *> & _irCode,
 
     translator_handlers[IRInstOperator::IRINST_OP_FUNC_CALL] = &InstSelectorArm64::translate_call;
     translator_handlers[IRInstOperator::IRINST_OP_ARG] = &InstSelectorArm64::translate_arg;
+
+    translator_handlers[IRInstOperator::IRINST_OP_EQ] = &InstSelectorArm64::translate_eq;
+    translator_handlers[IRInstOperator::IRINST_OP_NE] = &InstSelectorArm64::translate_ne;
+    translator_handlers[IRInstOperator::IRINST_OP_GT] = &InstSelectorArm64::translate_gt;
+    translator_handlers[IRInstOperator::IRINST_OP_LT] = &InstSelectorArm64::translate_lt;
+    translator_handlers[IRInstOperator::IRINST_OP_GE] = &InstSelectorArm64::translate_ge;
+    translator_handlers[IRInstOperator::IRINST_OP_LE] = &InstSelectorArm64::translate_le;
+
+    translator_handlers[IRInstOperator::IRINST_OP_BR] = &InstSelectorArm64::translate_br;
 }
 
 ///
@@ -450,4 +461,147 @@ void InstSelectorArm64::translate_arg(Instruction * inst)
     }
 
     realArgCount++;
+}
+
+///
+/// @brief 关系比较指令翻译成ARM64汇编
+/// @param inst
+///
+void InstSelectorArm64::translate_rel(Instruction * inst, IRInstOperator op)
+{
+    // 获取该条指令的操作数
+	Value * arg1 = inst->getOperand(0);
+    Value * arg2 = inst->getOperand(1);
+
+	// 获得分配的寄存器编号
+    int32_t arg1_reg_no = arg1->getRegId();
+    int32_t arg2_reg_no = arg2->getRegId();
+
+	if (arg1_reg_no == -1) {
+        // 如果操作数arg1不是寄存器，分配一个寄存器并加载值
+        int32_t load_arg1_reg_no = simpleRegisterAllocator.Allocate(arg1);
+        iloc.load_var(load_arg1_reg_no, arg1);
+        arg1_reg_no = load_arg1_reg_no;
+    }
+    if (arg2_reg_no == -1) {
+        // 如果操作数arg2不是寄存器，分配一个寄存器并加载值
+        int32_t load_arg2_reg_no = simpleRegisterAllocator.Allocate(arg2);
+        iloc.load_var(load_arg2_reg_no, arg2);
+        arg1_reg_no = load_arg2_reg_no;
+    }
+
+	iloc.inst("cmp", PlatformArm64::regName[arg1_reg_no], PlatformArm64::regName[arg2_reg_no]);
+}
+
+///
+/// @brief [等于]关系操作符翻译成ARM64汇编
+/// @param inst
+///
+void InstSelectorArm64::translate_eq(Instruction * inst)
+{
+    IRInstOperator op = inst->getOp();
+    if (op == IRInstOperator::IRINST_OP_EQ) {
+        translate_rel(inst, op);
+    } else {
+        minic_log(LOG_ERROR, "操作码错误");
+	}
+}
+
+///
+/// @brief [不等于]关系操作符翻译成ARM64汇编
+/// @param inst
+///
+void InstSelectorArm64::translate_ne(Instruction * inst)
+{
+    IRInstOperator op = inst->getOp();
+    if (op == IRInstOperator::IRINST_OP_NE) {
+        translate_rel(inst, op);
+    } else {
+        minic_log(LOG_ERROR, "操作码错误");
+	}
+}
+
+///
+/// @brief [大于]关系操作符翻译成ARM64汇编
+/// @param inst
+///
+void InstSelectorArm64::translate_gt(Instruction * inst)
+{
+    IRInstOperator op = inst->getOp();
+    if (op == IRInstOperator::IRINST_OP_GT) {
+        translate_rel(inst, op);
+    } else {
+        minic_log(LOG_ERROR, "操作码错误");
+	}
+}
+
+///
+/// @brief [小于]关系操作符翻译成ARM64汇编
+/// @param inst
+///
+void InstSelectorArm64::translate_lt(Instruction * inst)
+{
+    IRInstOperator op = inst->getOp();
+    if (op == IRInstOperator::IRINST_OP_LT) {
+        translate_rel(inst, op);
+    } else {
+        minic_log(LOG_ERROR, "操作码错误");
+	}
+}
+
+///
+/// @brief [大于等于]关系操作符翻译成ARM64汇编
+/// @param inst
+///
+void InstSelectorArm64::translate_ge(Instruction * inst)
+{
+    IRInstOperator op = inst->getOp();
+    if (op == IRInstOperator::IRINST_OP_GE) {
+        translate_rel(inst, op);
+    } else {
+        minic_log(LOG_ERROR, "操作码错误");
+	}
+}
+
+///
+/// @brief [小于等于]关系操作符翻译成ARM64汇编
+/// @param inst
+///
+void InstSelectorArm64::translate_le(Instruction * inst)
+{
+    IRInstOperator op = inst->getOp();
+    if (op == IRInstOperator::IRINST_OP_LE) {
+        translate_rel(inst, op);
+    } else {
+        minic_log(LOG_ERROR, "操作码错误");
+	}
+}
+
+///
+/// @brief 条件分支指令翻译成ARM64汇编
+/// @param inst
+///
+void InstSelectorArm64::translate_br(Instruction * inst)
+{
+    // br i1 <cond>, label <iftrue>, label <iffalse>
+    // 获取条件操作数
+    Value * cond = inst->getOperand(0);
+
+    // 获取不同分支的标签
+    LabelInstruction * iftrue = dynamic_cast<LabelInstruction *>(inst->getOperand(1));
+    LabelInstruction * iffalse = dynamic_cast<LabelInstruction *>(inst->getOperand(2));
+
+    // 获取条件操作数分配的寄存器号
+    int32_t cond_reg_no = cond->getRegId();
+
+    if (cond_reg_no == -1) {
+        // 如果不是寄存器变量，分配一个寄存器
+        int32_t load_cond_reg_no = simpleRegisterAllocator.Allocate(cond);
+        iloc.load_var(load_cond_reg_no, cond);
+        cond_reg_no = load_cond_reg_no;
+    }
+
+    iloc.inst("cmp", PlatformArm64::regName[cond_reg_no], "#0"); // 判断条件是否为0
+	iloc.inst("b.ne", iftrue->getName()); // 条件不为0，跳转到iftrue标签
+    iloc.inst("b", iffalse->getName());   // 条件为0,跳转到iffalse标签
 }

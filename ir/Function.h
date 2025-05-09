@@ -223,7 +223,7 @@ private:
     LocalVariable * returnValue = nullptr;
 
     ///
-    /// @brief 由于局部变量、前4个形参需站内空间分配而导致的栈帧大小
+    /// @brief 由于局部变量、前8个形参需站内空间分配而导致的栈帧大小
     ///
     int maxDepth = 0;
 
