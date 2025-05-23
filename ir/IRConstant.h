@@ -15,11 +15,14 @@
 ///
 #pragma once
 
+// LLVM IR下不区分%l %t,所以一律改为%
+// 反正共用一个计数器，所以不用担心冲突问题
+
 #define IR_GLOBAL_VARNAME_PREFIX "@"
-#define IR_LOCAL_VARNAME_PREFIX "%l"
-#define IR_TEMP_VARNAME_PREFIX "%t"
+#define IR_LOCAL_VARNAME_PREFIX "%"
+#define IR_TEMP_VARNAME_PREFIX "%"
 #define IR_MEM_VARNAME_PREFIX "%m"
-#define IR_LABEL_PREFIX ".L"
+#define IR_LABEL_PREFIX ""
 
 #define IR_KEYWORD_DECLARE "declare"
 #define IR_KEYWORD_DEFINE "define"

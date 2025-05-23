@@ -74,31 +74,87 @@ std::any MiniCCSTVisitor::visitCompileUnit(MiniCParser::CompileUnitContext * ctx
 
 /// @brief 非终结运算符funcDef的遍历
 /// @param ctx CST上下文
+/// @return AST的节点
 std::any MiniCCSTVisitor::visitFuncDef(MiniCParser::FuncDefContext * ctx)
 {
-    // 识别的文法产生式：funcDef : T_INT T_ID T_L_PAREN T_R_PAREN block;
+    // 获取函数返回类型
+    auto funcReturnType = std::any_cast<type_attr>(visitFuncType(ctx->funcType()));
 
-    // 函数返回类型，终结符
-    type_attr funcReturnType{BasicType::TYPE_INT, (int64_t) ctx->T_INT()->getSymbol()->getLine()};
+    // 创建返回类型节点
+    auto returnTypeNode = create_type_node(funcReturnType);
 
-    // 创建函数名的标识符终结符节点，终结符
+    // 获取函数名
     char * id = strdup(ctx->T_ID()->getText().c_str());
+    auto funcNameNode = ast_node::New(id, (int64_t) ctx->T_ID()->getSymbol()->getLine());
+    free(id);
 
-    var_id_attr funcId{id, (int64_t) ctx->T_ID()->getSymbol()->getLine()};
-
-    // 形参结点目前没有，设置为空指针
+    // 获取形参列表（如果存在）
     ast_node * formalParamsNode = nullptr;
+    if (ctx->funcFParams()) {
+        formalParamsNode = std::any_cast<ast_node *>(visitFuncFParams(ctx->funcFParams()));
+    }
 
-    // 遍历block结点创建函数体节点，非终结符
+    // 获取函数体
     auto blockNode = std::any_cast<ast_node *>(visitBlock(ctx->block()));
 
-    // 创建函数定义的节点，孩子有类型，函数名，语句块和形参(实际上无)
-    // create_func_def函数内会释放funcId中指向的标识符空间，切记，之后不要再释放，之前一定要是通过strdup函数或者malloc分配的空间
-    return create_func_def(funcReturnType, funcId, blockNode, formalParamsNode);
+    // 调用 AST 中的 create_func_def 函数
+    auto funcDefNode = create_func_def(returnTypeNode, funcNameNode, blockNode, formalParamsNode);
+
+    // 返回函数定义节点
+    return funcDefNode;
+}
+
+/// @brief 非终结运算符funcType的遍历
+/// @param ctx CST上下文
+/// @return 函数类型的属性
+std::any MiniCCSTVisitor::visitFuncType(MiniCParser::FuncTypeContext * ctx)
+{
+    type_attr attr{BasicType::TYPE_VOID, -1};
+    if (ctx->T_INT()) {
+        attr.type = BasicType::TYPE_INT;
+        attr.lineno = (int64_t) ctx->T_INT()->getSymbol()->getLine();
+    } else if (ctx->T_VOID()) {
+        attr.type = BasicType::TYPE_VOID;
+        attr.lineno = (int64_t) ctx->T_VOID()->getSymbol()->getLine();
+    }
+    // TODO 返回float类型的返回值
+    return attr;
+}
+
+/// @brief 非终结运算符funcFParams的遍历
+/// @param ctx CST上下文
+/// @return AST的节点
+std::any MiniCCSTVisitor::visitFuncFParams(MiniCParser::FuncFParamsContext * ctx)
+{
+    // 创建形参列表节点
+    auto paramsNode = create_contain_node(ast_operator_type::AST_OP_FUNC_FORMAL_PARAMS);
+
+    for (auto paramCtx: ctx->funcFParam()) {
+        auto paramNode = std::any_cast<ast_node *>(visitFuncFParam(paramCtx));
+        paramsNode->insert_son_node(paramNode);
+    }
+
+    return paramsNode;
+}
+
+/// @brief 非终结运算符funcFParam的遍历
+/// @param ctx CST上下文
+/// @return AST的节点
+std::any MiniCCSTVisitor::visitFuncFParam(MiniCParser::FuncFParamContext * ctx)
+{
+    // 获取形参类型
+    auto typeAttr = std::any_cast<type_attr>(visitBasicType(ctx->basicType()));
+
+    // 获取形参名称
+    auto idNode = ast_node::New(ctx->T_ID()->getText(), (int64_t) ctx->T_ID()->getSymbol()->getLine());
+
+    // 创建形参节点
+    return create_var_decl_node(typeAttr, idNode);
 }
 
 /// @brief 非终结运算符block的遍历
 /// @param ctx CST上下文
+/// @return AST的节点
 std::any MiniCCSTVisitor::visitBlock(MiniCParser::BlockContext * ctx)
 {
     // 识别的文法产生式：block : T_L_BRACE blockItemList? T_R_BRACE';

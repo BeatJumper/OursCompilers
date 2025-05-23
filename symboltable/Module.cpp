@@ -30,6 +30,43 @@ Module::Module(std::string _name) : name(_name)
     // 加入内置函数putint
     (void) newFunction("putint", VoidType::getType(), {new FormalParam{IntegerType::getTypeInt(), ""}}, true);
     (void) newFunction("getint", IntegerType::getTypeInt(), {}, true);
+
+    // 2) int getch()
+    (void) newFunction("getch", IntegerType::getTypeInt(), {}, true);
+
+    // 4) int getarray(int[]) - 数组参数需要特殊处理
+    // TODO: 需要实现数组类型支持
+    // (void) newFunction("getarray", IntegerType::getTypeInt(), {new FormalParam{ArrayType::getType(), ""}}, true);
+
+    // 5) int getfarray(float[]) - 浮点数组参数
+    // TODO: 需要实现浮点数组类型支持
+
+    // 7) void putch(int)
+    (void) newFunction("putch", VoidType::getType(), {new FormalParam{IntegerType::getTypeInt(), ""}}, true);
+
+    // 8) void putfloat(float) (如果支持float类型)
+    // (void) newFunction("putfloat", VoidType::getType(), {new FormalParam{FloatType::getType(), ""}}, true);
+
+    // 9) void putarray(int, int[]) - 多参数函数
+    // TODO: 需要实现数组类型支持
+    // (void) newFunction("putarray", VoidType::getType(), {
+    //     new FormalParam{IntegerType::getTypeInt(), ""},
+    //     new FormalParam{ArrayType::getType(), ""}
+    // }, true);
+
+    // 10) void putfarray(int, float[]) - 浮点数组函数
+    // TODO: 需要实现浮点数组类型支持
+
+    // 11) void putf(char*, ...) - 可变参数函数，需要特殊处理
+    // TODO: 需要实现字符串和可变参数支持
+
+    // === 计时函数 ===
+
+    // 12) void starttime()
+    (void) newFunction("starttime", VoidType::getType(), {}, true);
+
+    // 13) void stoptime()
+    (void) newFunction("stoptime", VoidType::getType(), {}, true);
 }
 
 /// @brief 进入作用域，如进入函数体块、语句块等

@@ -25,30 +25,35 @@ RelInstruction::RelInstruction(Function * _func, IRInstOperator _op, Value * _sr
 /// @param str 转换后的字符串
 void RelInstruction::toString(std::string & str)
 {
+    std::string condStr;
+
+    switch (op) {
+        case IRInstOperator::IRINST_OP_EQ:
+            condStr = "eq";
+            break;
+        case IRInstOperator::IRINST_OP_NE:
+            condStr = "ne";
+            break;
+        case IRInstOperator::IRINST_OP_LT:
+            condStr = "slt";
+            break;
+        case IRInstOperator::IRINST_OP_LE:
+            condStr = "sle";
+            break;
+        case IRInstOperator::IRINST_OP_GT:
+            condStr = "sgt";
+            break;
+        case IRInstOperator::IRINST_OP_GE:
+            condStr = "sge";
+            break;
+        default:
+            condStr = "unknown";
+            break;
+    }
+
     Value * left = getOperand(0);
     Value * right = getOperand(1);
 
-    switch (op) {
-        case IRInstOperator::IRINST_OP_LT:
-            str = getIRName() + " = cmp lt " + left->getIRName() + ", " + right->getIRName();
-            break;
-        case IRInstOperator::IRINST_OP_LE:
-            str = getIRName() + " = cmp le " + left->getIRName() + ", " + right->getIRName();
-            break;
-        case IRInstOperator::IRINST_OP_GT:
-            str = getIRName() + " = cmp gt " + left->getIRName() + ", " + right->getIRName();
-            break;
-        case IRInstOperator::IRINST_OP_GE:
-            str = getIRName() + " = cmp ge " + left->getIRName() + ", " + right->getIRName();
-            break;
-        case IRInstOperator::IRINST_OP_EQ:
-            str = getIRName() + " = cmp eq " + left->getIRName() + ", " + right->getIRName();
-            break;
-        case IRInstOperator::IRINST_OP_NE:
-            str = getIRName() + " = cmp ne " + left->getIRName() + ", " + right->getIRName();
-            break;
-        default:
-            str = "unknown rel instruction";
-            break;
-    }
+    str = getIRName() + " = icmp " + condStr + " " + left->getType()->toString() + " " + left->getIRName() + ", " +
+          right->getIRName();
 }

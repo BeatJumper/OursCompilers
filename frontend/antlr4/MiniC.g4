@@ -13,8 +13,17 @@ grammar MiniC;
 // 源文件编译单元定义
 compileUnit: (funcDef | varDecl)* EOF;
 
-// 函数定义，目前不支持形参，也不支持返回void类型等
-funcDef: T_INT T_ID T_L_PAREN T_R_PAREN block;
+// 函数定义
+funcDef: funcType T_ID T_L_PAREN funcFParams? T_R_PAREN block;
+
+// 函数类型
+funcType: T_VOID | T_INT;
+
+// 函数形参表
+funcFParams: funcFParam (T_COMMA funcFParam)*;
+
+// 函数形参
+funcFParam: basicType T_ID;
 
 // 语句块看用作函数体，这里允许多个语句，并且不含任何语句
 block: T_L_BRACE blockItemList? T_R_BRACE;

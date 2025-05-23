@@ -228,25 +228,17 @@ ast_node * create_func_def(ast_node * type_node, ast_node * name_node, ast_node 
     return node;
 }
 
-/// @brief 创建函数定义类型的内部AST节点
-/// @param type 返回值类型
-/// @param id 函数名字
-/// @param block_node 函数体语句块节点
-/// @param params_node 函数形参，可以没有参数
+/// @brief 创建变量声明节点
+/// @param typeAttr 变量类型
+/// @param idNode 变量ID节点
 /// @return 创建的节点
-ast_node * create_func_def(type_attr & type, var_id_attr & id, ast_node * block_node, ast_node * params_node)
+ast_node * create_var_decl_node(type_attr typeAttr, ast_node * idNode)
 {
-    // 创建整型类型节点的终结符节点
-    ast_node * type_node = create_type_node(type);
+    // 创建类型节点
+    auto typeNode = create_type_node(typeAttr);
 
-    // 创建标识符终结符节点
-    ast_node * id_node = ast_node::New(id.id, id.lineno);
-
-    // 对于字符型字面量的字符串空间需要释放，因词法用到了strdup进行了字符串复制
-    free(id.id);
-    id.id = nullptr;
-
-    return create_func_def(type_node, id_node, block_node, params_node);
+    // 创建变量声明节点
+    return ast_node::New(ast_operator_type::AST_OP_VAR_DECL, typeNode, idNode, nullptr);
 }
 
 /// @brief 创建AST的内部节点

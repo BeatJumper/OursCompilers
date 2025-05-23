@@ -24,5 +24,6 @@ EntryInstruction::EntryInstruction(Function * _func)
 /// @brief 转换成字符串
 void EntryInstruction::toString(std::string & str)
 {
-    str = "entry";
+    // LLVM下，这个东西いらない
+    str = "; Function entry point";
 }

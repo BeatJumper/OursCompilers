@@ -80,7 +80,7 @@ void Function::toString(std::string & str)
     }
 
     // 输出函数头
-    str = "define " + getReturnType()->toString() + " " + getIRName() + "(";
+    str = "define dso_local " + getReturnType()->toString() + " " + getIRName() + "(";
 
     bool firstParam = false;
     for (auto & param: params) {
@@ -91,19 +91,21 @@ void Function::toString(std::string & str)
             str += ", ";
         }
 
-        std::string param_str = param->getType()->toString() + param->getIRName();
+        std::string param_str = param->getType()->toString() + " noundef " + param->getIRName();
 
         str += param_str;
     }
 
-    str += ")\n";
+    str += ") #0 {\n";
 
-    str += "{\n";
+    // BeatJumper：我猜这里得注释掉，实现指令类解耦，否则是在不宜管理
 
+    /*
     // 输出局部变量的名字与IR名字
     for (auto & var: this->varsVector) {
 
         // 局部变量和临时变量需要输出declare语句
+        // TODO LLVM IR
         str += "\tdeclare " + var->getType()->toString() + " " + var->getIRName();
 
         std::string extraStr;
@@ -114,7 +116,11 @@ void Function::toString(std::string & str)
 
         str += "\n";
     }
+    */
 
+    // BeatJumper：我猜这里得注释掉，实现指令类解耦，否则是在不宜管理
+
+    /*
     // 输出临时变量的declare形式
     // 遍历所有的线性IR指令，文本输出
     for (auto & inst: code.getInsts()) {
@@ -125,6 +131,7 @@ void Function::toString(std::string & str)
             str += "\tdeclare " + inst->getType()->toString() + " " + inst->getIRName() + "\n";
         }
     }
+    */
 
     // 遍历所有的线性IR指令，文本输出
     for (auto & inst: code.getInsts()) {
@@ -287,26 +294,49 @@ void Function::renameIR()
     }
 
     int32_t nameIndex = 0;
+    printf("==== Starting renameIR for function %s ====\n", this->name.c_str());
 
     // 形式参数重命名
     for (auto & param: this->params) {
-        param->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(nameIndex++));
+        std::string oldName = param->getIRName();
+        param->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(nameIndex));
+        printf("Renamed param: %s -> %s\n", oldName.empty() ? "(empty)" : oldName.c_str(), param->getIRName().c_str());
+        nameIndex++;
     }
 
     // 局部变量重命名
     for (auto & var: this->varsVector) {
-
-        var->setIRName(IR_LOCAL_VARNAME_PREFIX + std::to_string(nameIndex++));
+        std::string oldName = var->getIRName();
+        var->setIRName(IR_LOCAL_VARNAME_PREFIX + std::to_string(nameIndex));
+        printf("Renamed local var %s: %s -> %s\n",
+               var->getName().c_str(),
+               oldName.empty() ? "(empty)" : oldName.c_str(),
+               var->getIRName().c_str());
+        nameIndex++;
     }
-
-    // 遍历所有的指令进行命名
+    // 遍历指令重命名
     for (auto inst: this->getInterCode().getInsts()) {
         if (inst->getOp() == IRInstOperator::IRINST_OP_LABEL) {
-            inst->setIRName(IR_LABEL_PREFIX + std::to_string(nameIndex++));
+            // label参与编号
+            std::string oldName = inst->getIRName();
+            inst->setIRName(IR_LABEL_PREFIX + std::to_string(nameIndex));
+            printf("Renamed label: %s -> %s\n",
+                   oldName.empty() ? "(empty)" : oldName.c_str(),
+                   inst->getIRName().c_str());
+            nameIndex++;
         } else if (inst->hasResultValue()) {
-            inst->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(nameIndex++));
+            // 跳过alloca指令，不分配新编号
+            if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
+                // alloca的结果就是变量，变量已经分配过编号
+                continue;
+            }
+            inst->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(nameIndex));
+            // std::string instStr;
+            // inst->toString(instStr);
+            nameIndex++;
         }
     }
+    printf("==== Finished renameIR, final nameIndex = %d ====\n", nameIndex);
 }
 
 ///

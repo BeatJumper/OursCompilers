@@ -40,6 +40,12 @@ enum class IRInstOperator : std::int8_t {
     /// @brief 整数的减法指令，二元运算
     IRINST_OP_SUB_I,
 
+    /// @brief 整数的乘法指令，二元运算
+    IRINST_OP_MUL_I,
+
+    /// @brief 整数的除法指令，二元运算
+    IRINST_OP_DIV_I,
+
     /// @brief 赋值指令，一元运算
     IRINST_OP_ASSIGN,
 
@@ -73,7 +79,26 @@ enum class IRInstOperator : std::int8_t {
     IRINST_OP_BRANCH,
 
     /// @brief 最大指令码，也是无效指令
-    IRINST_OP_MAX
+    IRINST_OP_MAX,
+
+    /*LLVM IR部分，有点多哎*/
+    /// @brief alloca指令
+    IRINST_OP_ALLOCA,
+
+    /// @brief load指令
+    IRINST_OP_LOAD,
+
+    /// @brief store指令
+    IRINST_OP_STORE,
+
+    /// @brief return指令
+    IRINST_OP_RET,
+
+    /// @brief branch指令
+    IRINST_OP_BR,
+
+    /// @brief icmp指令
+    IRINST_OP_ICMP,
 };
 
 ///

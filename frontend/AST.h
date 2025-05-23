@@ -87,7 +87,13 @@ enum class ast_operator_type : int {
     AST_OP_ADD,
 
     /// @brief 二元运算符-
-    AST_OP_SUB, //
+    AST_OP_SUB,
+
+    /// @brief 二元运算符*
+    AST_OP_MUL,
+
+    /// @brief 二元运算符/
+    AST_OP_DIV,
 
     // TODO 抽象语法树其它内部节点运算符追加
     /// @brief if
@@ -260,6 +266,12 @@ ast_node * create_contain_node(ast_operator_type node_type,
 /// @return 创建的节点
 ast_node *
 create_func_def(ast_node * type_node, ast_node * name_node, ast_node * block = nullptr, ast_node * params = nullptr);
+
+/// @brief 创建变量声明节点（形参）
+/// @param typeAttr 类型属性
+/// @param idNode 标识符节点
+/// @return 变量声明节点
+ast_node * create_var_decl_node(type_attr typeAttr, ast_node * idNode);
 
 /// @brief 创建函数定义类型的内部AST节点
 /// @param type 返回值类型

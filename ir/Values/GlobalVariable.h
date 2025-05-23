@@ -89,7 +89,51 @@ public:
     ///
     void toDeclareString(std::string & str)
     {
-        str = "declare " + getType()->toString() + " " + getIRName();
+        // str = "declare " + getType()->toString() + " " + getIRName();
+
+        // TODO:应该改成下面这种格式
+        // @a = dso_local global i32 33, align 4
+        // 33是初始值
+
+        str = getIRName() + " = dso_local global " + getType()->toString();
+
+        // 处理初值
+        if (initValue) {
+            // 检查初值类型并生成相应的字符串表示
+            if (dynamic_cast<ConstInt *>(initValue)) {
+                ConstInt * constInt = static_cast<ConstInt *>(initValue);
+                str += " " + std::to_string(constInt->getVal());
+            } else {
+                // 如果不是ConstInt，使用默认值0
+                str += " 0";
+            }
+        } else {
+            // 没有初值，使用默认值0
+            str += " 0";
+        }
+
+        str += ", align " + std::to_string(getAlignment());
+    }
+
+    ///
+    /// @brief 设置初值
+    /// @param val 初值
+    ///
+    void setInitValue(Value * val)
+    {
+        initValue = val;
+        if (val && !dynamic_cast<ConstInt *>(val)) {
+            inBSSSection = false; // 如果有非零初值，不在BSS段
+        }
+    }
+
+    ///
+    /// @brief 获取初值
+    /// @return 初值
+    ///
+    Value * getInitValue() const
+    {
+        return initValue;
     }
 
 private:
@@ -102,4 +146,9 @@ private:
     /// @brief 默认全局变量在BSS段，没有初始化，或者即使初始化过，但都值都为0
     ///
     bool inBSSSection = true;
+
+    ///
+    /// @brief 全局变量的初值
+    ///
+    Value * initValue = nullptr;
 };

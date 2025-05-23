@@ -1,0 +1,14 @@
+#include "AllocaInstruction.h"
+#include "VoidType.h"
+
+AllocaInstruction::AllocaInstruction(Function * _func, Value * _result, Type * _type, int _align)
+    : Instruction(_func, IRInstOperator::IRINST_OP_ALLOCA, _type), align(_align)
+{
+    addOperand(_result);
+}
+
+void AllocaInstruction::toString(std::string & str)
+{
+    Value * result = getOperand(0);
+    str = result->getIRName() + " = alloca " + getType()->toString() + ", align " + std::to_string(align);
+}

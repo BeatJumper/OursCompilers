@@ -127,6 +127,12 @@ set(IR_SRCS
 	ir/Instructions/RelInstruction.h
 	ir/Instructions/BranchInstruction.cpp
 	ir/Instructions/BranchInstruction.h
+	ir/Instructions/AllocaInstruction.cpp
+	ir/Instructions/AllocaInstruction.h
+	ir/Instructions/StoreInstruction.cpp
+	ir/Instructions/StoreInstruction.h
+	ir/Instructions/LoadInstruction.cpp
+	ir/Instructions/LoadInstruction.h
 	ir/Types/VoidType.h
 	ir/Types/VoidType.cpp
 	ir/Types/LabelType.h

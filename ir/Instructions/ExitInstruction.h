@@ -24,6 +24,10 @@
 class ExitInstruction : public Instruction {
 
 public:
+	
+    /// @brief 无返回值的构造函数
+    /// @param _func 
+    ExitInstruction(Function * _func);
     ///
     /// @brief 构造函数
     /// @param _func 所属的函数

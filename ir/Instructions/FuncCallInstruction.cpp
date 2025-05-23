@@ -39,49 +39,39 @@ FuncCallInstruction::FuncCallInstruction(Function * _func,
 /// @param str 转换后的字符串
 void FuncCallInstruction::toString(std::string & str)
 {
-    int32_t argCount = func->getRealArgcount();
-    int32_t operandsNum = getOperandsNum();
-
-    if (operandsNum != argCount) {
-        // 两者不一致 也可能没有ARG指令，正常
-        if (argCount != 0) {
-            minic_log(LOG_ERROR, "ARG指令的个数与调用函数个数不一致");
-        }
-    }
 
     // TODO 这里应该根据函数名查找函数定义或者声明获取函数的类型
     // 这里假定所有函数返回类型要么是i32，要么是void
     // 函数参数的类型是i32
 
     if (type->isVoidType()) {
-
         // 函数没有返回值设置
         str = "call void " + calledFunction->getIRName() + "(";
     } else {
-
-        // 函数有返回值要设置到结果变量中
-        str = type->toString() + " " + getIRName() + " = call i32 " + calledFunction->getIRName() + "(";
+        // 正确的LLVM IR语法格式
+        str = getIRName() + " = call " + type->toString() + " " + calledFunction->getIRName() + "(";
     }
 
-    if (argCount == 0) {
+    // 只输出实际的参数，不包括函数调用指令本身
+    // 获取被调用函数的参数数量
+    size_t expectedParamCount = calledFunction->getParams().size();
 
-        // 如果没有arg指令，则输出函数的实参
-        for (int32_t k = 0; k < operandsNum; ++k) {
+    // 只输出前expectedParamCount个操作数作为参数
+    for (size_t k = 0; k < expectedParamCount && k < getOperandsNum(); ++k) {
+        auto operand = getOperand(k);
+        if (!operand) {
+            printf("Error: Null operand at position %zu in FuncCallInstruction::toString\n", k);
+            continue;
+        }
 
-            auto operand = getOperand(k);
+        str += operand->getType()->toString() + " noundef " + operand->getIRName();
 
-            str += operand->getType()->toString() + " " + operand->getIRName();
-
-            if (k != (operandsNum - 1)) {
-                str += ", ";
-            }
+        if (k != (expectedParamCount - 1)) {
+            str += ", ";
         }
     }
 
     str += ")";
-
-    // 要清零
-    func->realArgCountReset();
 }
 
 ///

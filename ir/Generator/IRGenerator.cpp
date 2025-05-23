@@ -35,6 +35,9 @@
 #include "GotoInstruction.h"
 #include "RelInstruction.h"
 #include "BranchInstruction.h"
+#include "AllocaInstruction.h"
+#include "StoreInstruction.h"
+#include "LoadInstruction.h"
 
 /// @brief 构造函数
 /// @param _root AST的根
@@ -49,6 +52,8 @@ IRGenerator::IRGenerator(ast_node * _root, Module * _module) : root(_root), modu
     /* 表达式运算， 加减 */
     ast2ir_handlers[ast_operator_type::AST_OP_SUB] = &IRGenerator::ir_sub;
     ast2ir_handlers[ast_operator_type::AST_OP_ADD] = &IRGenerator::ir_add;
+    ast2ir_handlers[ast_operator_type::AST_OP_MUL] = &IRGenerator::ir_mul;
+    ast2ir_handlers[ast_operator_type::AST_OP_DIV] = &IRGenerator::ir_div;
 
     /* 关系表达式运算 */
     ast2ir_handlers[ast_operator_type::AST_OP_LT] = &IRGenerator::ir_rel_exp;
@@ -177,6 +182,8 @@ bool IRGenerator::ir_function_define(ast_node * node)
 {
     bool result;
 
+    printf("==== ENTER ir_function_define ====\n");
+
     // 创建一个函数，用于当前函数处理
     if (module->getCurrentFunction()) {
         // 函数中嵌套定义函数，这是不允许的，错误退出
@@ -194,66 +201,61 @@ bool IRGenerator::ir_function_define(ast_node * node)
     ast_node * param_node = node->sons[2];
     ast_node * block_node = node->sons[3];
 
-    // 创建一个新的函数定义，函数的返回类型设置为VOID，待定，必须等return时才能确定，目前可以是VOID或者INT类型
-    // 请注意这个与C语言的函数定义不同。在实现MiniC编译器时必须调整
+    // 创建一个新的函数定义，函数的返回类型设置为type_node里的type
     Function * newFunc = module->newFunction(name_node->name, type_node->type);
     if (!newFunc) {
-        // 新定义的函数已经存在，则失败返回。
-        // TODO 自行追加语义错误处理
+        printf("Error: Function %s already exists.\n", name_node->name.c_str());
         return false;
     }
 
-    // 当前函数设置有效，变更为当前的函数
     module->setCurrentFunction(newFunc);
-
-    // 进入函数的作用域
     module->enterScope();
-
-    // 获取函数的IR代码列表，用于后面追加指令用，注意这里用的是引用传值
     InterCode & irCode = newFunc->getInterCode();
 
-    // 这里也可增加一个函数入口Label指令，便于后续基本块划分
+    // 入口label和entry, entry不要了
     LabelInstruction * entryLabelInst = new LabelInstruction(newFunc);
     irCode.addInst(entryLabelInst);
+    // irCode.addInst(new EntryInstruction(newFunc));
 
-    // 创建并加入Entry入口指令
-    irCode.addInst(new EntryInstruction(newFunc));
-
-    // 创建出口指令并不加入出口指令，等函数内的指令处理完毕后加入出口指令
+    // 出口label
     LabelInstruction * exitLabelInst = new LabelInstruction(newFunc);
-
-    // 函数出口指令保存到函数信息中，因为在语义分析函数体时return语句需要跳转到函数尾部，需要这个label指令
     newFunc->setExitLabel(exitLabelInst);
 
-    // 遍历形参，没有IR指令，不需要追加
+    // 处理形参
     result = ir_function_formal_params(param_node);
     if (!result) {
-        // 形参解析失败
-        // TODO 自行追加语义错误处理
+        printf("Error: Failed to process function parameters.\n");
         return false;
     }
     node->blockInsts.addInst(param_node->blockInsts);
 
     // 新建一个Value，用于保存函数的返回值，如果没有返回值可不用申请
     LocalVariable * retValue = nullptr;
+    AllocaInstruction * allocaRet = nullptr;
+    StoreInstruction * storeRet = nullptr;
     if (!type_node->type->isVoidType()) {
+        // 为所有非void函数创建返回值变量
+        retValue = static_cast<LocalVariable *>(module->newVarValue(type_node->type, "__ret"));
+        allocaRet = new AllocaInstruction(newFunc, retValue, type_node->type, 4);
+        irCode.addInst(allocaRet);
 
-        // 保存函数返回值变量到函数信息中，在return语句翻译时需要设置值到这个变量中
-        retValue = static_cast<LocalVariable *>(module->newVarValue(type_node->type));
+        // 只有main函数初始化为0，其他函数不初始化
+        if (name_node->name == "main") {
+            // 创建一个常量0
+            ConstInt * zeroConst = module->newConstInt(0);
+            // 创建一个store指令，将0存储到retValue
+            storeRet = new StoreInstruction(newFunc, zeroConst, retValue, 4);
+            irCode.addInst(storeRet);
+        }
     }
     newFunc->setReturnValue(retValue);
 
-    // 函数内已经进入作用域，内部不再需要做变量的作用域管理
+    // 处理block
     block_node->needScope = false;
-
-    // 遍历block
     result = ir_block(block_node);
     if (!result) {
-        // block解析失败
-        // TODO 自行追加语义错误处理
         return false;
     }
-
     // IR指令追加到当前的节点中
     node->blockInsts.addInst(block_node->blockInsts);
 
@@ -262,18 +264,172 @@ bool IRGenerator::ir_function_define(ast_node * node)
     // node节点的指令移动到函数的IR指令列表中
     irCode.addInst(node->blockInsts);
 
-    // 添加函数出口Label指令，主要用于return语句跳转到这里进行函数的退出
+    // 现在irCode中，第一条是allocaRet指令，第二条是storeRet指令
+    // 然后是处理block部分得到的指令，这些指令的第一部分是对decl-stmt节点的处理，是若干个alloca指令，store指令
+    // 如果可能的话，赋值是是变量赋值，会有load指令
+    // 所以目前，第二条storeRet指令会夹在第一条alloca指令和后面block的decl-stmt指令中间
+    // 但希望实现的效果是store指令在所有alloca指令后面
+    // 所以对irCode中的指令进行重新排序,
+    // 逻辑是遇到第一条store指令，将其放到最后一条alloca指令后面即可，后面再遇到store不用管了
+
+    //=============指令重排序逻辑开始===================
+
+    auto & insts = irCode.getInsts();
+    std::vector<Instruction *> allocaInsts;
+    std::vector<Instruction *> initStoreInsts; // 变量初始化相关的store指令
+    std::vector<Instruction *> otherInsts;
+
+    // 预分配容量以避免在循环中多次重新分配
+    size_t totalInsts = insts.size();
+    allocaInsts.reserve(totalInsts / 4);    // 估算alloca指令数量
+    initStoreInsts.reserve(totalInsts / 4); // 估算store指令数量
+    otherInsts.reserve(totalInsts / 2);     // 估算其他指令数量
+
+    // 找到第一个非ENTRY指令的位置作为插入点
+    int insertPos = -1;
+    for (size_t i = 0; i < insts.size(); ++i) {
+        if (insts[i]->getOp() == IRInstOperator::IRINST_OP_LABEL) {
+            // 入口标签之后就是插入点
+            insertPos = (int) i + 1;
+            break;
+        }
+    }
+
+    if (insertPos == -1) {
+        printf("Error: No entry label found for reordering.\n");
+        return false;
+    }
+
+    // 收集所有alloca指令的目标变量
+    std::vector<Value *> allocaTargets;
+    for (size_t i = insertPos; i < insts.size(); ++i) {
+        if (dynamic_cast<AllocaInstruction *>(insts[i])) {
+            AllocaInstruction * allocaInst = static_cast<AllocaInstruction *>(insts[i]);
+            // AllocaInstruction的第一个操作数应该是目标变量
+            if (allocaInst->getOperandsNum() > 0) {
+                allocaTargets.push_back(allocaInst->getOperand(0));
+            }
+            allocaInsts.push_back(insts[i]);
+        }
+    }
+
+    // 分类其他指令
+    for (size_t i = insertPos; i < insts.size(); ++i) {
+        Instruction * inst = insts[i];
+
+        if (dynamic_cast<AllocaInstruction *>(inst)) {
+            // alloca指令已经处理过了
+            continue;
+        } else if (dynamic_cast<StoreInstruction *>(inst)) {
+            StoreInstruction * storeInst = static_cast<StoreInstruction *>(inst);
+
+            // 检查这个store指令是否对应某个alloca指令的初始化
+            bool isInitStore = false;
+            if (storeInst->getOperandsNum() >= 2) {
+                Value * storeSource = storeInst->getOperand(0); // store指令的第一个操作数是源值
+                Value * storeTarget = storeInst->getOperand(1); // store指令的第二个操作数是目标
+
+                // 检查目标是否在alloca目标列表中
+                bool targetInAllocaList = false;
+                for (Value * allocaTarget: allocaTargets) {
+                    if (storeTarget == allocaTarget) {
+                        targetInAllocaList = true;
+                        break;
+                    }
+                }
+
+                if (targetInAllocaList) {
+                    // 进一步检查是否是初始化store
+                    // 初始化store的源值应该是：
+                    // 1. 常量值（如变量初始化）
+                    // 2. 函数形参（如 %0, %1, %2 等，但只对有参数的函数）
+                    if (dynamic_cast<ConstInt *>(storeSource)) {
+                        // 常量初始化
+                        isInitStore = true;
+                    } else if (dynamic_cast<FormalParam *>(storeSource)) {
+                        // 形参初始化
+                        isInitStore = true;
+                    } else {
+                        // 检查是否是形参值，但需要排除指令结果
+                        if (!dynamic_cast<Instruction *>(storeSource)) {
+                            // 不是指令结果，再检查名字格式
+                            std::string sourceName = storeSource->getIRName();
+                            if (sourceName.size() >= 2 && sourceName[0] == '%' && std::isdigit(sourceName[1]) &&
+                                sourceName.find_first_not_of("0123456789", 1) == std::string::npos) {
+                                // 这是形参（%0, %1, %2 等格式），且不是指令结果
+                                isInitStore = true;
+                            }
+                        }
+                        // 如果源值是指令结果（如 load 指令的结果），则不是初始化store
+                    }
+                }
+            }
+
+            if (isInitStore) {
+                initStoreInsts.push_back(inst);
+            } else {
+                otherInsts.push_back(inst);
+            }
+        } else {
+            otherInsts.push_back(inst);
+        }
+    }
+
+    // 重新构建指令序列
+    std::vector<Instruction *> newInsts;
+
+    // 保留前面的ENTRY等指令
+    for (int i = 0; i < insertPos; ++i) {
+        newInsts.push_back(insts[i]);
+    }
+
+    // 先添加所有alloca指令
+    for (auto allocaInst: allocaInsts) {
+        newInsts.push_back(allocaInst);
+    }
+
+    // 再添加所有对应的初始化store指令
+    for (auto storeInst: initStoreInsts) {
+        newInsts.push_back(storeInst);
+    }
+
+    // 最后添加其他指令
+    for (auto otherInst: otherInsts) {
+        newInsts.push_back(otherInst);
+    }
+
+    // 替换原指令序列
+    insts = newInsts;
+
+    //=============指令重排序逻辑结尾===================
+
+    // 添加函数出口Label指令
     irCode.addInst(exitLabelInst);
 
-    // 函数出口指令
-    irCode.addInst(new ExitInstruction(newFunc, retValue));
+    // 函数出口指令 - 根据函数类型决定如何生成
+    if (!type_node->type->isVoidType() && retValue) {
+        // 非void函数需要从返回值变量加载值再返回
+
+        // 创建load指令，从返回值变量加载值
+        LoadInstruction * loadRet = new LoadInstruction(newFunc, retValue, retValue, 4);
+        irCode.addInst(loadRet);
+
+        // 创建返回指令，返回加载的值
+        irCode.addInst(new ExitInstruction(newFunc, loadRet));
+    } else {
+        // void函数
+        irCode.addInst(new ExitInstruction(newFunc, nullptr));
+    }
 
     // 恢复成外部函数
     module->setCurrentFunction(nullptr);
-
-    // 退出函数的作用域
     module->leaveScope();
 
+    printf("==== EXIT ir_function_define ====\n");
+    printf("Function has %zu instructions\n", irCode.getInsts().size());
+    std::string fullIR;
+    newFunc->toString(fullIR);
+    printf("Final IR after rename:\n%s\n", fullIR.c_str());
     return true;
 }
 
@@ -289,6 +445,63 @@ bool IRGenerator::ir_function_formal_params(ast_node * node)
     // 然后产生赋值指令，用于把表达实参值的临时变量拷贝到形参局部变量上。
     // 请注意这些指令要放在Entry指令后面，因此处理的先后上要注意。
 
+    // 获取当前正在处理的函数
+    Function * currentFunc = module->getCurrentFunction();
+    if (!currentFunc) {
+        printf("Error: No current function in ir_function_formal_params.\n");
+        return false;
+    }
+
+    // 记录形参和局部变量的配对
+    std::vector<std::pair<FormalParam *, LocalVariable *>> paramPairs;
+
+    // 遍历形参列表
+    for (auto & paramNode: node->sons) {
+        // 每个形参节点应该有两个子节点：类型节点和变量名节点
+        if (paramNode->sons.size() != 2) {
+            printf("Error: Invalid parameter node structure in ir_function_formal_params.\n");
+            return false;
+        }
+
+        ast_node * typeNode = paramNode->sons[0]; // 类型节点
+        ast_node * nameNode = paramNode->sons[1]; // 变量名节点
+
+        // 创建一个形参对象，表示函数参数
+        FormalParam * param = new FormalParam(typeNode->type, nameNode->name);
+
+        // 将形参添加到函数的形参列表中
+        currentFunc->getParams().push_back(param);
+
+        // 创建一个局部变量表示在函数体内使用的参数
+        Value * paramVar = module->newVarValue(typeNode->type, nameNode->name);
+
+        if (!paramVar) {
+            printf("Error: Failed to create local variable for parameter '%s'.\n", nameNode->name.c_str());
+            return false;
+        }
+
+        // 转换为 LocalVariable 类型
+        LocalVariable * localParamVar = static_cast<LocalVariable *>(paramVar);
+
+        // 创建 alloca 指令，添加4字节对齐
+        AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, paramVar, typeNode->type, 4);
+        currentFunc->getInterCode().addInst(allocaInst);
+
+        // 创建 store 指令，将形参的值存储到局部变量，添加4字节对齐
+
+        // 设置形参节点的值为创建的局部变量（函数体内使用这个变量）
+        nameNode->val = paramVar;
+
+        // 将 (形参, 局部变量) 对添加到列表中
+        paramPairs.emplace_back(param, localParamVar);
+    }
+
+    // 再store所有形参
+    for (auto & pair: paramPairs) {
+        StoreInstruction * storeInst = new StoreInstruction(currentFunc, pair.first, pair.second, 4);
+        currentFunc->getInterCode().addInst(storeInst);
+    }
+
     return true;
 }
 
@@ -297,7 +510,7 @@ bool IRGenerator::ir_function_formal_params(ast_node * node)
 /// @return 翻译是否成功，true：成功，false：失败
 bool IRGenerator::ir_function_call(ast_node * node)
 {
-    std::vector<Value *> realParams;
+    std::vector<Value *> loadedParams;
 
     // 获取当前正在处理的函数
     Function * currentFunc = module->getCurrentFunction();
@@ -305,65 +518,80 @@ bool IRGenerator::ir_function_call(ast_node * node)
     // 函数调用的节点包含两个节点：
     // 第一个节点：函数名节点
     // 第二个节点：实参列表节点
-
     std::string funcName = node->sons[0]->name;
     int64_t lineno = node->sons[0]->line_no;
 
     ast_node * paramsNode = node->sons[1];
 
     // 根据函数名查找函数，看是否存在。若不存在则出错
-    // 这里约定函数必须先定义后使用
     auto calledFunction = module->findFunction(funcName);
     if (nullptr == calledFunction) {
-        minic_log(LOG_ERROR, "函数(%s)未定义或声明", funcName.c_str());
+        printf("Error: Function '%s' not found at line %ld.\n", funcName.c_str(), lineno);
         return false;
     }
 
     // 当前函数存在函数调用
     currentFunc->setExistFuncCall(true);
 
-    // 如果没有孩子，也认为是没有参数
+    // 处理参数列表（只处理一次）
     if (!paramsNode->sons.empty()) {
-
         int32_t argsCount = (int32_t) paramsNode->sons.size();
 
-        // 当前函数中调用函数实参个数最大值统计，实际上是统计实参传参需在栈中分配的大小
-        // 因为目前的语言支持的int和float都是四字节的，只统计个数即可
+        // 当前函数中调用函数实参个数最大值统计
         if (argsCount > currentFunc->getMaxFuncCallArgCnt()) {
             currentFunc->setMaxFuncCallArgCnt(argsCount);
         }
 
-        // 遍历参数列表，孩子是表达式
-        // 这里自左往右计算表达式
+        // 遍历参数列表
         for (auto son: paramsNode->sons) {
-
-            // 遍历Block的每个语句，进行显示或者运算
+            // 计算参数表达式
             ast_node * temp = ir_visit_ast_node(son);
             if (!temp) {
                 return false;
             }
 
-            realParams.push_back(temp->val);
+            // 添加参数表达式的指令
             node->blockInsts.addInst(temp->blockInsts);
+
+            Value * paramValue = nullptr;
+
+            // 处理参数值
+            if (needsLoad(temp->val)) {
+                // 参数是变量，需要加载
+                LoadInstruction * loadParam = new LoadInstruction(currentFunc, temp->val, temp->val, 4);
+                node->blockInsts.addInst(loadParam);
+                paramValue = loadParam;
+            } else {
+                // 参数是常量或表达式结果，直接使用
+                paramValue = temp->val;
+            }
+
+            // 将参数值添加到参数列表
+            loadedParams.push_back(paramValue);
         }
     }
 
-    // TODO 这里请追加函数调用的语义错误检查，这里只进行了函数参数的个数检查等，其它请自行追加。
-    if (realParams.size() != calledFunction->getParams().size()) {
-        // 函数参数的个数不一致，语义错误
-        minic_log(LOG_ERROR, "第%lld行的被调用函数(%s)未定义或声明", (long long) lineno, funcName.c_str());
+    // 参数个数检查
+    if (loadedParams.size() != calledFunction->getParams().size()) {
+        printf("Error: Function '%s' parameter count mismatch at line %ld. Expected %zu, got %zu.\n",
+               funcName.c_str(),
+               lineno,
+               calledFunction->getParams().size(),
+               loadedParams.size());
         return false;
     }
 
-    // 返回调用有返回值，则需要分配临时变量，用于保存函数调用的返回值
-    Type * type = calledFunction->getReturnType();
+    // 函数返回类型
+    Type * returnType = calledFunction->getReturnType();
 
-    FuncCallInstruction * funcCallInst = new FuncCallInstruction(currentFunc, calledFunction, realParams, type);
+    // 关键修复：使用正确的构造函数
+    // 不要使用带有vector<Value*>参数的构造函数，而是使用基本构造函数然后添加操作数
+    FuncCallInstruction * funcCallInst = new FuncCallInstruction(currentFunc, calledFunction, loadedParams, returnType);
 
-    // 创建函数调用指令
+    // 添加函数调用指令
     node->blockInsts.addInst(funcCallInst);
 
-    // 函数调用结果Value保存到node中，可能为空，上层节点可利用这个值
+    // 函数调用结果保存到node中
     node->val = funcCallInst;
 
     return true;
@@ -404,39 +632,49 @@ bool IRGenerator::ir_block(ast_node * node)
 /// @return 翻译是否成功，true：成功，false：失败
 bool IRGenerator::ir_add(ast_node * node)
 {
-    ast_node * src1_node = node->sons[0];
-    ast_node * src2_node = node->sons[1];
+    ast_node * leftNode = node->sons[0];
+    ast_node * rightNode = node->sons[1];
 
-    // 加法节点，左结合，先计算左节点，后计算右节点
+    // 递归生成左右孩子的IR
+    ast_node * left = ir_visit_ast_node(leftNode);
+    ast_node * right = ir_visit_ast_node(rightNode);
 
-    // 加法的左边操作数
-    ast_node * left = ir_visit_ast_node(src1_node);
-    if (!left) {
-        // 某个变量没有定值
+    if (!left || !right)
         return false;
-    }
 
-    // 加法的右边操作数
-    ast_node * right = ir_visit_ast_node(src2_node);
-    if (!right) {
-        // 某个变量没有定值
-        return false;
-    }
-
-    // 这里只处理整型的数据，如需支持实数，则需要针对类型进行处理
-    // TODO real number add
-
-    BinaryInstruction * addInst = new BinaryInstruction(module->getCurrentFunction(),
-                                                        IRInstOperator::IRINST_OP_ADD_I,
-                                                        left->val,
-                                                        right->val,
-                                                        IntegerType::getTypeInt());
-
-    // 创建临时变量保存IR的值，以及线性IR指令
+    // 合并左右孩子的IR指令
     node->blockInsts.addInst(left->blockInsts);
     node->blockInsts.addInst(right->blockInsts);
-    node->blockInsts.addInst(addInst);
 
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        // 变量需要load
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 生成加法指令
+    BinaryInstruction * addInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_ADD_I,
+                                                        leftValue,
+                                                        rightValue,
+                                                        IntegerType::getTypeInt());
+    node->blockInsts.addInst(addInst);
     node->val = addInst;
 
     return true;
@@ -447,40 +685,156 @@ bool IRGenerator::ir_add(ast_node * node)
 /// @return 翻译是否成功，true：成功，false：失败
 bool IRGenerator::ir_sub(ast_node * node)
 {
-    ast_node * src1_node = node->sons[0];
-    ast_node * src2_node = node->sons[1];
+    ast_node * leftNode = node->sons[0];
+    ast_node * rightNode = node->sons[1];
 
-    // 加法节点，左结合，先计算左节点，后计算右节点
+    // 递归生成左右孩子的IR
+    ast_node * left = ir_visit_ast_node(leftNode);
+    ast_node * right = ir_visit_ast_node(rightNode);
 
-    // 加法的左边操作数
-    ast_node * left = ir_visit_ast_node(src1_node);
-    if (!left) {
-        // 某个变量没有定值
+    if (!left || !right)
         return false;
-    }
 
-    // 加法的右边操作数
-    ast_node * right = ir_visit_ast_node(src2_node);
-    if (!right) {
-        // 某个变量没有定值
-        return false;
-    }
-
-    // 这里只处理整型的数据，如需支持实数，则需要针对类型进行处理
-    // TODO real number add
-
-    BinaryInstruction * subInst = new BinaryInstruction(module->getCurrentFunction(),
-                                                        IRInstOperator::IRINST_OP_SUB_I,
-                                                        left->val,
-                                                        right->val,
-                                                        IntegerType::getTypeInt());
-
-    // 创建临时变量保存IR的值，以及线性IR指令
+    // 合并左右孩子的IR指令
     node->blockInsts.addInst(left->blockInsts);
     node->blockInsts.addInst(right->blockInsts);
-    node->blockInsts.addInst(subInst);
 
-    node->val = subInst;
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        // 变量需要load
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 生成加法指令
+    BinaryInstruction * addInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_SUB_I,
+                                                        leftValue,
+                                                        rightValue,
+                                                        IntegerType::getTypeInt());
+    node->blockInsts.addInst(addInst);
+    node->val = addInst;
+
+    return true;
+}
+
+/// @brief 整数乘法AST节点翻译成线性中间IR
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_mul(ast_node * node)
+{
+    ast_node * leftNode = node->sons[0];
+    ast_node * rightNode = node->sons[1];
+
+    // 递归生成左右孩子的IR
+    ast_node * left = ir_visit_ast_node(leftNode);
+    ast_node * right = ir_visit_ast_node(rightNode);
+
+    if (!left || !right)
+        return false;
+
+    // 合并左右孩子的IR指令
+    node->blockInsts.addInst(left->blockInsts);
+    node->blockInsts.addInst(right->blockInsts);
+
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        // 变量需要load
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 生成加法指令
+    BinaryInstruction * addInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_MUL_I,
+                                                        leftValue,
+                                                        rightValue,
+                                                        IntegerType::getTypeInt());
+    node->blockInsts.addInst(addInst);
+    node->val = addInst;
+
+    return true;
+}
+
+/// @brief 整数除法AST节点翻译成线性中间IR
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_div(ast_node * node)
+{
+    ast_node * leftNode = node->sons[0];
+    ast_node * rightNode = node->sons[1];
+
+    // 递归生成左右孩子的IR
+    ast_node * left = ir_visit_ast_node(leftNode);
+    ast_node * right = ir_visit_ast_node(rightNode);
+
+    if (!left || !right)
+        return false;
+
+    // 合并左右孩子的IR指令
+    node->blockInsts.addInst(left->blockInsts);
+    node->blockInsts.addInst(right->blockInsts);
+
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        // 变量需要load
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 生成加法指令
+    BinaryInstruction * addInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_DIV_I,
+                                                        leftValue,
+                                                        rightValue,
+                                                        IntegerType::getTypeInt());
+    node->blockInsts.addInst(addInst);
+    node->val = addInst;
 
     return true;
 }
@@ -512,20 +866,28 @@ bool IRGenerator::ir_assign(ast_node * node)
     // 这里只处理整型的数据，如需支持实数，则需要针对类型进行处理
     // TODO real number add
 
-    MoveInstruction * movInst = new MoveInstruction(module->getCurrentFunction(), left->val, right->val);
+    Value * rightValue = nullptr;
 
-    // 创建临时变量保存IR的值，以及线性IR指令
-    node->blockInsts.addInst(right->blockInsts);
+    // 处理右操作数
+    if (needsLoad(right->val)) {
+        // 右操作数是变量，需要加载
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(right->blockInsts);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        // 右操作数是常量或表达式结果，直接使用
+        node->blockInsts.addInst(right->blockInsts);
+        rightValue = right->val;
+    }
+
+    // 创建 store 指令，将右侧值存储到左侧变量
+    StoreInstruction * storeInst = new StoreInstruction(module->getCurrentFunction(), rightValue, left->val, 4);
+
     node->blockInsts.addInst(left->blockInsts);
-    node->blockInsts.addInst(movInst);
+    node->blockInsts.addInst(storeInst);
 
-    // 打印生成的 IR 指令
-    std::string irStr;
-    movInst->toString(irStr);
-    printf("Generated IR: %s\n", irStr.c_str());
-
-    // 这里假定赋值的类型是一致的
-    node->val = movInst;
+    node->val = rightValue;
 
     return true;
 }
@@ -537,15 +899,13 @@ bool IRGenerator::ir_return(ast_node * node)
 {
     ast_node * right = nullptr;
 
-    // return语句可能没有没有表达式，也可能有，因此这里必须进行区分判断
+    // return语句可能没有表达式，也可能有，因此这里必须进行区分判断
     if (!node->sons.empty()) {
-
         ast_node * son_node = node->sons[0];
 
         // 返回的表达式的指令保存在right节点中
         right = ir_visit_ast_node(son_node);
         if (!right) {
-
             // 某个变量没有定值
             return false;
         }
@@ -553,19 +913,56 @@ bool IRGenerator::ir_return(ast_node * node)
 
     // 这里只处理整型的数据，如需支持实数，则需要针对类型进行处理
     Function * currentFunc = module->getCurrentFunction();
+    Value * returnValue = nullptr;
 
-    // 创建临时变量保存IR的值，以及线性IR指令
-    node->blockInsts.addInst(right->blockInsts);
+    // 处理返回值
+    if (right && right->val) {
+        if (needsLoad(right->val)) {
+            // 变量需要load
+            LoadInstruction * loadRight = new LoadInstruction(currentFunc, right->val, right->val, 4);
+            node->blockInsts.addInst(right->blockInsts);
+            node->blockInsts.addInst(loadRight);
+            returnValue = loadRight;
+        } else {
+            // 常量或表达式结果
+            node->blockInsts.addInst(right->blockInsts);
+            returnValue = right->val;
+        }
 
-    // 返回值赋值到函数返回值变量上，然后跳转到函数的尾部
-    node->blockInsts.addInst(new MoveInstruction(currentFunc, currentFunc->getReturnValue(), right->val));
+        // 如果函数有返回值变量，则将返回值存储到函数的返回值变量中
+        LocalVariable * retVar = currentFunc->getReturnValue();
+        if (retVar) {
+            // 检查是否已经有相同的store指令
+            bool needStore = true;
+            if (dynamic_cast<ConstInt *>(returnValue)) {
+                ConstInt * constRet = static_cast<ConstInt *>(returnValue);
+                if (constRet->getVal() == 0) {
+                    // 如果返回常量0，可能已经有默认的store 0指令，跳过
+                    needStore = false;
+                }
+            }
 
-    // 跳转到函数的尾部出口指令上
-    node->blockInsts.addInst(new GotoInstruction(currentFunc, currentFunc->getExitLabel()));
+            if (needStore) {
+                StoreInstruction * storeRetValue = new StoreInstruction(currentFunc, returnValue, retVar, 4);
+                node->blockInsts.addInst(storeRetValue);
+            }
+        } else {
+        }
+    }
 
-    node->val = right->val;
+    // 获取函数出口标签
+    Instruction * exitLabel = currentFunc->getExitLabel();
+    if (!exitLabel) {
+        printf("Error: No exit label defined for function in ir_return.\n");
+        return false;
+    }
 
-    // TODO 设置类型
+    // 创建跳转到函数出口的指令，而不是创建返回指令
+    GotoInstruction * gotoExit = new GotoInstruction(currentFunc, exitLabel);
+    node->blockInsts.addInst(gotoExit);
+
+    // 设置节点值为返回值
+    node->val = returnValue;
 
     return true;
 }
@@ -656,6 +1053,13 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
         return false;
     }
 
+    // 检查当前是否在全局作用域（函数外部）
+    Function * currentFunc = module->getCurrentFunction();
+    if (!currentFunc) {
+        // 全局变量处理
+        return ir_global_variable_declare(node, typeNode, varOrAssignNode);
+    }
+
     // 如果是赋值节点（AST_OP_ASSIGN）
     if (varOrAssignNode->node_type == ast_operator_type::AST_OP_ASSIGN) {
         // 获取赋值节点的子节点：变量名和初值表达式
@@ -673,26 +1077,43 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
             printf("Error: Failed to allocate variable in ir_variable_declare.\n");
             return false;
         }
+        // 创建 alloca 指令，为变量分配栈空间
+        AllocaInstruction * allocaInst =
+            new AllocaInstruction(module->getCurrentFunction(), varValue, typeNode->type, 4);
 
         // 将变量名节点的 Value 设置为分配的 Value
         varNode->val = varValue;
 
-        // 调用 ir_assign 处理赋值逻辑
-        if (!ir_assign(varOrAssignNode)) {
-            printf("Error: Failed to process assignment in ir_variable_declare.\n");
+        // 计算初值表达式
+        if (!ir_visit_ast_node(initExprNode)) {
+            printf("Error: Failed to evaluate initialization expression.\n");
             return false;
         }
 
-        // 手动遍历并打印 IR 指令
-        printf("Generated IR in ir_variable_declare:\n");
-        for (const auto & inst: varOrAssignNode->blockInsts.getCode()) { // 假设 blockInsts 有 getCode 方法
-            std::string instStr;
-            inst->toString(instStr); // 假设每个指令都有 toString 方法
-            printf("%s\n", instStr.c_str());
+        Value * initValue = nullptr;
+
+        // 处理初始值
+        if (needsLoad(initExprNode->val)) {
+            // 初始值是变量，需要加载
+            LoadInstruction * loadInit =
+                new LoadInstruction(module->getCurrentFunction(), initExprNode->val, initExprNode->val, 4);
+            node->blockInsts.addInst(initExprNode->blockInsts);
+            node->blockInsts.addInst(loadInit);
+            initValue = loadInit;
+        } else {
+            // 初始值是常量或表达式结果，直接使用
+            node->blockInsts.addInst(initExprNode->blockInsts);
+            initValue = initExprNode->val;
         }
 
-        // 将生成的 IR 指令添加到当前节点
-        node->blockInsts.addInst(varOrAssignNode->blockInsts);
+        // 创建 store 指令，将初始值存储到变量
+        StoreInstruction * storeInst = new StoreInstruction(module->getCurrentFunction(), initValue, varValue, 4);
+
+        node->blockInsts.addInst(allocaInst);
+
+        // node->blockInsts.addInst(initExprNode->blockInsts);
+
+        node->blockInsts.addInst(storeInst);
 
     } else {
         // 如果是普通变量声明（没有初值）
@@ -700,6 +1121,14 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
 
         // 在符号表中为变量分配 Value
         Value * varValue = module->newVarValue(typeNode->type, varNode->name);
+
+        // 创建 alloca 指令，为变量分配栈空间
+        AllocaInstruction * allocaInst =
+            new AllocaInstruction(module->getCurrentFunction(), varValue, typeNode->type, 4);
+
+        // 添加指令到当前节点
+        node->blockInsts.addInst(allocaInst);
+
         if (!varValue) {
             printf("Error: Failed to allocate variable in ir_variable_declare.\n");
             return false;
@@ -707,6 +1136,71 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
     }
 
     return true;
+}
+
+/// @brief 全局变量声明节点翻译成线性中间IR
+/// @param node AST节点
+/// @param typeNode 类型节点
+bool IRGenerator::ir_global_variable_declare(ast_node * node, ast_node * typeNode, ast_node * varOrAssignNode)
+{
+    // 如果是赋值节点（AST_OP_ASSIGN）
+    if (varOrAssignNode->node_type == ast_operator_type::AST_OP_ASSIGN) {
+        // 获取赋值节点的子节点：变量名和初值表达式
+        ast_node * varNode = varOrAssignNode->sons[0];
+        ast_node * initExprNode = varOrAssignNode->sons[1];
+
+        if (!varNode || !initExprNode) {
+            printf("Error: Invalid global variable assignment structure.\n");
+            return false;
+        }
+
+        // 处理初值
+        // TODO: 目前只支持整型常量初值，要加浮点数
+        Value * initValue = nullptr;
+        if (initExprNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+            // 整数常量初值
+            initValue = module->newConstInt(initExprNode->integer_val);
+        } else {
+            printf("Error: Global variable initialization only supports constants.\n");
+            return false;
+        }
+
+        // 使用公有的 newVarValue 方法创建全局变量
+        // 由于currentFunc为nullptr，会自动调用newGlobalVariable
+        Value * globalVar = module->newVarValue(typeNode->type, varNode->name);
+        if (!globalVar) {
+            printf("Error: Failed to create global variable.\n");
+            return false;
+        }
+
+        // 将全局变量转换为 GlobalVariable 类型并设置初值
+        GlobalVariable * globalVariable = static_cast<GlobalVariable *>(globalVar);
+        // TODO: 需要在 GlobalVariable 类中添加 setInitValue 方法
+        globalVariable->setInitValue(initValue);
+
+        // 设置节点的Value
+        varNode->val = globalVar;
+        node->val = globalVar;
+
+        return true;
+
+    } else {
+        // 如果是普通全局变量声明（没有初值）
+        ast_node * varNode = varOrAssignNode;
+
+        // 使用公有的 newVarValue 方法创建全局变量
+        Value * globalVar = module->newVarValue(typeNode->type, varNode->name);
+        if (!globalVar) {
+            printf("Error: Failed to create global variable.\n");
+            return false;
+        }
+
+        // 设置节点的Value
+        varNode->val = globalVar;
+        node->val = globalVar;
+
+        return true;
+    }
 }
 
 /// @brief 关系表达式AST节点翻译成线性中间IR
@@ -755,17 +1249,43 @@ bool IRGenerator::ir_rel_exp(ast_node * node)
             return false;
     }
 
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 处理左操作数
+    if (needsLoad(leftNode->val)) {
+        // 左操作数是变量，需要加载
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), leftNode->val, leftNode->val, 4);
+        node->blockInsts.addInst(leftNode->blockInsts);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        // 左操作数是常量或表达式结果，直接使用
+        node->blockInsts.addInst(leftNode->blockInsts);
+        leftValue = leftNode->val;
+    }
+
+    // 修复：处理右操作数
+    if (needsLoad(rightNode->val)) {
+        // 右操作数是变量，需要加载
+        LoadInstruction * loadRight =
+            new LoadInstruction(module->getCurrentFunction(), rightNode->val, rightNode->val, 4);
+        node->blockInsts.addInst(rightNode->blockInsts);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        // 右操作数是常量或表达式结果，直接使用
+        node->blockInsts.addInst(rightNode->blockInsts);
+        rightValue = rightNode->val;
+    }
+
     // 创建关系表达式指令
     auto * relInst =
-        new RelInstruction(module->getCurrentFunction(), op, leftNode->val, rightNode->val, IntegerType::getTypeBool());
+        new RelInstruction(module->getCurrentFunction(), op, leftValue, rightValue, IntegerType::getTypeBool());
 
     // 将指令添加到当前节点的指令块
-    node->blockInsts.addInst(leftNode->blockInsts);
-    node->blockInsts.addInst(rightNode->blockInsts);
-    node->blockInsts.addInst(relInst);
-
-    // 设置当前节点的值为比较指令的结果
     node->val = relInst;
+    node->blockInsts.addInst(relInst);
 
     return true;
 }
@@ -927,5 +1447,30 @@ bool IRGenerator::ir_continue(ast_node * node)
     // 生成跳转到条件检查标签的指令
     node->blockInsts.addInst(new GotoInstruction(module->getCurrentFunction(), condLabel));
 
+    return true;
+}
+
+bool IRGenerator::needsLoad(Value * val)
+{
+    // 如果值为空，不需要加载
+    if (!val)
+        return false;
+
+    // 如果是指令结果，不需要加载
+    if (dynamic_cast<Instruction *>(val) != nullptr) {
+        return false;
+    }
+
+    // 如果是常量，不需要加载
+    if (dynamic_cast<ConstInt *>(val) != nullptr) {
+        return false;
+    }
+
+    // 如果是形参，不需要加载
+    if (dynamic_cast<FormalParam *>(val) != nullptr) {
+        return false;
+    }
+
+    // 其他情况（如局部变量、全局变量）需要加载
     return true;
 }

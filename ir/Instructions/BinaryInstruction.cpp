@@ -36,24 +36,24 @@ BinaryInstruction::BinaryInstruction(Function * _func,
 /// @param str 转换后的字符串
 void BinaryInstruction::toString(std::string & str)
 {
+    std::string opStr;
 
-    Value *src1 = getOperand(0), *src2 = getOperand(1);
-
-    switch (op) {
+    switch (getOp()) {
         case IRInstOperator::IRINST_OP_ADD_I:
-
-            // 加法指令，二元运算
-            str = getIRName() + " = add " + src1->getIRName() + "," + src2->getIRName();
+            opStr = "add";
             break;
         case IRInstOperator::IRINST_OP_SUB_I:
-
-            // 减法指令，二元运算
-            str = getIRName() + " = sub " + src1->getIRName() + "," + src2->getIRName();
+            opStr = "sub";
             break;
-
+        // 可能需要添加更多运算符
         default:
-            // 未知指令
-            Instruction::toString(str);
+            opStr = "unknown";
             break;
     }
+
+    Value * left = getOperand(0);
+    Value * right = getOperand(1);
+
+    str = getIRName() + " = " + opStr + " nsw " + left->getType()->toString() + " " + left->getIRName() + ", " +
+          right->getIRName();
 }

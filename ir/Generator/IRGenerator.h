@@ -74,6 +74,16 @@ protected:
     /// @return 翻译是否成功，true：成功，false：失败
     bool ir_sub(ast_node * node);
 
+    /// @brief 整数乘法AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_mul(ast_node * node);
+
+    /// @brief 整数除法AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_div(ast_node * node);
+
     /// @brief 赋值AST节点翻译成线性中间IR
     /// @param node AST节点
     /// @return 翻译是否成功，true：成功，false：失败
@@ -168,4 +178,16 @@ private:
         LabelInstruction * exitLabel;
     };
     std::stack<LoopLabels> loopLabelStack;
+
+    /// @brief 判断一个值是否需要加载操作
+    /// @param val 要检查的值
+    /// @return true: 需要加载，false: 不需要加载
+    bool needsLoad(Value * val);
+
+    /// @brief 全局变量声明处理
+    /// @param node AST节点
+    /// @param typeNode 类型节点
+    /// @param varOrAssignNode 变量或赋值节点
+    /// @return 翻译是否成功
+    bool ir_global_variable_declare(ast_node * node, ast_node * typeNode, ast_node * varOrAssignNode);
 };

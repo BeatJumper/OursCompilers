@@ -24,7 +24,8 @@ BranchInstruction::BranchInstruction(Function * _func,
 /// @param str 转换后的字符串
 void BranchInstruction::toString(std::string & str)
 {
-    str = "bc " + condition->getIRName() + ", label " + trueLabel->getIRName() + ", label " + falseLabel->getIRName();
+    str = "br i1 " + condition->getIRName() + ", label %" + trueLabel->getIRName() + ", label %" +
+          falseLabel->getIRName();
 }
 
 /// @brief 获取条件值
