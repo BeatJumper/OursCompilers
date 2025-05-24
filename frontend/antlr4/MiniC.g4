@@ -54,25 +54,50 @@ statement:
 	| T_BREAK T_SEMICOLON											# breakStatement
 	| T_CONTINUE T_SEMICOLON										# continueStatement;
 
-cond: relExp;
+// 条件表达式 (逻辑或表达式)
+cond: lOrExp;
+
+// 逻辑或表达式
+lOrExp: lAndExp (T_OR lAndExp)*;
+
+// 逻辑与表达式
+lAndExp: eqExp (T_AND eqExp)*;
+
+// 相等性表达式
+eqExp: relExp (eqOp relExp)*;
+
+// 相等性运算符
+eqOp: T_EQ | T_NE;
 
 // 关系表达式
 relExp: addExp (relOp addExp)*;
 
 // 关系运算符
-relOp: T_LT | T_GT | T_LE | T_GE | T_EQ | T_NE;
+relOp: T_LT | T_GT | T_LE | T_GE;
 
 // 表达式文法 expr : AddExp 表达式目前只支持加法与减法运算
 expr: addExp;
 
 // 加减表达式
-addExp: unaryExp (addOp unaryExp)*;
+addExp: mulExp (addOp mulExp)*;
+
+// 乘除模表达式 (新增)
+mulExp: unaryExp (mulOp unaryExp)*;
+
+// 乘除模运算符 (新增)
+mulOp: T_MUL | T_DIV | T_MOD;
 
 // 加减运算符
 addOp: T_ADD | T_SUB;
 
-// 一元表达式
-unaryExp: primaryExp | T_ID T_L_PAREN realParamList? T_R_PAREN;
+// 一元表达式 (修改：增加单目运算符支持)
+unaryExp:
+	primaryExp
+	| T_ID T_L_PAREN realParamList? T_R_PAREN
+	| unaryOp unaryExp;
+
+// 单目运算符 (新增)
+unaryOp: T_ADD | T_SUB | T_NOT;
 
 // 基本表达式：括号表达式、整数、左值表达式
 primaryExp: T_L_PAREN expr T_R_PAREN | T_DIGIT | lVal;
@@ -94,15 +119,27 @@ T_R_BRACE: '}';
 T_ASSIGN: '=';
 T_COMMA: ',';
 
+// 算术运算符
 T_ADD: '+';
 T_SUB: '-';
+T_MUL: '*'; // 新增：乘法
+T_DIV: '/'; // 新增：除法
+T_MOD: '%'; // 新增：取模
 
+// 关系运算符
 T_LT: '<';
 T_GT: '>';
 T_LE: '<=';
 T_GE: '>=';
+
+// 相等性运算符
 T_EQ: '==';
 T_NE: '!=';
+
+// 逻辑运算符 (新增)
+T_AND: '&&'; // 逻辑与
+T_OR: '||'; // 逻辑或
+T_NOT: '!'; // 逻辑非
 
 // 要注意关键字同样也属于T_ID，因此必须放在T_ID的前面，否则会识别成T_ID
 T_RETURN: 'return';

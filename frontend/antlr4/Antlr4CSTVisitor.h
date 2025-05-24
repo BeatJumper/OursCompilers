@@ -210,4 +210,39 @@ protected:
     /// @param ctx CST上下文
     /// @return std::any AST的节点
     std::any visitContinueStatement(MiniCParser::ContinueStatementContext * ctx) override;
+
+    /// @brief 非终结运算符mulExp的遍历
+    /// @param ctx CST上下文
+    /// @return AST的节点
+    std::any visitMulExp(MiniCParser::MulExpContext * ctx) override;
+
+    /// @brief 非终结运算符mulOp的遍历
+    /// @param ctx CST上下文
+    /// @return AST的节点
+    std::any visitMulOp(MiniCParser::MulOpContext * ctx) override;
+
+    /// @brief 非终结运算符lAndExp的遍历
+    /// @param ctx CST上下文
+    /// @return AST的节点
+    std::any visitLAndExp(MiniCParser::LAndExpContext * ctx) override;
+
+    /// @brief 非终结运算符lOrExp的遍历
+    /// @param ctx CST上下文
+    /// @return AST的节点
+    std::any visitLOrExp(MiniCParser::LOrExpContext * ctx) override;
+
+    /// @brief 非终结运算符eqExp的遍历
+    /// @param ctx CST上下文
+    /// @return AST的节点
+    std::any visitEqExp(MiniCParser::EqExpContext * ctx) override;
+
+    /// @brief 非终结运算符eqOp的遍历
+    /// @param ctx CST上下文
+    /// @return AST的节点
+    std::any visitEqOp(MiniCParser::EqOpContext * ctx) override;
+
+    /// @brief 非终结运算符unaryOp的遍历
+    /// @param ctx CST上下文
+    /// @return AST的节点
+    std::any visitUnaryOp(MiniCParser::UnaryOpContext * ctx) override;
 };

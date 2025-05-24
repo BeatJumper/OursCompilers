@@ -99,6 +99,18 @@ enum class IRInstOperator : std::int8_t {
 
     /// @brief icmp指令
     IRINST_OP_ICMP,
+
+    /// @brief 整数的取模指令，二元运算
+    IRINST_OP_MOD_I,
+
+    /// @brief XOR指令（异或运算）
+    IRINST_OP_XOR_I,
+
+    /// @brief 零扩展指令（zext）
+    IRINST_OP_ZEXT,
+
+    /// @brief 截断指令（trunc）
+    IRINST_OP_TRUNC,
 };
 
 ///

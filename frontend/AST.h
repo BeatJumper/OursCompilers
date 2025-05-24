@@ -25,6 +25,7 @@
 #include "IRCode.h"
 #include "Value.h"
 #include "VoidType.h"
+#include "LabelInstruction.h"
 
 ///
 /// @brief AST节点的类型。C++专门因为枚举类来区分C语言的结构体
@@ -95,6 +96,24 @@ enum class ast_operator_type : int {
     /// @brief 二元运算符/
     AST_OP_DIV,
 
+    /// @brief 二元运算符%
+    AST_OP_MOD,
+
+    /// @brief 一元运算符+
+    AST_OP_POSITIVE,
+
+    /// @brief 一元运算符-
+    AST_OP_NEGATIVE,
+
+    /// @brief 一元运算符!
+    AST_OP_NOT,
+
+    /// @brief 逻辑与运算符
+    AST_OP_AND,
+
+    /// @brief 逻辑或运算符
+    AST_OP_OR,
+
     // TODO 抽象语法树其它内部节点运算符追加
     /// @brief if
     AST_OP_IF,
@@ -141,6 +160,12 @@ enum class ast_operator_type : int {
 ///
 class ast_node {
 public:
+    /// @brief 条件表达式的真出口标签，用于逻辑表达式
+    LabelInstruction * trueLabel = nullptr;
+
+    /// @brief 条件表达式的假出口标签，用于逻辑表达式
+    LabelInstruction * falseLabel = nullptr;
+
     /// @brief 节点类型
     ast_operator_type node_type;
 

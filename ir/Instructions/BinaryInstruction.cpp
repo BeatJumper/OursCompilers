@@ -40,12 +40,23 @@ void BinaryInstruction::toString(std::string & str)
 
     switch (getOp()) {
         case IRInstOperator::IRINST_OP_ADD_I:
-            opStr = "add";
+            opStr = "add nsw";
             break;
         case IRInstOperator::IRINST_OP_SUB_I:
-            opStr = "sub";
+            opStr = "sub nsw";
             break;
-        // 可能需要添加更多运算符
+        case IRInstOperator::IRINST_OP_MUL_I:
+            opStr = "mul nsw";
+            break;
+        case IRInstOperator::IRINST_OP_DIV_I:
+            opStr = "sdiv";
+            break;
+        case IRInstOperator::IRINST_OP_MOD_I: // 新增
+            opStr = "srem";
+            break;
+        case IRInstOperator::IRINST_OP_XOR_I: // 新增
+            opStr = "xor";
+            break;
         default:
             opStr = "unknown";
             break;
@@ -54,6 +65,12 @@ void BinaryInstruction::toString(std::string & str)
     Value * left = getOperand(0);
     Value * right = getOperand(1);
 
-    str = getIRName() + " = " + opStr + " nsw " + left->getType()->toString() + " " + left->getIRName() + ", " +
-          right->getIRName();
+    if (getOp() == IRInstOperator::IRINST_OP_XOR_I) {
+        // XOR指令不需要nsw标志
+        str = getIRName() + " = " + opStr + " " + left->getType()->toString() + " " + left->getIRName() + ", " +
+              right->getIRName();
+    } else {
+        str = getIRName() + " = " + opStr + " " + left->getType()->toString() + " " + left->getIRName() + ", " +
+              right->getIRName();
+    }
 }

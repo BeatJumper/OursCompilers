@@ -133,6 +133,10 @@ set(IR_SRCS
 	ir/Instructions/StoreInstruction.h
 	ir/Instructions/LoadInstruction.cpp
 	ir/Instructions/LoadInstruction.h
+	ir/Instructions/XorInstruction.cpp
+	ir/Instructions/XorInstruction.h
+	ir/Instructions/ZextInstruction.cpp
+	ir/Instructions/ZextInstruction.h
 	ir/Types/VoidType.h
 	ir/Types/VoidType.cpp
 	ir/Types/LabelType.h

@@ -22,6 +22,7 @@
 
 #include "AST.h"
 #include "Module.h"
+#include "IRCode.h"
 
 /// @brief AST遍历产生线性IR类
 class IRGenerator {
@@ -190,4 +191,76 @@ private:
     /// @param varOrAssignNode 变量或赋值节点
     /// @return 翻译是否成功
     bool ir_global_variable_declare(ast_node * node, ast_node * typeNode, ast_node * varOrAssignNode);
+
+    /// @brief 整数取模AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_mod(ast_node * node);
+
+    /// @brief 正号一元运算符AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_positive(ast_node * node);
+
+    /// @brief 负号一元运算符AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_negative(ast_node * node);
+
+    /// @brief 逻辑非运算符AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_not(ast_node * node);
+
+    /// @brief 逻辑与运算符AST节点翻译成线性中间IR（支持短路求值）
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_and(ast_node * node);
+
+    /// @brief 逻辑或运算符AST节点翻译成线性中间IR（支持短路求值）
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_or(ast_node * node);
+
+private:
+    /// @brief 将值转换为i1类型（如果需要）
+    Value * convertToI1(Value * val, Function * func, InterCode & blockInsts);
+
+    /// @brief 将i1类型的值扩展为i32类型（如果需要）
+    Value * convertToI32(Value * val, Function * func, InterCode & blockInsts);
+
+    /// @brief 逻辑与运算符AST节点翻译成线性中间IR（条件跳转版本）
+    /// @param node AST节点
+    /// @param trueLabel 真出口标签
+    /// @param falseLabel 假出口标签
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_and_with_labels(ast_node * node, LabelInstruction * trueLabel, LabelInstruction * falseLabel);
+
+    /// @brief 逻辑或运算符AST节点翻译成线性中间IR（条件跳转版本）
+    /// @param node AST节点
+    /// @param trueLabel 真出口标签
+    /// @param falseLabel 假出口标签
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_or_with_labels(ast_node * node, LabelInstruction * trueLabel, LabelInstruction * falseLabel);
+
+    /// @brief 逻辑非运算符AST节点翻译成线性中间IR（条件跳转版本）
+    /// @param node AST节点
+    /// @param trueLabel 真出口标签
+    /// @param falseLabel 假出口标签
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_not_with_labels(ast_node * node, LabelInstruction * trueLabel, LabelInstruction * falseLabel);
+
+    /// @brief 关系表达式AST节点翻译成线性中间IR（条件跳转版本）
+    /// @param node AST节点
+    /// @param trueLabel 真出口标签
+    /// @param falseLabel 假出口标签
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_rel_exp_with_labels(ast_node * node, LabelInstruction * trueLabel, LabelInstruction * falseLabel);
+
+    /// @brief 处理条件表达式，根据节点类型选择合适的处理方法
+    /// @param node AST节点
+    /// @param trueLabel 真出口标签
+    /// @param falseLabel 假出口标签
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_condition_expr(ast_node * node, LabelInstruction * trueLabel, LabelInstruction * falseLabel);
 };

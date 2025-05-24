@@ -72,6 +72,26 @@ string getNodeName(ast_node * astnode)
         case ast_operator_type::AST_OP_SUB:
             nodeName = "-";
             break;
+        case ast_operator_type::AST_OP_MUL: // 新增：乘法
+            nodeName = "*";
+            break;
+        case ast_operator_type::AST_OP_DIV: // 新增：除法
+            nodeName = "/";
+            break;
+        case ast_operator_type::AST_OP_MOD: // 新增：取模
+            nodeName = "%";
+            break;
+
+        case ast_operator_type::AST_OP_POSITIVE: // 新增：正号
+            nodeName = "+";
+            break;
+        case ast_operator_type::AST_OP_NEGATIVE: // 新增：负号
+            nodeName = "-";
+            break;
+        case ast_operator_type::AST_OP_NOT: // 新增：逻辑非
+            nodeName = "!";
+            break;
+
         case ast_operator_type::AST_OP_ASSIGN:
             nodeName = "=";
             break;
@@ -120,6 +140,14 @@ string getNodeName(ast_node * astnode)
             nodeName = "!=";
             break;
 
+        // 逻辑运算符 (新增)
+        case ast_operator_type::AST_OP_AND: // 新增：逻辑与
+            nodeName = "&&";
+            break;
+        case ast_operator_type::AST_OP_OR: // 新增：逻辑或
+            nodeName = "||";
+            break;
+
         default:
             nodeName = "unknown";
             break;
@@ -163,6 +191,66 @@ Agnode_t * genLeafGraphNode(Agraph_t * g, ast_node * astnode)
         // 如果是初值节点，设置特殊的颜色或形状
         if (astnode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
             agsafeset(node, (char *) "fillcolor", (char *) "lightblue", (char *) "");
+        }
+
+        // 根据运算符类型设置不同的颜色
+        switch (astnode->node_type) {
+            // 算术运算符 - 蓝色
+            case ast_operator_type::AST_OP_ADD:
+            case ast_operator_type::AST_OP_SUB:
+            case ast_operator_type::AST_OP_MUL:
+            case ast_operator_type::AST_OP_DIV:
+            case ast_operator_type::AST_OP_MOD:
+                agsafeset(node, (char *) "style", (char *) "filled", (char *) "");
+                agsafeset(node, (char *) "fillcolor", (char *) "lightblue", (char *) "");
+                break;
+
+            // 逻辑运算符 - 绿色
+            case ast_operator_type::AST_OP_AND:
+            case ast_operator_type::AST_OP_OR:
+            case ast_operator_type::AST_OP_NOT:
+                agsafeset(node, (char *) "style", (char *) "filled", (char *) "");
+                agsafeset(node, (char *) "fillcolor", (char *) "lightgreen", (char *) "");
+                break;
+
+            // 关系和相等性运算符 - 橙色
+            case ast_operator_type::AST_OP_LT:
+            case ast_operator_type::AST_OP_GT:
+            case ast_operator_type::AST_OP_LE:
+            case ast_operator_type::AST_OP_GE:
+            case ast_operator_type::AST_OP_EQ:
+            case ast_operator_type::AST_OP_NE:
+                agsafeset(node, (char *) "style", (char *) "filled", (char *) "");
+                agsafeset(node, (char *) "fillcolor", (char *) "orange", (char *) "");
+                break;
+
+            // 一元运算符 - 粉色
+            case ast_operator_type::AST_OP_POSITIVE:
+            case ast_operator_type::AST_OP_NEGATIVE:
+                agsafeset(node, (char *) "style", (char *) "filled", (char *) "");
+                agsafeset(node, (char *) "fillcolor", (char *) "pink", (char *) "");
+                break;
+
+            // 控制流语句 - 红色
+            case ast_operator_type::AST_OP_IF:
+            case ast_operator_type::AST_OP_WHILE:
+            case ast_operator_type::AST_OP_BREAK:
+            case ast_operator_type::AST_OP_CONTINUE:
+            case ast_operator_type::AST_OP_RETURN:
+                agsafeset(node, (char *) "style", (char *) "filled", (char *) "");
+                agsafeset(node, (char *) "fillcolor", (char *) "salmon", (char *) "");
+                break;
+
+            // 函数相关 - 青色
+            case ast_operator_type::AST_OP_FUNC_DEF:
+            case ast_operator_type::AST_OP_FUNC_CALL:
+                agsafeset(node, (char *) "style", (char *) "filled", (char *) "");
+                agsafeset(node, (char *) "fillcolor", (char *) "cyan", (char *) "");
+                break;
+
+            default:
+                // 默认颜色
+                break;
         }
     }
 

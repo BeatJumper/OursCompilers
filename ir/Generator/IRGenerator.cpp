@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <vector>
 #include <iostream>
+#include <algorithm>
 
 #include "AST.h"
 #include "Common.h"
@@ -38,6 +39,8 @@
 #include "AllocaInstruction.h"
 #include "StoreInstruction.h"
 #include "LoadInstruction.h"
+#include "XorInstruction.h"
+#include "ZextInstruction.h"
 
 /// @brief 构造函数
 /// @param _root AST的根
@@ -54,6 +57,13 @@ IRGenerator::IRGenerator(ast_node * _root, Module * _module) : root(_root), modu
     ast2ir_handlers[ast_operator_type::AST_OP_ADD] = &IRGenerator::ir_add;
     ast2ir_handlers[ast_operator_type::AST_OP_MUL] = &IRGenerator::ir_mul;
     ast2ir_handlers[ast_operator_type::AST_OP_DIV] = &IRGenerator::ir_div;
+
+    ast2ir_handlers[ast_operator_type::AST_OP_MOD] = &IRGenerator::ir_mod;
+    ast2ir_handlers[ast_operator_type::AST_OP_POSITIVE] = &IRGenerator::ir_positive;
+    ast2ir_handlers[ast_operator_type::AST_OP_NEGATIVE] = &IRGenerator::ir_negative;
+    ast2ir_handlers[ast_operator_type::AST_OP_NOT] = &IRGenerator::ir_not;
+    ast2ir_handlers[ast_operator_type::AST_OP_AND] = &IRGenerator::ir_and;
+    ast2ir_handlers[ast_operator_type::AST_OP_OR] = &IRGenerator::ir_or;
 
     /* 关系表达式运算 */
     ast2ir_handlers[ast_operator_type::AST_OP_LT] = &IRGenerator::ir_rel_exp;
@@ -1322,14 +1332,14 @@ bool IRGenerator::ir_while(ast_node * node)
     // 条件检查标签
     node->blockInsts.addInst(condLabel);
 
-    // 生成条件表达式的 IR
-    if (!ir_visit_ast_node(condNode)) {
+    // 生成条件表达式的 IR，使用新的条件表达式处理方法
+    if (!ir_condition_expr(condNode, bodyLabel, exitLabel)) {
         return false;
     }
     node->blockInsts.addInst(condNode->blockInsts);
 
     // 条件跳转指令：条件为真跳转到循环体，为假跳转到退出标签
-    node->blockInsts.addInst(new BranchInstruction(currentFunc, condNode->val, bodyLabel, exitLabel));
+    // node->blockInsts.addInst(new BranchInstruction(currentFunc, condNode->val, bodyLabel, exitLabel));
 
     // 循环体标签
     node->blockInsts.addInst(bodyLabel);
@@ -1367,24 +1377,16 @@ bool IRGenerator::ir_if_else(ast_node * node)
     // 获取当前函数
     Function * currentFunc = module->getCurrentFunction();
 
-    // 创建条件、then分支、else分支（可选）和结束标签
-    LabelInstruction * condLabel = new LabelInstruction(currentFunc);
+    // 创建then分支、else分支（可选）和结束标签
     LabelInstruction * thenLabel = new LabelInstruction(currentFunc);
     LabelInstruction * elseLabel = elseNode ? new LabelInstruction(currentFunc) : nullptr;
     LabelInstruction * endLabel = new LabelInstruction(currentFunc);
 
-    // 条件检查标签
-    node->blockInsts.addInst(condLabel);
-
-    // 生成条件表达式的 IR
-    if (!ir_visit_ast_node(condNode)) {
+    // 生成条件表达式的 IR，使用新的条件表达式处理方法
+    if (!ir_condition_expr(condNode, thenLabel, elseLabel ? elseLabel : endLabel)) {
         return false;
     }
     node->blockInsts.addInst(condNode->blockInsts);
-
-    // 条件跳转指令：条件为真跳转到then分支，为假跳转到else分支或结束标签
-    node->blockInsts.addInst(
-        new BranchInstruction(currentFunc, condNode->val, thenLabel, elseLabel ? elseLabel : endLabel));
 
     // then分支标签
     node->blockInsts.addInst(thenLabel);
@@ -1450,6 +1452,150 @@ bool IRGenerator::ir_continue(ast_node * node)
     return true;
 }
 
+/// @brief 整数取模AST节点翻译成线性中间IR
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_mod(ast_node * node)
+{
+    ast_node * leftNode = node->sons[0];
+    ast_node * rightNode = node->sons[1];
+
+    // 递归生成左右孩子的IR
+    ast_node * left = ir_visit_ast_node(leftNode);
+    ast_node * right = ir_visit_ast_node(rightNode);
+
+    if (!left || !right)
+        return false;
+
+    // 合并左右孩子的IR指令
+    node->blockInsts.addInst(left->blockInsts);
+    node->blockInsts.addInst(right->blockInsts);
+
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 生成取模指令
+    BinaryInstruction * modInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_MOD_I,
+                                                        leftValue,
+                                                        rightValue,
+                                                        IntegerType::getTypeInt());
+    node->blockInsts.addInst(modInst);
+    node->val = modInst;
+
+    return true;
+}
+
+/// @brief 正号一元运算符AST节点翻译成线性中间IR
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_positive(ast_node * node)
+{
+    // 正号运算符实际上不改变值，直接返回操作数的值
+    ast_node * operandNode = node->sons[0];
+
+    ast_node * operand = ir_visit_ast_node(operandNode);
+    if (!operand) {
+        return false;
+    }
+
+    // 复制操作数的指令和值
+    node->blockInsts.addInst(operand->blockInsts);
+    node->val = operand->val;
+
+    return true;
+}
+
+/// @brief 负号一元运算符AST节点翻译成线性中间IR
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_negative(ast_node * node)
+{
+    ast_node * operandNode = node->sons[0];
+
+    ast_node * operand = ir_visit_ast_node(operandNode);
+    if (!operand) {
+        return false;
+    }
+
+    node->blockInsts.addInst(operand->blockInsts);
+
+    Value * operandValue = nullptr;
+
+    // 处理操作数
+    if (needsLoad(operand->val)) {
+        LoadInstruction * loadOperand =
+            new LoadInstruction(module->getCurrentFunction(), operand->val, operand->val, 4);
+        node->blockInsts.addInst(loadOperand);
+        operandValue = loadOperand;
+    } else {
+        operandValue = operand->val;
+    }
+
+    // 生成负号指令：0 - operand
+    ConstInt * zeroConst = module->newConstInt(0);
+    BinaryInstruction * negInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_SUB_I,
+                                                        zeroConst,
+                                                        operandValue,
+                                                        IntegerType::getTypeInt());
+    node->blockInsts.addInst(negInst);
+    node->val = negInst;
+
+    return true;
+}
+
+/// @brief 逻辑非运算符AST节点翻译成线性中间IR（兼容旧接口）
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_not(ast_node * node)
+{
+    // 这个方法不应该被直接调用，因为逻辑表达式需要外部提供真假出口
+    // 如果被调用，说明逻辑表达式被错误地用作普通表达式
+    printf("Error: Logical NOT expression cannot be used as regular expression.\n");
+    return false;
+}
+
+/// @brief 逻辑与运算符AST节点翻译成线性中间IR（兼容旧接口）
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_and(ast_node * node)
+{
+    // 这个方法不应该被直接调用，因为逻辑表达式需要外部提供真假出口
+    // 如果被调用，说明逻辑表达式被错误地用作普通表达式
+    printf("Error: Logical AND expression cannot be used as regular expression.\n");
+    return false;
+}
+
+/// @brief 逻辑或运算符AST节点翻译成线性中间IR（兼容旧接口）
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_or(ast_node * node)
+{
+    // 这个方法不应该被直接调用，因为逻辑表达式需要外部提供真假出口
+    // 如果被调用，说明逻辑表达式被错误地用作普通表达式
+    printf("Error: Logical OR expression cannot be used as regular expression.\n");
+    return false;
+}
+
 bool IRGenerator::needsLoad(Value * val)
 {
     // 如果值为空，不需要加载
@@ -1473,4 +1619,288 @@ bool IRGenerator::needsLoad(Value * val)
 
     // 其他情况（如局部变量、全局变量）需要加载
     return true;
+}
+
+// filepath: [IRGenerator.cpp](http://_vscodecontentref_/0)
+// 在IRGenerator类中添加辅助函数
+
+/// @brief 将值转换为i1类型（如果需要）
+/// @param val 输入值
+/// @param func 当前函数
+/// @param blockInsts 指令块
+/// @return i1类型的值
+Value * IRGenerator::convertToI1(Value * val, Function * func, InterCode & blockInsts)
+{
+    // 如果已经是i1类型，直接返回
+    if (val->getType()->isIntegerType()) {
+        IntegerType * intType = static_cast<IntegerType *>(val->getType());
+        if (intType->getBitWidth() == 1) {
+            return val;
+        }
+    }
+
+    // 如果是i32类型，转换为i1
+    ConstInt * zeroConst = module->newConstInt(0);
+    RelInstruction * toBoolInst =
+        new RelInstruction(func, IRInstOperator::IRINST_OP_NE, val, zeroConst, IntegerType::getTypeBool());
+    blockInsts.addInst(toBoolInst);
+    return toBoolInst;
+}
+
+/// @brief 将i1类型的值扩展为i32类型（如果需要）
+/// @param val 输入值
+/// @param func 当前函数
+/// @param blockInsts 指令块
+/// @return i32类型的值
+Value * IRGenerator::convertToI32(Value * val, Function * func, InterCode & blockInsts)
+{
+    // 如果已经是i32类型，直接返回
+    if (val->getType()->isIntegerType()) {
+        IntegerType * intType = static_cast<IntegerType *>(val->getType());
+        if (intType->getBitWidth() == 32) {
+            return val;
+        }
+    }
+
+    // 如果是i1类型，扩展为i32
+    ZextInstruction * zextInst = new ZextInstruction(func, val, IntegerType::getTypeInt());
+    blockInsts.addInst(zextInst);
+    return zextInst;
+}
+
+/// @brief 逻辑与运算符AST节点翻译成线性中间IR（条件跳转版本）
+/// @param node AST节点
+/// @param trueLabel 真出口标签
+/// @param falseLabel 假出口标签
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_and_with_labels(ast_node * node, LabelInstruction * trueLabel, LabelInstruction * falseLabel)
+{
+    ast_node * leftNode = node->sons[0];  // BoolExpr0
+    ast_node * rightNode = node->sons[1]; // BoolExpr1
+
+    Function * currentFunc = module->getCurrentFunction();
+
+    // 创建中间标签L3
+    LabelInstruction * rightLabel = new LabelInstruction(currentFunc); // L3
+
+    // 遍历BoolExpr0生成线性IR后插入（本步需要L3和L2，分别作为条件表达式的真出口和假出口）
+    if (!ir_condition_expr(leftNode, rightLabel, falseLabel)) {
+        return false;
+    }
+    node->blockInsts.addInst(leftNode->blockInsts);
+
+    // 然后插入Label指令L3
+    node->blockInsts.addInst(rightLabel);
+
+    // 然后遍历BoolExpr1生成线性IR后插入（本步需要L1和L2，分别作为条件表达式的真出口和假出口）
+    if (!ir_condition_expr(rightNode, trueLabel, falseLabel)) {
+        return false;
+    }
+    node->blockInsts.addInst(rightNode->blockInsts);
+
+    // 条件表达式不设置val值
+    node->val = nullptr;
+
+    return true;
+}
+
+/// @brief 逻辑或运算符AST节点翻译成线性中间IR（条件跳转版本）
+/// @param node AST节点
+/// @param trueLabel 真出口标签
+/// @param falseLabel 假出口标签
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_or_with_labels(ast_node * node, LabelInstruction * trueLabel, LabelInstruction * falseLabel)
+{
+    ast_node * leftNode = node->sons[0];  // BoolExpr0
+    ast_node * rightNode = node->sons[1]; // BoolExpr1
+
+    Function * currentFunc = module->getCurrentFunction();
+
+    // 创建中间标签L3
+    LabelInstruction * rightLabel = new LabelInstruction(currentFunc); // L3
+
+    // 遍历BoolExpr0生成线性IR后插入（本步需要L1和L3，分别作为条件表达式的真出口和假出口）
+    if (!ir_condition_expr(leftNode, trueLabel, rightLabel)) {
+        return false;
+    }
+    node->blockInsts.addInst(leftNode->blockInsts);
+
+    // 然后插入Label指令L3
+    node->blockInsts.addInst(rightLabel);
+
+    // 然后遍历BoolExpr1生成线性IR后插入（本步需要L1和L2，分别作为条件表达式的真出口和假出口）
+    if (!ir_condition_expr(rightNode, trueLabel, falseLabel)) {
+        return false;
+    }
+    node->blockInsts.addInst(rightNode->blockInsts);
+
+    // 条件表达式不设置val值
+    node->val = nullptr;
+
+    return true;
+}
+
+/// @brief 逻辑非运算符AST节点翻译成线性中间IR（条件跳转版本）
+/// @param node AST节点
+/// @param trueLabel 真出口标签
+/// @param falseLabel 假出口标签
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_not_with_labels(ast_node * node, LabelInstruction * trueLabel, LabelInstruction * falseLabel)
+{
+    ast_node * operandNode = node->sons[0];
+
+    // 遍历子树生成线性IR后插入，本步需要L2和L1，分别作为条件表达式的真出口和假出口（注意这里，L2对应的是真出口）
+    if (!ir_condition_expr(operandNode, falseLabel, trueLabel)) {
+        return false;
+    }
+    node->blockInsts.addInst(operandNode->blockInsts);
+
+    // 条件表达式不设置val值
+    node->val = nullptr;
+
+    return true;
+}
+
+/// @brief 关系表达式AST节点翻译成线性中间IR（条件跳转版本）
+/// @param node AST节点
+/// @param trueLabel 真出口标签
+/// @param falseLabel 假出口标签
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_rel_exp_with_labels(ast_node * node, LabelInstruction * trueLabel, LabelInstruction * falseLabel)
+{
+    // 确保节点有两个子节点：左操作数和右操作数
+    if (node->sons.size() != 2) {
+        printf("Error: Invalid node structure in ir_rel_exp_with_labels.\n");
+        return false;
+    }
+
+    // 获取左操作数和右操作数
+    ast_node * leftNode = node->sons[0];
+    ast_node * rightNode = node->sons[1];
+
+    // 递归生成左操作数和右操作数的 IR
+    if (!ir_visit_ast_node(leftNode) || !ir_visit_ast_node(rightNode)) {
+        return false;
+    }
+
+    // 获取操作符类型
+    IRInstOperator op;
+    switch (node->node_type) {
+        case ast_operator_type::AST_OP_LT:
+            op = IRInstOperator::IRINST_OP_LT;
+            break;
+        case ast_operator_type::AST_OP_GT:
+            op = IRInstOperator::IRINST_OP_GT;
+            break;
+        case ast_operator_type::AST_OP_LE:
+            op = IRInstOperator::IRINST_OP_LE;
+            break;
+        case ast_operator_type::AST_OP_GE:
+            op = IRInstOperator::IRINST_OP_GE;
+            break;
+        case ast_operator_type::AST_OP_EQ:
+            op = IRInstOperator::IRINST_OP_EQ;
+            break;
+        case ast_operator_type::AST_OP_NE:
+            op = IRInstOperator::IRINST_OP_NE;
+            break;
+        default:
+            printf("Error: Unsupported operator in ir_rel_exp_with_labels.\n");
+            return false;
+    }
+
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 处理左操作数
+    if (needsLoad(leftNode->val)) {
+        // 左操作数是变量，需要加载
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), leftNode->val, leftNode->val, 4);
+        node->blockInsts.addInst(leftNode->blockInsts);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        // 左操作数是常量或表达式结果，直接使用
+        node->blockInsts.addInst(leftNode->blockInsts);
+        leftValue = leftNode->val;
+    }
+
+    // 处理右操作数
+    if (needsLoad(rightNode->val)) {
+        // 右操作数是变量，需要加载
+        LoadInstruction * loadRight =
+            new LoadInstruction(module->getCurrentFunction(), rightNode->val, rightNode->val, 4);
+        node->blockInsts.addInst(rightNode->blockInsts);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        // 右操作数是常量或表达式结果，直接使用
+        node->blockInsts.addInst(rightNode->blockInsts);
+        rightValue = rightNode->val;
+    }
+
+    // 创建关系表达式指令
+    RelInstruction * relInst =
+        new RelInstruction(module->getCurrentFunction(), op, leftValue, rightValue, IntegerType::getTypeBool());
+    node->blockInsts.addInst(relInst);
+
+    // 生成条件跳转指令
+    BranchInstruction * branchInst =
+        new BranchInstruction(module->getCurrentFunction(), relInst, trueLabel, falseLabel);
+    node->blockInsts.addInst(branchInst);
+
+    // 条件表达式不设置val值
+    node->val = nullptr;
+
+    return true;
+}
+
+/// @brief 处理条件表达式，根据节点类型选择合适的处理方法
+/// @param node AST节点
+/// @param trueLabel 真出口标签
+/// @param falseLabel 假出口标签
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_condition_expr(ast_node * node, LabelInstruction * trueLabel, LabelInstruction * falseLabel)
+{
+    switch (node->node_type) {
+        case ast_operator_type::AST_OP_AND:
+            return ir_and_with_labels(node, trueLabel, falseLabel);
+
+        case ast_operator_type::AST_OP_OR:
+            return ir_or_with_labels(node, trueLabel, falseLabel);
+
+        case ast_operator_type::AST_OP_NOT:
+            return ir_not_with_labels(node, trueLabel, falseLabel);
+
+        case ast_operator_type::AST_OP_LT:
+        case ast_operator_type::AST_OP_GT:
+        case ast_operator_type::AST_OP_LE:
+        case ast_operator_type::AST_OP_GE:
+        case ast_operator_type::AST_OP_EQ:
+        case ast_operator_type::AST_OP_NE:
+            return ir_rel_exp_with_labels(node, trueLabel, falseLabel);
+
+        default:
+            // 对于其他表达式（如变量、常量），需要转换为条件跳转
+            if (!ir_visit_ast_node(node)) {
+                return false;
+            }
+
+            Value * condValue = nullptr;
+            if (needsLoad(node->val)) {
+                LoadInstruction * loadCond = new LoadInstruction(module->getCurrentFunction(), node->val, node->val, 4);
+                node->blockInsts.addInst(loadCond);
+                condValue = loadCond;
+            } else {
+                condValue = node->val;
+            }
+
+            // 转换为i1类型并生成条件跳转
+            Value * boolValue = convertToI1(condValue, module->getCurrentFunction(), node->blockInsts);
+            BranchInstruction * branchInst =
+                new BranchInstruction(module->getCurrentFunction(), boolValue, trueLabel, falseLabel);
+            node->blockInsts.addInst(branchInst);
+
+            return true;
+    }
 }
