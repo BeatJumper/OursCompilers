@@ -411,10 +411,38 @@ std::any MiniCCSTVisitor::visitPrimaryExp(MiniCParser::PrimaryExpContext * ctx)
     if (ctx->T_DIGIT()) {
         // 无符号整型字面量
         // 识别 primaryExp: T_DIGIT
-
-        uint32_t val = (uint32_t) stoull(ctx->T_DIGIT()->getText());
+        // 获取原始文本（包含十六进制、八进制等）
+        std::string digitText = ctx->T_DIGIT()->getText();
         int64_t lineNo = (int64_t) ctx->T_DIGIT()->getSymbol()->getLine();
-        node = ast_node::New(digit_int_attr{val, lineNo});
+
+        // 添加调试信息
+        printf("Debug: Processing T_DIGIT: '%s' at line %ld\n", digitText.c_str(), lineNo);
+
+        // 解析数字值用于设置 integer_val
+        uint32_t val = 0;
+        try {
+            if (digitText.size() >= 2 && (digitText.substr(0, 2) == "0x" || digitText.substr(0, 2) == "0X")) {
+                // 十六进制
+                val = (uint32_t) std::stoull(digitText, nullptr, 16);
+            } else if (digitText.size() >= 2 && digitText[0] == '0' && digitText[1] >= '0' && digitText[1] <= '7') {
+                // 八进制
+                val = (uint32_t) std::stoull(digitText, nullptr, 8);
+            } else {
+                // 十进制
+                val = (uint32_t) std::stoull(digitText, nullptr, 10);
+            }
+        } catch (const std::exception & e) {
+            printf("Error: Failed to parse digit '%s' at line %ld: %s\n", digitText.c_str(), lineNo, e.what());
+            return nullptr;
+        }
+
+        // 创建节点时使用原始文本作为名称，解析后的值作为 integer_val
+        node = ast_node::New(digitText, lineNo);
+        node->integer_val = val;
+        node->node_type = ast_operator_type::AST_OP_LEAF_LITERAL_UINT;
+
+        // printf("Debug: Created digit node: name='%s', value=%u\n", digitText.c_str(), val);
+
     } else if (ctx->lVal()) {
         // 具有左值的表达式
         // 识别 primaryExp: lVal

@@ -1009,12 +1009,31 @@ bool IRGenerator::ir_leaf_node_var_id(ast_node * node)
 /// @return 翻译是否成功，true：成功，false：失败
 bool IRGenerator::ir_leaf_node_uint(ast_node * node)
 {
-    ConstInt * val;
+    std::string numStr = node->name;
+    int32_t value = 0;
 
-    // 新建一个整数常量Value
-    val = module->newConstInt((int32_t) node->integer_val);
+    try {
+        // 判断数字类型并解析
+        if (numStr.size() >= 2 && (numStr.substr(0, 2) == "0x" || numStr.substr(0, 2) == "0X")) {
+            // 十六进制数字
+            value = std::stoi(numStr, nullptr, 16);
+        } else if (numStr.size() >= 2 && numStr[0] == '0' && numStr[1] >= '0' && numStr[1] <= '7') {
+            // 八进制数字（以0开头且第二个字符是八进制数字）
+            value = std::stoi(numStr, nullptr, 8);
+        } else {
+            // 十进制数字
+            value = std::stoi(numStr, nullptr, 10);
+        }
+    } catch (const std::exception & e) {
+        printf("Error: Failed to parse integer literal '%s': %s\n", numStr.c_str(), e.what());
+        return false;
+    }
 
-    node->val = val;
+    // 新建常量
+    ConstInt * newConst = module->newConstInt(value);
+
+    // 设置节点的值
+    node->val = newConst;
 
     return true;
 }
