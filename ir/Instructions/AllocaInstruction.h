@@ -18,6 +18,9 @@ public:
     /// @param str Output string
     void toString(std::string & str) override;
 
+    /// @brief 获取对齐值
+    int getAligned();
+
 private:
     int align; // 对齐值
 };

@@ -93,6 +93,24 @@ public:
     }
 
     ///
+    /// @brief 设置内存寻址的偏移
+    /// @param _offset 偏移
+    ///
+    void setOffset(int64_t _offset)
+    {
+        offset = _offset;
+    }
+
+    ///
+    /// @brief 获取偏移
+    /// @return 偏移量
+    ///
+    int getOffset()
+    {
+        return offset;
+    }
+
+    ///
     /// @brief 对该Value进行Load用的寄存器编号
     /// @return int32_t 寄存器编号
     ///

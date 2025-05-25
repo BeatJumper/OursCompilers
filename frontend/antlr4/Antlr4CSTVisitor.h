@@ -245,4 +245,29 @@ protected:
     /// @param ctx CST上下文
     /// @return AST的节点
     std::any visitUnaryOp(MiniCParser::UnaryOpContext * ctx) override;
+
+    /// @brief 非终结符Decl的分析
+    /// @param ctx CST上下文
+    /// @return std::any AST的节点
+    std::any visitDecl(MiniCParser::DeclContext * ctx) override;
+
+    /// @brief 非终结符ConstDecl的分析
+    /// @param ctx CST上下文
+    /// @return std::any AST的节点
+    std::any visitConstDecl(MiniCParser::ConstDeclContext * ctx) override;
+
+    /// @brief 非终结符ConstDef的分析
+    /// @param ctx CST上下文
+    /// @return std::any AST的节点
+    std::any visitConstDef(MiniCParser::ConstDefContext * ctx) override;
+
+    /// @brief 非终结符ConstInitVal的分析
+    /// @param ctx CST上下文
+    /// @return std::any AST的节点
+    std::any visitConstInitVal(MiniCParser::ConstInitValContext * ctx) override;
+
+    /// @brief 非终结符ConstExp的分析
+    /// @param ctx CST上下文
+    /// @return std::any AST的节点
+    std::any visitConstExp(MiniCParser::ConstExpContext * ctx) override;
 };

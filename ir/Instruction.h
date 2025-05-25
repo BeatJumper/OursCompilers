@@ -22,12 +22,6 @@ class Function;
 /// @brief IR指令操作码
 enum class IRInstOperator : std::int8_t {
 
-    /// @brief 函数入口指令，对应函数的prologue，用户栈空间分配、寄存器保护等
-    IRINST_OP_ENTRY,
-
-    /// @brief 函数出口指令，对应函数的epilogue，用于栈空间的恢复与清理、寄存器恢复等
-    IRINST_OP_EXIT,
-
     /// @brief Label指令，用于语句的跳转
     IRINST_OP_LABEL,
 

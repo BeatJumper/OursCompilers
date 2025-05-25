@@ -30,7 +30,7 @@ Function::Function(std::string _name, FunctionType * _type, bool _builtin)
     returnType = _type->getReturnType();
 
     // 设置对齐大小
-    setAlignment(1);
+    setAlignment(2);
 }
 
 ///
@@ -362,4 +362,53 @@ void Function::realArgCountInc()
 void Function::realArgCountReset()
 {
     this->realArgCount = 0;
+}
+
+///
+/// @brief 用于添加基本块
+///
+void Function::addBasicBlock(InterCode * BasicBlock)
+{
+    this->BasicBlocks.push_back(BasicBlock);
+}
+
+///
+/// @brief 获取下一个栈偏移量
+///
+int64_t Function::getNextStackOffset()
+{
+    return nextStackOffset;
+}
+
+///
+/// @brief 更新下一个栈偏移量
+/// @param size
+///
+void Function::updateNextStackOffset(int64_t size)
+{
+    nextStackOffset += size;
+}
+
+///
+/// @brief 设置栈帧大小
+///
+void Function::setStackFrameSize(int size)
+{
+    StackFrameSize = size;
+}
+
+///
+/// @brief 获取栈帧大小
+/// @param size
+///
+int Function::getStackFrameSize()
+{
+    return StackFrameSize;
+}
+
+/// @brief 设置函数调用栈空间大小而引入的栈空间大小
+/// @param size 栈空间大小
+void Function::setExtraStackSize(int size)
+{
+    maxExtraStackSize = size;
 }

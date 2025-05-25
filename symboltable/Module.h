@@ -196,4 +196,23 @@ private:
 
     /// @brief 常量表
     std::unordered_map<int32_t, ConstInt *> constIntMap;
+
+public:
+    /// @brief 创建全局常量
+    /// @param type 常量类型
+    /// @param name 常量名
+    /// @param initValue 初始值
+    /// @return 全局常量
+    GlobalVariable * newGlobalConstant(Type * type, std::string name, Value * initValue);
+
+    /// @brief 在符号表中添加编译时常量值
+    /// @param type 类型
+    /// @param name 常量名
+    /// @param value 常量值
+    /// @return 是否成功
+    bool addConstValue(Type * type, std::string name, Value * value);
+
+private:
+    /// @brief 编译时常量表（用于常量折叠）
+    std::unordered_map<std::string, Value *> constValueMap;
 };

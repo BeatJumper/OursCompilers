@@ -372,3 +372,51 @@ void Module::outputIR(const std::string & filePath)
     fclose(fp);
     printf("Debug: Finished outputting IR to file: %s\n", filePath.c_str());
 }
+
+/// @brief 创建全局常量
+/// @param type 常量类型
+/// @param name 常量名
+/// @param initValue 初始值
+/// @return 全局常量
+GlobalVariable * Module::newGlobalConstant(Type * type, std::string name, Value * initValue)
+{
+    // 检查是否已存在
+    GlobalVariable * existingVar = findGlobalVariable(name);
+    if (existingVar) {
+        printf("Error: Global constant '%s' already exists.\n", name.c_str());
+        return nullptr;
+    }
+
+    // 创建全局变量作为常量
+    GlobalVariable * constVar = newGlobalVariable(type, name);
+    if (!constVar) {
+        printf("Error: Failed to create global variable for constant '%s'.\n", name.c_str());
+        return nullptr;
+    }
+
+    // 设置初值
+    constVar->setInitValue(initValue);
+
+    return constVar;
+}
+
+/// @brief 在符号表中添加编译时常量值
+/// @param type 类型
+/// @param name 常量名
+/// @param value 常量值
+/// @return 是否成功
+bool Module::addConstValue(Type * type, std::string name, Value * value)
+{
+    // 检查是否已存在
+    auto it = constValueMap.find(name);
+    if (it != constValueMap.end()) {
+        return false; // 常量已存在
+    }
+
+    constValueMap[name] = value;
+
+    // 同时也要加入到作用域栈中，这样变量查找时能找到
+    scopeStack->insertValue(value);
+
+    return true;
+}

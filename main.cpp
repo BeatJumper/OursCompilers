@@ -20,7 +20,7 @@
 #include "AST.h"
 #include "Antlr4Executor.h"
 #include "CodeGenerator.h"
-#include "CodeGeneratorArm32.h"
+#include "CodeGeneratorArm64.h"
 #include "FrontEndExecutor.h"
 #include "Graph.h"
 #include "IRGenerator.h"
@@ -311,7 +311,7 @@ static int compile(std::string inputFile, std::string outputFile)
 
             if (gCPUTarget == "ARM32") {
                 // 输出面向ARM32的汇编指令
-                generator = new CodeGeneratorArm32(module);
+                generator = new CodeGeneratorArm64(module);
                 generator->setShowLinearIR(gAsmAlsoShowIR);
                 generator->run(outputFile);
             } else {

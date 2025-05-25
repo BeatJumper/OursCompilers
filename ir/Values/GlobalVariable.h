@@ -95,7 +95,16 @@ public:
         // @a = dso_local global i32 33, align 4
         // 33是初始值
 
-        str = getIRName() + " = dso_local global " + getType()->toString();
+        str += "@" + getName() + " = dso_local ";
+
+        // 根据是否为常量选择关键字
+        if (isConstant) {
+            str += "constant ";
+        } else {
+            str += "global ";
+        }
+
+        str += getType()->toString();
 
         // 处理初值
         if (initValue) {
@@ -136,6 +145,24 @@ public:
         return initValue;
     }
 
+    ///
+    /// @brief 设置是否是常量
+    /// @param isConst 是否是常量
+    ///
+    void setConstant(bool isConst)
+    {
+        isConstant = isConst;
+    }
+
+    ///
+    /// @brief 检查是否是常量
+    /// @return true 是常量
+    ///
+    [[nodiscard]] bool getConstant() const
+    {
+        return isConstant;
+    }
+
 private:
     ///
     /// @brief 变量加载到寄存器中时对应的寄存器编号
@@ -151,4 +178,9 @@ private:
     /// @brief 全局变量的初值
     ///
     Value * initValue = nullptr;
+
+    ///
+    /// @brief 常量标记
+    ///
+    bool isConstant = false;
 };

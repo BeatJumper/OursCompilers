@@ -52,4 +52,8 @@ public:
     /// @brief 获取指令序列（只读）
     /// @return 指令序列的常量引用
     const std::vector<Instruction *> & getCode() const;
+
+    /// @brief 删除容器内所有中间指令
+    /// @param inst IR指令
+    void deleteInst();
 };

@@ -36,3 +36,9 @@ void AllocaInstruction::toString(std::string & str)
         str += " ; temp_var"; // 如果没有名字，标记为临时变量
     }
 }
+
+/// @brief 获取size
+int AllocaInstruction::getAligned()
+{
+    return align;
+}

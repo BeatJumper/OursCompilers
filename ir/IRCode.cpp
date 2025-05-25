@@ -80,3 +80,12 @@ void InterCode::Delete()
 
     code.clear();
 }
+
+///
+/// @brief 删除容器内所有中间指令
+/// @param inst IR指令
+///
+void InterCode::deleteInst()
+{
+    code.clear();
+}

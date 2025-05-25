@@ -10,8 +10,24 @@ grammar MiniC;
 
 // 语法规则描述：EBNF范式
 
-// 源文件编译单元定义
-compileUnit: (funcDef | varDecl)* EOF;
+// 源文件编译单元定义 1. 修改编译单元，添加声明支持
+compileUnit: (decl | funcDef)* EOF;
+
+// 2. 添加声明规则
+decl: constDecl | varDecl;
+
+// 3. 添加常量声明
+constDecl:
+	T_CONST basicType constDef (T_COMMA constDef)* T_SEMICOLON;
+
+// 4. 添加常量定义（暂不支持数组）
+constDef: T_ID T_ASSIGN constInitVal;
+
+// 5. 添加常量初值（暂时只支持单个表达式）
+constInitVal: constExp;
+
+// 6. 添加常量表达式
+constExp: addExp; // 常量表达式必须能在编译时求值
 
 // 函数定义
 funcDef: funcType T_ID T_L_PAREN funcFParams? T_R_PAREN block;
@@ -31,8 +47,8 @@ block: T_L_BRACE blockItemList? T_R_BRACE;
 // 每个ItemList可包含至少一个Item
 blockItemList: blockItem+;
 
-// 每个Item可以是一个语句，或者变量声明语句
-blockItem: statement | varDecl;
+// 修改blockItem，添加声明支持
+blockItem: statement | decl;
 
 // 变量声明，目前不支持变量含有初值 现在支持了
 varDecl: basicType varDef (T_COMMA varDef)* T_SEMICOLON;
@@ -150,6 +166,7 @@ T_ELSE: 'else';
 T_WHILE: 'while';
 T_BREAK: 'break';
 T_CONTINUE: 'continue';
+T_CONST: 'const';
 
 T_ID: [a-zA-Z_][a-zA-Z0-9_]*;
 
@@ -162,3 +179,9 @@ T_DIGIT:
 
 /* 空白符丢弃 */
 WS: [ \r\n\t]+ -> skip;
+
+// 注释处理 - 新增 单行注释：从 // 开始到行末，跳过处理
+LINE_COMMENT: '//' ~[\r\n]* -> skip;
+
+// 多行注释：从 /* 开始到 */ 结束，可跨行，跳过处理
+BLOCK_COMMENT: '/*' .*? '*/' -> skip;

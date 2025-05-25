@@ -54,6 +54,12 @@ string getNodeName(ast_node * astnode)
         case ast_operator_type::AST_OP_FUNC_DEF:
             nodeName = "func-def";
             break;
+        case ast_operator_type::AST_OP_CONST_DECL_STMT:
+            nodeName = "const-decl-stmt";
+            break;
+        case ast_operator_type::AST_OP_CONST_DECL:
+            nodeName = "const-decl";
+            break;
         case ast_operator_type::AST_OP_COMPILE_UNIT:
             nodeName = "compile-unit";
             break;

@@ -170,6 +170,34 @@ public:
     ///
     void realArgCountReset();
 
+    ///
+    /// @brief 用于添加基本块
+    ///
+    void addBasicBlock(InterCode * BasicBlock);
+
+    ///
+    /// @brief 获取下一个栈偏移量
+    ///
+    int64_t getNextStackOffset();
+
+    ///
+    /// @brief 更新下一个栈偏移量
+    /// @param size
+    ///
+    void updateNextStackOffset(int64_t size);
+
+    ///
+    /// @brief 设置栈帧大小
+    /// @param size
+    ///
+    void setStackFrameSize(int size);
+
+    ///
+    /// @brief 获取栈帧大小
+    /// @param size
+    ///
+    int getStackFrameSize();
+
 private:
     ///
     /// @brief 函数的返回值类型，有点冗余，可删除，直接从type中取得即可
@@ -192,6 +220,11 @@ private:
     InterCode code;
 
     ///
+    /// @brief 基本块表，可包含多个基本块
+    ///
+    std::vector<InterCode *> BasicBlocks;
+
+    ///
     /// @brief 函数内变量的向量表，可能重名，请注意
     ///
     std::vector<LocalVariable *> varsVector;
@@ -212,7 +245,7 @@ private:
     LocalVariable * returnValue = nullptr;
 
     ///
-    /// @brief 由于局部变量、前4个形参需站内空间分配而导致的栈帧大小
+    /// @brief 由于局部变量、前8个形参需站内空间分配而导致的栈帧大小
     ///
     int maxDepth = 0;
 
@@ -220,6 +253,11 @@ private:
     /// @brief 由于函数调用需要栈传递而导致的栈空间大小
     ///
     int maxExtraStackSize = 0;
+
+    ///
+    /// @brief 栈帧大小
+    ///
+    int StackFrameSize;
 
     ///
     /// @brief 是否存在函数调用
@@ -250,4 +288,9 @@ private:
     /// @brief 累计的实参个数，用于ARG指令的统计
     ///
     int32_t realArgCount = 0;
+
+    ///
+    /// @brief 下一个栈偏移量
+    ///
+    int64_t nextStackOffset = 0;
 };
