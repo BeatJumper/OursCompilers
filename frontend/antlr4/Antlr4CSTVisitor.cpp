@@ -53,18 +53,16 @@ std::any MiniCCSTVisitor::visitCompileUnit(MiniCParser::CompileUnitContext * ctx
     ast_node * temp_node;
     ast_node * compileUnitNode = create_contain_node(ast_operator_type::AST_OP_COMPILE_UNIT);
 
-    // 可能多个变量，因此必须循环遍历
-    for (auto varCtx: ctx->varDecl()) {
-
-        // 变量函数定义
-        temp_node = std::any_cast<ast_node *>(visitVarDecl(varCtx));
+    // 修改：遍历 decl 而不是 varDecl
+    for (auto declCtx: ctx->decl()) {
+        // 声明定义
+        temp_node = std::any_cast<ast_node *>(visitDecl(declCtx));
         (void) compileUnitNode->insert_son_node(temp_node);
     }
 
     // 可能有多个函数，因此必须循环遍历
     for (auto funcCtx: ctx->funcDef()) {
-
-        // 变量函数定义
+        // 函数定义
         temp_node = std::any_cast<ast_node *>(visitFuncDef(funcCtx));
         (void) compileUnitNode->insert_son_node(temp_node);
     }
@@ -197,13 +195,13 @@ std::any MiniCCSTVisitor::visitBlockItemList(MiniCParser::BlockItemListContext *
 ///
 std::any MiniCCSTVisitor::visitBlockItem(MiniCParser::BlockItemContext * ctx)
 {
-    // 识别的文法产生式：blockItem : statement | varDecl
+    // 识别的文法产生式：blockItem : statement | decl
     if (ctx->statement()) {
         // 语句识别
-
         return visitStatement(ctx->statement());
-    } else if (ctx->varDecl()) {
-        return visitVarDecl(ctx->varDecl());
+    } else if (ctx->decl()) {
+        // 声明识别 - 修改：使用 decl() 而不是 varDecl()
+        return visitDecl(ctx->decl());
     }
 
     return nullptr;
@@ -823,4 +821,95 @@ std::any MiniCCSTVisitor::visitUnaryOp(MiniCParser::UnaryOpContext * ctx)
     }
 
     return nullptr;
+}
+
+// 添加新的访问方法实现
+
+/// @brief 非终结符Decl的分析
+/// @param ctx CST上下文
+/// @return std::any AST的节点
+std::any MiniCCSTVisitor::visitDecl(MiniCParser::DeclContext * ctx)
+{
+    // 识别文法产生式：decl : constDecl | varDecl
+    if (ctx->constDecl()) {
+        // 常量声明
+        return visitConstDecl(ctx->constDecl());
+    } else if (ctx->varDecl()) {
+        // 变量声明
+        return visitVarDecl(ctx->varDecl());
+    }
+
+    return nullptr;
+}
+
+/// @brief 非终结符ConstDecl的分析
+/// @param ctx CST上下文
+/// @return std::any AST的节点
+std::any MiniCCSTVisitor::visitConstDecl(MiniCParser::ConstDeclContext * ctx)
+{
+    // 识别文法产生式：constDecl : T_CONST basicType constDef (T_COMMA constDef)* T_SEMICOLON
+
+    // 创建常量声明语句节点
+    ast_node * stmt_node = create_contain_node(ast_operator_type::AST_OP_CONST_DECL_STMT);
+
+    // 获取基本类型
+    type_attr typeAttr = std::any_cast<type_attr>(visitBasicType(ctx->basicType()));
+
+    // 处理所有常量定义
+    for (auto constDefCtx: ctx->constDef()) {
+        // 获取常量定义节点
+        ast_node * constDefNode = std::any_cast<ast_node *>(visitConstDef(constDefCtx));
+
+        // 创建类型节点
+        ast_node * type_node = create_type_node(typeAttr);
+
+        // 创建常量声明节点
+        ast_node * decl_node = ast_node::New(ast_operator_type::AST_OP_CONST_DECL, type_node, constDefNode, nullptr);
+
+        // 插入到常量声明语句
+        (void) stmt_node->insert_son_node(decl_node);
+    }
+
+    return stmt_node;
+}
+
+/// @brief 非终结符ConstDef的分析
+/// @param ctx CST上下文
+/// @return std::any AST的节点
+std::any MiniCCSTVisitor::visitConstDef(MiniCParser::ConstDefContext * ctx)
+{
+    // 识别文法产生式：constDef : T_ID T_ASSIGN constInitVal
+
+    // 获取常量名
+    auto constId = ctx->T_ID()->getText();
+    int64_t lineNo = (int64_t) ctx->T_ID()->getSymbol()->getLine();
+
+    // 创建常量名节点
+    auto constNode = ast_node::New(constId, lineNo);
+
+    // 获取初始值
+    auto initValNode = std::any_cast<ast_node *>(visitConstInitVal(ctx->constInitVal()));
+
+    // 创建赋值节点
+    return ast_node::New(ast_operator_type::AST_OP_ASSIGN, constNode, initValNode, nullptr);
+}
+
+/// @brief 非终结符ConstInitVal的分析
+/// @param ctx CST上下文
+/// @return std::any AST的节点
+std::any MiniCCSTVisitor::visitConstInitVal(MiniCParser::ConstInitValContext * ctx)
+{
+    // 识别文法产生式：constInitVal : constExp
+
+    return visitConstExp(ctx->constExp());
+}
+
+/// @brief 非终结符ConstExp的分析
+/// @param ctx CST上下文
+/// @return std::any AST的节点
+std::any MiniCCSTVisitor::visitConstExp(MiniCParser::ConstExpContext * ctx)
+{
+    // 识别文法产生式：constExp : addExp
+
+    return visitAddExp(ctx->addExp());
 }

@@ -263,4 +263,42 @@ private:
     /// @param falseLabel 假出口标签
     /// @return 翻译是否成功，true：成功，false：失败
     bool ir_condition_expr(ast_node * node, LabelInstruction * trueLabel, LabelInstruction * falseLabel);
+
+    /// @brief 常量声明语句节点翻译
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_const_declare_statement(ast_node * node);
+
+    /// @brief 常量声明节点翻译
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_const_declare(ast_node * node);
+
+    /// @brief 全局常量声明
+    /// @param node AST节点
+    /// @param typeNode 类型节点
+    /// @param nameNode 名称节点
+    /// @param initExprNode 初始化表达式节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_global_const_declare(ast_node * node, ast_node * typeNode, ast_node * nameNode, ast_node * initExprNode);
+
+    /// @brief 局部常量声明
+    /// @param node AST节点
+    /// @param typeNode 类型节点
+    /// @param nameNode 名称节点
+    /// @param initExprNode 初始化表达式节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_local_const_declare(ast_node * node, ast_node * typeNode, ast_node * nameNode, ast_node * initExprNode);
+
+    /// @brief 常量折叠
+    /// @param value 要折叠的值
+    /// @param result 折叠后的结果
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool try_constant_folding(Value * value, Value *& result);
+
+    /// @brief 常量表达式求值
+    /// @param node AST节点
+    /// @param result 求值结果
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool evaluate_const_expr(ast_node * node, Value *& result);
 };

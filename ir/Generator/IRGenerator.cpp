@@ -52,6 +52,10 @@ IRGenerator::IRGenerator(ast_node * _root, Module * _module) : root(_root), modu
     ast2ir_handlers[ast_operator_type::AST_OP_LEAF_VAR_ID] = &IRGenerator::ir_leaf_node_var_id;
     ast2ir_handlers[ast_operator_type::AST_OP_LEAF_TYPE] = &IRGenerator::ir_leaf_node_type;
 
+    // 常量声明
+    ast2ir_handlers[ast_operator_type::AST_OP_CONST_DECL_STMT] = &IRGenerator::ir_const_declare_statement;
+    ast2ir_handlers[ast_operator_type::AST_OP_CONST_DECL] = &IRGenerator::ir_const_declare;
+
     /* 表达式运算， 加减 */
     ast2ir_handlers[ast_operator_type::AST_OP_SUB] = &IRGenerator::ir_sub;
     ast2ir_handlers[ast_operator_type::AST_OP_ADD] = &IRGenerator::ir_add;
@@ -1922,4 +1926,178 @@ bool IRGenerator::ir_condition_expr(ast_node * node, LabelInstruction * trueLabe
 
             return true;
     }
+}
+
+/// @brief 常量声明语句节点翻译成线性中间IR
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_const_declare_statement(ast_node * node)
+{
+    bool result = true;
+
+    for (auto & child: node->sons) {
+        // 遍历每个常量声明
+        result = ir_const_declare(child);
+        if (!result) {
+            break;
+        }
+        // 收集子节点生成的 IR
+        node->blockInsts.addInst(child->blockInsts);
+    }
+
+    return result;
+}
+
+/// @brief 常量声明节点翻译成线性中间IR
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_const_declare(ast_node * node)
+{
+    // 常量声明的AST包含两个孩子：
+    // 第一个孩子：类型节点
+    // 第二个孩子：赋值节点（包含常量名和初值）
+
+    if (node->sons.size() != 2) {
+        printf("Error: Invalid constant declaration structure.\n");
+        return false;
+    }
+
+    ast_node * typeNode = node->sons[0];
+    ast_node * assignNode = node->sons[1];
+
+    if (assignNode->node_type != ast_operator_type::AST_OP_ASSIGN) {
+        printf("Error: Constant declaration must have initialization.\n");
+        return false;
+    }
+
+    ast_node * nameNode = assignNode->sons[0];
+    ast_node * initExprNode = assignNode->sons[1];
+
+    // 检查当前是否在全局作用域
+    Function * currentFunc = module->getCurrentFunction();
+    if (!currentFunc) {
+        // 全局常量处理
+        return ir_global_const_declare(node, typeNode, nameNode, initExprNode);
+    } else {
+        // 局部常量处理
+        return ir_local_const_declare(node, typeNode, nameNode, initExprNode);
+    }
+}
+
+/// @brief 全局常量声明节点翻译成线性中间IR
+/// @param node AST节点
+/// @param typeNode 类型节点
+/// @param nameNode 常量名节点
+/// @param initExprNode 初值表达式节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_global_const_declare(ast_node * node,
+                                          ast_node * typeNode,
+                                          ast_node * nameNode,
+                                          ast_node * initExprNode)
+{
+    // 只支持简单的整数字面量作为全局常量初值
+    if (initExprNode->node_type != ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+        printf("Error: Global constant must be initialized with integer literal.\n");
+        return false;
+    }
+
+    // 解析常量值
+    std::string numStr = initExprNode->name;
+    int32_t constValue = 0;
+
+    try {
+        if (numStr.size() >= 2 && (numStr.substr(0, 2) == "0x" || numStr.substr(0, 2) == "0X")) {
+            constValue = std::stoi(numStr, nullptr, 16);
+        } else if (numStr.size() >= 2 && numStr[0] == '0' && numStr[1] >= '0' && numStr[1] <= '7') {
+            constValue = std::stoi(numStr, nullptr, 8);
+        } else {
+            constValue = std::stoi(numStr, nullptr, 10);
+        }
+    } catch (const std::exception & e) {
+        printf("Error: Failed to parse constant literal '%s': %s\n", numStr.c_str(), e.what());
+        return false;
+    }
+
+    // 创建常量值
+    ConstInt * constInt = module->newConstInt(constValue);
+    if (!constInt) {
+        printf("Error: Failed to create constant value.\n");
+        return false;
+    }
+
+    // 简化处理：全局常量直接使用常量值，不创建变量
+    // 将常量添加到符号表中
+    // 修复：使用 newGlobalConstant 而不是 newVarValue
+    // 修复：直接使用 newVarValue 来创建全局常量
+    // 当 currentFunc 为 nullptr 时，会自动创建全局变量
+    Value * globalConst = module->newVarValue(typeNode->type, nameNode->name);
+    if (!globalConst) {
+        printf("Error: Failed to create global constant '%s'.\n", nameNode->name.c_str());
+        return false;
+    }
+
+    // 将其转换为 GlobalVariable 并设置初值
+    GlobalVariable * globalVar = static_cast<GlobalVariable *>(globalConst);
+    globalVar->setInitValue(constInt);
+    globalVar->setConstant(true);
+
+    // 设置节点值
+    nameNode->val = globalConst;
+    node->val = globalConst;
+
+    return true;
+}
+
+/// @brief 局部常量声明节点翻译成线性中间IR
+/// @param node AST节点
+/// @param typeNode 类型节点
+/// @param nameNode 常量名节点
+/// @param initExprNode 初值表达式节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_local_const_declare(ast_node * node,
+                                         ast_node * typeNode,
+                                         ast_node * nameNode,
+                                         ast_node * initExprNode)
+{
+    // 计算初值表达式
+    if (!ir_visit_ast_node(initExprNode)) {
+        printf("Error: Failed to evaluate constant initialization expression.\n");
+        return false;
+    }
+
+    Value * initValue = nullptr;
+
+    // 处理初始值
+    if (needsLoad(initExprNode->val)) {
+        // 如果初值是变量，需要加载
+        LoadInstruction * loadInit =
+            new LoadInstruction(module->getCurrentFunction(), initExprNode->val, initExprNode->val, 4);
+        node->blockInsts.addInst(initExprNode->blockInsts);
+        node->blockInsts.addInst(loadInit);
+        initValue = loadInit;
+    } else {
+        // 初始值是常量或表达式结果
+        node->blockInsts.addInst(initExprNode->blockInsts);
+        initValue = initExprNode->val;
+    }
+
+    // 局部常量按照只读变量处理（生成 alloca + store）
+    Value * constVar = module->newVarValue(typeNode->type, nameNode->name);
+    if (!constVar) {
+        printf("Error: Failed to create constant variable '%s'.\n", nameNode->name.c_str());
+        return false;
+    }
+
+    // 创建alloca指令
+    AllocaInstruction * allocaInst = new AllocaInstruction(module->getCurrentFunction(), constVar, typeNode->type, 4);
+    node->blockInsts.addInst(allocaInst);
+
+    // 创建store指令
+    StoreInstruction * storeInst = new StoreInstruction(module->getCurrentFunction(), initValue, constVar, 4);
+    node->blockInsts.addInst(storeInst);
+
+    nameNode->val = constVar;
+    node->val = constVar;
+
+    return true;
 }

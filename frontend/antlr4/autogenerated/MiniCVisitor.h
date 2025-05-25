@@ -21,6 +21,16 @@ public:
    */
     virtual std::any visitCompileUnit(MiniCParser::CompileUnitContext *context) = 0;
 
+    virtual std::any visitDecl(MiniCParser::DeclContext *context) = 0;
+
+    virtual std::any visitConstDecl(MiniCParser::ConstDeclContext *context) = 0;
+
+    virtual std::any visitConstDef(MiniCParser::ConstDefContext *context) = 0;
+
+    virtual std::any visitConstInitVal(MiniCParser::ConstInitValContext *context) = 0;
+
+    virtual std::any visitConstExp(MiniCParser::ConstExpContext *context) = 0;
+
     virtual std::any visitFuncDef(MiniCParser::FuncDefContext *context) = 0;
 
     virtual std::any visitFuncType(MiniCParser::FuncTypeContext *context) = 0;

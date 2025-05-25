@@ -19,6 +19,26 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitDecl(MiniCParser::DeclContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitConstDecl(MiniCParser::ConstDeclContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitConstDef(MiniCParser::ConstDefContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitConstInitVal(MiniCParser::ConstInitValContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitConstExp(MiniCParser::ConstExpContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitFuncDef(MiniCParser::FuncDefContext *ctx) override {
     return visitChildren(ctx);
   }
