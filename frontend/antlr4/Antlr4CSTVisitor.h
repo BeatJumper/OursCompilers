@@ -270,4 +270,9 @@ protected:
     /// @param ctx CST上下文
     /// @return std::any AST的节点
     std::any visitConstExp(MiniCParser::ConstExpContext * ctx) override;
+
+    /// @brief 非终结符InitVal的分析
+    /// @param ctx CST上下文
+    /// @return std::any AST的节点
+    std::any visitInitVal(MiniCParser::InitValContext * ctx) override;
 };

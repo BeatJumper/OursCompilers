@@ -137,12 +137,25 @@ set(IR_SRCS
 	ir/Instructions/XorInstruction.h
 	ir/Instructions/ZextInstruction.cpp
 	ir/Instructions/ZextInstruction.h
+	ir/Instructions/BitcastInstruction.cpp
+	ir/Instructions/BitcastInstruction.h
+	ir/Instructions/GetelementptrInstruction.cpp
+	ir/Instructions/GetelementptrInstruction.h
+	ir/Instructions/MemcpyInstruction.cpp
+	ir/Instructions/MemcpyInstruction.h
+	ir/Instructions/SextInstruction.cpp
+	ir/Instructions/SextInstruction.h
 	ir/Types/VoidType.h
 	ir/Types/VoidType.cpp
 	ir/Types/LabelType.h
 	ir/Types/LabelType.cpp
 	ir/Types/IntegerType.h
 	ir/Types/IntegerType.cpp
+	ir/Types/PointerType.h
+	ir/Types/ArrayType.h
+	ir/Types/ArrayType.cpp
+	ir/Types/FloatType.h
+	ir/Types/FloatType.cpp
 	ir/Values/ConstInt.h
 	ir/Values/FormalParam.h
 	ir/Values/GlobalVariable.h

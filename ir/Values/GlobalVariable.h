@@ -89,15 +89,8 @@ public:
     ///
     void toDeclareString(std::string & str)
     {
-        // str = "declare " + getType()->toString() + " " + getIRName();
+        str += "@" + getName() + " = private unnamed_addr ";
 
-        // TODO:应该改成下面这种格式
-        // @a = dso_local global i32 33, align 4
-        // 33是初始值
-
-        str += "@" + getName() + " = dso_local ";
-
-        // 根据是否为常量选择关键字
         if (isConstant) {
             str += "constant ";
         } else {
@@ -106,18 +99,28 @@ public:
 
         str += getType()->toString();
 
-        // 处理初值
-        if (initValue) {
-            // 检查初值类型并生成相应的字符串表示
-            if (dynamic_cast<ConstInt *>(initValue)) {
-                ConstInt * constInt = static_cast<ConstInt *>(initValue);
+        // 处理初值列表
+        if (!initValueList.empty()) {
+            str += " [";
+            for (size_t i = 0; i < initValueList.size(); ++i) {
+                if (i > 0)
+                    str += ", ";
+                str += "i32 ";
+                if (ConstInt * constInt = dynamic_cast<ConstInt *>(initValueList[i])) {
+                    str += std::to_string(constInt->getVal());
+                } else {
+                    str += "0";
+                }
+            }
+            str += "]";
+        } else if (initValue) {
+            // 处理单个初值
+            if (ConstInt * constInt = dynamic_cast<ConstInt *>(initValue)) {
                 str += " " + std::to_string(constInt->getVal());
             } else {
-                // 如果不是ConstInt，使用默认值0
                 str += " 0";
             }
         } else {
-            // 没有初值，使用默认值0
             str += " 0";
         }
 
@@ -183,4 +186,20 @@ private:
     /// @brief 常量标记
     ///
     bool isConstant = false;
+
+private:
+    std::vector<Value *> initValueList; // 初始值列表
+
+public:
+    // 设置初始值列表
+    void setInitValueList(const std::vector<Value *> & values)
+    {
+        initValueList = values;
+    }
+
+    // 获取初始值列表
+    const std::vector<Value *> & getInitValueList() const
+    {
+        return initValueList;
+    }
 };

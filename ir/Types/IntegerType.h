@@ -104,4 +104,13 @@ private:
     /// @brief 位宽
     ///
     int32_t bitWidth;
+
+public:
+    /// @brief 获取64位整数类型
+    /// @return 64位整数类型
+    static IntegerType * getTypeLong();
+
+    /// @brief 获取8位整数类型（字符类型）
+    /// @return 8位整数类型
+    static IntegerType * getTypeChar();
 };

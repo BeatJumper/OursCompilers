@@ -90,6 +90,12 @@ enum class ast_operator_type : int {
     /// @brief 常量声明
     AST_OP_CONST_DECL,
 
+    /// @brief 数组声明语句
+    AST_OP_ARRAY_ACCESS,
+
+    /// @brief 数组声明
+    AST_OP_ARRAY_INIT,
+
     /// @brief 二元运算符+
     AST_OP_ADD,
 

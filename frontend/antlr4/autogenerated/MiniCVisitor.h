@@ -51,6 +51,8 @@ public:
 
     virtual std::any visitVarDef(MiniCParser::VarDefContext *context) = 0;
 
+    virtual std::any visitInitVal(MiniCParser::InitValContext *context) = 0;
+
     virtual std::any visitReturnStatement(MiniCParser::ReturnStatementContext *context) = 0;
 
     virtual std::any visitAssignStatement(MiniCParser::AssignStatementContext *context) = 0;

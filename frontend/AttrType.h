@@ -58,4 +58,5 @@ typedef struct var_id_attr {
 typedef struct type_attr {
     BasicType type; // 类型
     int64_t lineno; // 行号
+    bool is_array = false;
 } type_attr;

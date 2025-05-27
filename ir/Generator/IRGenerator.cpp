@@ -27,6 +27,7 @@
 #include "IRCode.h"
 #include "IRGenerator.h"
 #include "Module.h"
+#include "ArrayType.h"
 #include "EntryInstruction.h"
 #include "LabelInstruction.h"
 #include "ExitInstruction.h"
@@ -41,6 +42,10 @@
 #include "LoadInstruction.h"
 #include "XorInstruction.h"
 #include "ZextInstruction.h"
+#include "GetelementptrInstruction.h"
+#include "BitcastInstruction.h"
+#include "MemcpyInstruction.h"
+#include "SextInstruction.h"
 
 /// @brief 构造函数
 /// @param _root AST的根
@@ -104,6 +109,10 @@ IRGenerator::IRGenerator(ast_node * _root, Module * _module) : root(_root), modu
 
     /* 语句块 */
     ast2ir_handlers[ast_operator_type::AST_OP_BLOCK] = &IRGenerator::ir_block;
+
+    // 数组相关处理
+    ast2ir_handlers[ast_operator_type::AST_OP_ARRAY_ACCESS] = &IRGenerator::ir_array_access;
+    ast2ir_handlers[ast_operator_type::AST_OP_ARRAY_INIT] = &IRGenerator::ir_array_init;
 
     /* 编译单元 */
     ast2ir_handlers[ast_operator_type::AST_OP_COMPILE_UNIT] = &IRGenerator::ir_compile_unit;
@@ -861,8 +870,6 @@ bool IRGenerator::ir_assign(ast_node * node)
     ast_node * son1_node = node->sons[0];
     ast_node * son2_node = node->sons[1];
 
-    // 赋值节点，自右往左运算
-
     // 赋值运算符的左侧操作数
     ast_node * left = ir_visit_ast_node(son1_node);
     if (!left || !left->val) {
@@ -877,13 +884,17 @@ bool IRGenerator::ir_assign(ast_node * node)
         return false;
     }
 
-    // 这里只处理整型的数据，如需支持实数，则需要针对类型进行处理
-    // TODO real number add
-
     Value * rightValue = nullptr;
 
     // 处理右操作数
-    if (needsLoad(right->val)) {
+    // 修复：对于数组访问表达式，右侧的值应该是从地址加载的值
+    if (son2_node->node_type == ast_operator_type::AST_OP_ARRAY_ACCESS) {
+        // 右操作数是数组访问，right->val 是地址，需要加载值
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(right->blockInsts);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else if (needsLoad(right->val)) {
         // 右操作数是变量，需要加载
         LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
         node->blockInsts.addInst(right->blockInsts);
@@ -895,7 +906,15 @@ bool IRGenerator::ir_assign(ast_node * node)
         rightValue = right->val;
     }
 
-    // 创建 store 指令，将右侧值存储到左侧变量
+    // 检查 rightValue 的类型
+    if (rightValue->getType()->isPointerType()) {
+        printf("Error: Attempting to store pointer value instead of actual value in ir_assign.\n");
+        printf("Debug: Right operand type: %s\n", rightValue->getType()->toString().c_str());
+        printf("Debug: Right operand IR name: %s\n", rightValue->getIRName().c_str());
+        return false;
+    }
+
+    // 创建 store 指令，将右侧值存储到左侧地址
     StoreInstruction * storeInst = new StoreInstruction(module->getCurrentFunction(), rightValue, left->val, 4);
 
     node->blockInsts.addInst(left->blockInsts);
@@ -960,7 +979,6 @@ bool IRGenerator::ir_return(ast_node * node)
                 StoreInstruction * storeRetValue = new StoreInstruction(currentFunc, returnValue, retVar, 4);
                 node->blockInsts.addInst(storeRetValue);
             }
-        } else {
         }
     }
 
@@ -1102,6 +1120,12 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
         if (!varNode || !initExprNode) {
             printf("Error: Invalid assignment structure in ir_variable_declare.\n");
             return false;
+        }
+
+        // 检查是否是数组初始化
+        if (initExprNode->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
+            // 处理数组声明和初始化
+            return ir_array_variable_declare_with_init(node, typeNode, varNode, initExprNode);
         }
 
         // 在符号表中为变量分配 Value
@@ -2098,6 +2122,239 @@ bool IRGenerator::ir_local_const_declare(ast_node * node,
 
     nameNode->val = constVar;
     node->val = constVar;
+
+    return true;
+}
+
+/// @brief 数组访问AST节点翻译成线性中间IR
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_array_access(ast_node * node)
+{
+    if (node->sons.size() != 2) {
+        printf("Error: Invalid array access node structure. Expected 2 children, got %zu.\n", node->sons.size());
+        return false;
+    }
+
+    ast_node * arrayNode = node->sons[0];
+    ast_node * indexNode = node->sons[1];
+
+    Value * arrayVar = nullptr;
+
+    // 处理数组基址
+    if (arrayNode->node_type == ast_operator_type::AST_OP_LEAF_VAR_ID) {
+        arrayVar = module->findVarValue(arrayNode->name);
+        if (!arrayVar) {
+            printf("Error: Array variable %s not found.\n", arrayNode->name.c_str());
+            return false;
+        }
+    } else {
+        if (!ir_visit_ast_node(arrayNode)) {
+            return false;
+        }
+        node->blockInsts.addInst(arrayNode->blockInsts);
+        arrayVar = arrayNode->val;
+    }
+
+    // 处理索引表达式
+    Value * indexValue = nullptr;
+
+    if (indexNode->node_type == ast_operator_type::AST_OP_ARRAY_ACCESS) {
+        // 嵌套数组访问：先处理内层访问
+        if (!ir_visit_ast_node(indexNode)) {
+            return false;
+        }
+        node->blockInsts.addInst(indexNode->blockInsts);
+
+        // 修复：检查索引值以确定正确的对齐
+        // 首先检查是否是常量索引
+        int32_t alignment = 4; // 默认对齐
+
+        // 检查内层访问的索引是否为常量0
+        if (indexNode->sons.size() >= 2) {
+            ast_node * innerIndexNode = indexNode->sons[1];
+            if (innerIndexNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+                try {
+                    int32_t indexVal = std::stoi(innerIndexNode->name);
+                    if (indexVal == 0) {
+                        alignment = 16; // 第一个元素使用16字节对齐
+                    }
+                } catch (...) {
+                    // 解析失败，使用默认对齐
+                }
+            }
+        }
+
+        // 内层数组访问的结果是地址，需要load出值作为索引
+        LoadInstruction * loadIndex =
+            new LoadInstruction(module->getCurrentFunction(), indexNode->val, indexNode->val, alignment);
+        node->blockInsts.addInst(loadIndex);
+
+        // 修复：确保 SextInstruction 接收的是 i32 类型的值，而不是指针
+        // loadIndex 的结果类型应该是 i32，检查类型是否正确
+        if (loadIndex->getType()->isInt32Type()) {
+            SextInstruction * sextIndex =
+                new SextInstruction(module->getCurrentFunction(), loadIndex, IntegerType::getTypeLong());
+            node->blockInsts.addInst(sextIndex);
+            indexValue = sextIndex;
+        } else {
+            printf("Error: Load instruction result type is not i32 in nested array access\n");
+            return false;
+        }
+    } else {
+        // 普通索引表达式
+        if (!ir_visit_ast_node(indexNode)) {
+            return false;
+        }
+        node->blockInsts.addInst(indexNode->blockInsts);
+
+        if (needsLoad(indexNode->val)) {
+            LoadInstruction * loadIndex =
+                new LoadInstruction(module->getCurrentFunction(), indexNode->val, indexNode->val, 4);
+            node->blockInsts.addInst(loadIndex);
+
+            // 修复：确保 SextInstruction 接收的是 i32 类型的值
+            if (loadIndex->getType()->isInt32Type()) {
+                SextInstruction * sextIndex =
+                    new SextInstruction(module->getCurrentFunction(), loadIndex, IntegerType::getTypeLong());
+                node->blockInsts.addInst(sextIndex);
+                indexValue = sextIndex;
+            } else {
+                printf("Error: Load instruction result type is not i32\n");
+                return false;
+            }
+        } else {
+            // 对于常量和其他情况，都需要扩展到64位
+            ConstInt * constIndex = dynamic_cast<ConstInt *>(indexNode->val);
+            if (constIndex) {
+                // 修复：直接创建64位常量，而不是使用sext
+                int64_t constVal = constIndex->getLongVal();          // 获取64位值
+                ConstInt * i64Const = module->newConstLong(constVal); // 创建64位常量
+                indexValue = i64Const;
+            } else {
+                // 其他情况（如表达式结果），需要扩展
+                SextInstruction * sextIndex =
+                    new SextInstruction(module->getCurrentFunction(), indexNode->val, IntegerType::getTypeLong());
+                node->blockInsts.addInst(sextIndex);
+                indexValue = sextIndex;
+            }
+        }
+    }
+
+    // 创建常量0用于第一个索引
+    ConstInt * zeroConst = module->newConstInt(0);
+
+    // 生成getelementptr指令
+    GetelementptrInstruction * gepInst =
+        new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, zeroConst, indexValue);
+    node->blockInsts.addInst(gepInst);
+
+    // 数组访问的结果是地址，不是值
+    node->val = gepInst;
+
+    return true;
+}
+
+/// @brief 数组初始化AST节点翻译成线性中间IR
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_array_init(ast_node * node)
+{
+    Function * currentFunc = module->getCurrentFunction();
+
+    // 收集初始化值
+    std::vector<Value *> initValues;
+    for (auto son: node->sons) {
+        if (!ir_visit_ast_node(son)) {
+            return false;
+        }
+        node->blockInsts.addInst(son->blockInsts);
+
+        Value * initVal = son->val;
+        if (needsLoad(initVal)) {
+            LoadInstruction * loadInst = new LoadInstruction(currentFunc, initVal, initVal, 4);
+            node->blockInsts.addInst(loadInst);
+            initVal = loadInst;
+        }
+        initValues.push_back(initVal);
+    }
+
+    // 修复：创建包含所有初始值的常量数组
+    std::vector<int> dimensions = {static_cast<int>(initValues.size())};
+    ArrayType * arrayType = new ArrayType(IntegerType::getTypeInt(), dimensions);
+
+    // 创建带有完整初始值的全局常量数组
+    GlobalVariable * constArray = module->newGlobalConstArray(arrayType);
+
+    // 设置初始值列表而不是单个0
+    constArray->setInitValueList(initValues);
+
+    node->val = constArray;
+
+    return true;
+}
+
+/// @brief 数组变量声明和初始化节点翻译成线性中间IR
+/// @param node AST节点
+/// @param typeNode 类型节点
+/// @param varNode 变量名节点
+/// @param initExprNode 数组初始化表达式节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_array_variable_declare_with_init(ast_node * node,
+                                                      ast_node * typeNode,
+                                                      ast_node * varNode,
+                                                      ast_node * initExprNode)
+{
+    Function * currentFunc = module->getCurrentFunction();
+
+    // 处理数组初始化列表，调用注册的 ir_array_init 函数
+    if (!ir_visit_ast_node(initExprNode)) {
+        return false;
+    }
+    node->blockInsts.addInst(initExprNode->blockInsts);
+
+    // 从初始化列表获取数组大小
+    int arraySize = initExprNode->sons.size();
+    std::vector<int> dimensions = {arraySize};
+    ArrayType * arrayType = new ArrayType(typeNode->type, dimensions);
+
+    // 创建局部数组变量
+    Value * arrayVar = module->newVarValue(arrayType, varNode->name);
+    if (!arrayVar) {
+        printf("Error: Failed to create array variable.\n");
+        return false;
+    }
+
+    // 创建 alloca 指令，为数组分配栈空间（16字节对齐）
+    AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, arrayVar, arrayType, 16);
+    node->blockInsts.addInst(allocaInst);
+
+    // 获取常量数组（由 ir_array_init 创建）
+    GlobalVariable * constArray = static_cast<GlobalVariable *>(initExprNode->val);
+    if (!constArray) {
+        printf("Error: Failed to get constant array from initialization.\n");
+        return false;
+    }
+
+    // 生成 memcpy 指令将常量数组复制到局部数组
+
+    // 1. 将局部数组转换为 i8*
+    BitcastInstruction * destCast = new BitcastInstruction(currentFunc, arrayVar, module->getI8PtrType());
+    node->blockInsts.addInst(destCast);
+
+    // 2. 将常量数组转换为 i8*
+    BitcastInstruction * srcCast = new BitcastInstruction(currentFunc, constArray, module->getI8PtrType());
+    node->blockInsts.addInst(srcCast);
+
+    // 3. 计算拷贝大小
+    ConstInt * sizeConst = module->newConstInt(arraySize * 4); // 假设 int 是 4 字节
+
+    // 4. 生成 memcpy 指令
+    MemcpyInstruction * memcpyInst = new MemcpyInstruction(currentFunc, destCast, srcCast, sizeConst, false);
+    node->blockInsts.addInst(memcpyInst);
+
+    // 设置变量节点的值
+    varNode->val = arrayVar;
 
     return true;
 }

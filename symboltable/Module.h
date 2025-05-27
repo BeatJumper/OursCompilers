@@ -23,6 +23,7 @@
 #include "Type.h"
 #include "GlobalVariable.h"
 #include "Function.h"
+#include "ArrayType.h"
 
 class ScopeStack;
 
@@ -215,4 +216,39 @@ public:
 private:
     /// @brief 编译时常量表（用于常量折叠）
     std::unordered_map<std::string, Value *> constValueMap;
+
+public:
+    /// @brief 获取i32类型
+    /// @return i32类型指针
+    Type * getI32Type();
+
+    /// @brief 获取i64类型
+    /// @return i64类型指针
+    Type * getI64Type();
+
+    /// @brief 获取i8指针类型
+    /// @return i8*类型指针
+    Type * getI8PtrType();
+
+    /// @brief 创建全局常量数组
+    /// @param arrayType 数组类型
+    /// @param initValues 初始化值列表
+    /// @return 全局常量数组
+    GlobalVariable * newGlobalConstArray(ArrayType * arrayType);
+
+private:
+    /// @brief 常量整数向量表，用于释放资源
+    std::vector<ConstInt *> constIntVector;
+
+public:
+    /// @brief 新建64位整型常量
+    /// @param val 常量值
+    /// @return 常量Value
+    ConstInt * newConstLong(int64_t val);
+
+    /// @brief 新建指定类型的整型常量
+    /// @param val 常量值
+    /// @param type 整数类型
+    /// @return 常量Value
+    ConstInt * newConstInt(int64_t val, Type * type);
 };

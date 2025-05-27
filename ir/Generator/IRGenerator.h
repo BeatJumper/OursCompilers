@@ -301,4 +301,25 @@ private:
     /// @param result 求值结果
     /// @return 翻译是否成功，true：成功，false：失败
     bool evaluate_const_expr(ast_node * node, Value *& result);
+
+    /// @brief 数组访问AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_array_access(ast_node * node);
+
+    /// @brief 数组初始化AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_array_init(ast_node * node);
+
+    /// @brief 数组变量声明和初始化节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @param typeNode 类型节点
+    /// @param varNode 变量名节点
+    /// @param initExprNode 数组初始化表达式节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_array_variable_declare_with_init(ast_node * node,
+                                             ast_node * typeNode,
+                                             ast_node * varNode,
+                                             ast_node * initExprNode);
 };

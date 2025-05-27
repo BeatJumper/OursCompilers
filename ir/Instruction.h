@@ -111,6 +111,19 @@ enum class IRInstOperator : std::int8_t {
 
     /// @brief 截断指令（trunc）
     IRINST_OP_TRUNC,
+
+    /// @brief getelementptr指令
+    IRINST_OP_GEP,
+
+    /// @brief bitcast指令
+    IRINST_OP_BITCAST,
+
+    /// @brief sext指令
+    IRINST_OP_SEXT,
+
+    /// @brief memcpy指令
+    IRINST_OP_MEMCPY,
+
 };
 
 ///

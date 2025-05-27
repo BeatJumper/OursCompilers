@@ -2,16 +2,16 @@
 /// @file FloatType.h
 /// @brief 浮点类型类，描述32位float类型
 ///
-/// @author zenglj (zenglj@live.com)
+/// @author kangyk (2921006018@qq.com)
 /// @version 1.0
-/// @date 2024-11-22
+/// @date 2025-05-25
 ///
 /// @copyright Copyright (c) 2024
 ///
 /// @par 修改日志:
 /// <table>
 /// <tr><th>Date       <th>Version <th>Author  <th>Description
-/// <tr><td>2024-11-22 <td>1.0     <td>zenglj  <td>新建
+/// <tr><td>2025-05-25 <td>1.0     <td>kangyk  <td>新建
 /// </table>
 ///
 
@@ -42,7 +42,7 @@ public:
     /// @return true
     /// @return false
     ///
-    [[nodiscard]] bool isFloatType() const // override
+    [[nodiscard]] bool isFloatType() const
     {
         return true;
     }
@@ -68,9 +68,3 @@ private:
     ///
     static FloatType * oneInstance;
 };
-
-FloatType * FloatType::getTypeFloat()
-{
-    return oneInstance;
-}
-FloatType * FloatType::oneInstance = new FloatType();

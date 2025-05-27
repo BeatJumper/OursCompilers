@@ -109,6 +109,15 @@ string getNodeName(ast_node * astnode)
             break;
             // TODO 这里追加其它类型的结点，返回对应结点的字符串
             //第一批添加 关系表达式 控制流语句
+
+        // 数组相关节点类型
+        case ast_operator_type::AST_OP_ARRAY_ACCESS:
+            nodeName = "array-access";
+            break;
+        case ast_operator_type::AST_OP_ARRAY_INIT:
+            nodeName = "array-init";
+            break;
+
         case ast_operator_type::AST_OP_IF:
             nodeName = "if";
             break;

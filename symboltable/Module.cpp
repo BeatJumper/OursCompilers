@@ -18,6 +18,7 @@
 #include "ScopeStack.h"
 #include "Common.h"
 #include "VoidType.h"
+#include "PointerType.h"
 
 Module::Module(std::string _name) : name(_name)
 {
@@ -190,6 +191,7 @@ ConstInt * Module::newConstInt(int32_t intVal)
         val = new ConstInt(intVal);
 
         insertConstIntDirectly(val);
+        constIntVector.push_back(val);
     }
 
     return val;
@@ -316,9 +318,17 @@ void Module::Delete()
         delete var;
     }
 
+    // 清理常量整数
+    for (auto constInt: constIntVector) {
+        delete constInt;
+    }
+
     // 相关列表清空
     globalVariableMap.clear();
     globalVariableVector.clear();
+
+    constIntMap.clear();
+    constIntVector.clear();
 
     funcMap.clear();
     funcVector.clear();
@@ -419,4 +429,68 @@ bool Module::addConstValue(Type * type, std::string name, Value * value)
     scopeStack->insertValue(value);
 
     return true;
+}
+
+/// @brief 获取i32类型
+/// @return i32类型指针
+Type * Module::getI32Type()
+{
+    return IntegerType::getTypeInt(); // 假设这返回i32类型
+}
+
+/// @brief 获取i64类型
+/// @return i64类型指针
+Type * Module::getI64Type()
+{
+    return IntegerType::getTypeLong(); // 假设这返回i64类型，如果没有需要创建
+}
+
+/// @brief 获取i8指针类型
+/// @return i8*类型指针
+Type * Module::getI8PtrType()
+{
+    // 获取i8类型并创建指针类型
+    Type * i8Type = IntegerType::getTypeChar(); // 假设这返回i8类型
+
+    // 修复：PointerType::get() 返回 const PointerType *，需要转换为 Type *
+    const PointerType * ptrType = PointerType::get(i8Type);
+    return const_cast<Type *>(static_cast<const Type *>(ptrType));
+}
+
+/// @brief 创建全局常量数组
+/// @param arrayType 数组类型
+/// @param initValues 初始化值列表
+/// @return 全局常量数组
+GlobalVariable * Module::newGlobalConstArray(ArrayType * arrayType)
+{
+    static int constArrayCounter = 0;
+    std::string name = "__const.main.arr." + std::to_string(constArrayCounter++);
+
+    GlobalVariable * constArray = new GlobalVariable(arrayType, name);
+    constArray->setConstant(true);
+    constArray->setAlignment(16);
+
+    // 使用 insertGlobalValueDirectly 方法来正确添加到全局变量列表
+    insertGlobalValueDirectly(constArray);
+
+    return constArray;
+}
+
+/// @brief 新建64位整型常量
+/// @param val 常量值
+/// @return 常量Value
+ConstInt * Module::newConstLong(int64_t val)
+{
+    ConstInt * newConst = new ConstInt(val);
+    return newConst;
+}
+
+/// @brief 新建指定类型的整型常量
+/// @param val 常量值
+/// @param type 整数类型
+/// @return 常量Value
+ConstInt * Module::newConstInt(int64_t val, Type * type)
+{
+    ConstInt * newConst = new ConstInt(type, val);
+    return newConst;
 }

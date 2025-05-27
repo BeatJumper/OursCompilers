@@ -40,3 +40,25 @@ IntegerType * IntegerType::getTypeInt()
 {
     return oneInstanceInt;
 }
+
+/// @brief 获取64位整数类型
+/// @return 64位整数类型
+IntegerType * IntegerType::getTypeLong()
+{
+    static IntegerType * typeLong = nullptr;
+    if (!typeLong) {
+        typeLong = new IntegerType(64);
+    }
+    return typeLong;
+}
+
+/// @brief 获取8位整数类型
+/// @return 8位整数类型
+IntegerType * IntegerType::getTypeChar()
+{
+    static IntegerType * typeChar = nullptr;
+    if (!typeChar) {
+        typeChar = new IntegerType(8);
+    }
+    return typeChar;
+}

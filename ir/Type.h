@@ -146,7 +146,7 @@ public:
     /// @return true 是
     /// @return false 不是
     ///
-    [[nodiscard]] bool isArrayType() const
+    [[nodiscard]] virtual bool isArrayType() const
     {
         return ID == ArrayTyID;
     }
