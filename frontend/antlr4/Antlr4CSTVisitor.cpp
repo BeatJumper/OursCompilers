@@ -114,6 +114,9 @@ std::any MiniCCSTVisitor::visitFuncType(MiniCParser::FuncTypeContext * ctx)
     } else if (ctx->T_VOID()) {
         attr.type = BasicType::TYPE_VOID;
         attr.lineno = (int64_t) ctx->T_VOID()->getSymbol()->getLine();
+    } else if (ctx->T_FLOAT()) { // 新增float返回类型
+        attr.type = BasicType::TYPE_FLOAT;
+        attr.lineno = (int64_t) ctx->T_FLOAT()->getSymbol()->getLine();
     }
     // TODO 返回float类型的返回值
     return attr;
@@ -458,6 +461,24 @@ std::any MiniCCSTVisitor::visitPrimaryExp(MiniCParser::PrimaryExpContext * ctx)
 
         // printf("Debug: Created digit node: name='%s', value=%u\n", digitText.c_str(), val);
 
+    } else if (ctx->T_FLOAT_DIGIT()) { // 新增浮点数字面量处理
+        // 获取浮点数字面量文本
+        std::string floatText = ctx->T_FLOAT_DIGIT()->getText();
+        int64_t lineNo = (int64_t) ctx->T_FLOAT_DIGIT()->getSymbol()->getLine();
+
+        // 解析浮点数值
+        float val = 0.0f;
+        try {
+            val = std::stof(floatText);
+        } catch (const std::exception & e) {
+            printf("Error: Failed to parse float '%s' at line %ld: %s\n", floatText.c_str(), lineNo, e.what());
+            return nullptr;
+        }
+
+        // 创建浮点数字面量节点
+        node = ast_node::New(floatText, lineNo);
+        node->float_val = val;
+        node->node_type = ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT;
     } else if (ctx->lVal()) {
         // 具有左值的表达式
         // 识别 primaryExp: lVal
@@ -576,6 +597,9 @@ std::any MiniCCSTVisitor::visitBasicType(MiniCParser::BasicTypeContext * ctx)
     if (ctx->T_INT()) {
         attr.type = BasicType::TYPE_INT;
         attr.lineno = (int64_t) ctx->T_INT()->getSymbol()->getLine();
+    } else if (ctx->T_FLOAT()) { // 新增float类型支持
+        attr.type = BasicType::TYPE_FLOAT;
+        attr.lineno = (int64_t) ctx->T_FLOAT()->getSymbol()->getLine();
     }
 
     return attr;

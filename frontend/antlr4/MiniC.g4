@@ -36,7 +36,7 @@ constExp: addExp; // 常量表达式必须能在编译时求值
 funcDef: funcType T_ID T_L_PAREN funcFParams? T_R_PAREN block;
 
 // 函数类型
-funcType: T_VOID | T_INT;
+funcType: T_VOID | T_INT | T_FLOAT;
 
 // 函数形参表
 funcFParams: funcFParam (T_COMMA funcFParam)*;
@@ -60,7 +60,7 @@ blockItem: statement | decl;
 varDecl: basicType varDef (T_COMMA varDef)* T_SEMICOLON;
 
 // 基本类型
-basicType: T_INT;
+basicType: T_INT | T_FLOAT;
 
 // 变量定义，支持数组
 varDef:
@@ -128,7 +128,11 @@ unaryExp:
 unaryOp: T_ADD | T_SUB | T_NOT;
 
 // 基本表达式：括号表达式、整数、左值表达式
-primaryExp: T_L_PAREN expr T_R_PAREN | T_DIGIT | lVal;
+primaryExp:
+	T_L_PAREN expr T_R_PAREN
+	| T_DIGIT
+	| T_FLOAT_DIGIT
+	| lVal;
 
 // 实参列表
 realParamList: expr (T_COMMA expr)*;
@@ -175,6 +179,7 @@ T_NOT: '!'; // 逻辑非
 // 要注意关键字同样也属于T_ID，因此必须放在T_ID的前面，否则会识别成T_ID
 T_RETURN: 'return';
 T_INT: 'int';
+T_FLOAT: 'float';
 T_VOID: 'void';
 T_IF: 'if';
 T_ELSE: 'else';
@@ -191,6 +196,11 @@ T_DIGIT:
 	| '0' [0-7]+ // 八进制（不包括单独的0）  
 	| '0' // 单独的0（十进制）
 	| [1-9] [0-9]*; // 十进制（非零开头）
+
+T_FLOAT_DIGIT:
+	[0-9]+ '.' [0-9]* ([eE] [+-]? [0-9]+)? // 常规小数形式
+	| '.' [0-9]+ ([eE] [+-]? [0-9]+)? // 省略整数部分
+	| [0-9]+ [eE] [+-]? [0-9]+; // 科学计数法
 
 /* 空白符丢弃 */
 WS: [ \r\n\t]+ -> skip;

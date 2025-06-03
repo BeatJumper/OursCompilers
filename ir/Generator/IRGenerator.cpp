@@ -914,6 +914,23 @@ bool IRGenerator::ir_assign(ast_node * node)
         return false;
     }
 
+    // 类型转换检查
+    if (left->val->getType()->isFloatType() && !rightValue->getType()->isFloatType()) {
+        // 目标类型是浮点数，源类型不是，需要转换
+        rightValue = convertToFloat(rightValue, module->getCurrentFunction(), node->blockInsts);
+        if (!rightValue) {
+            printf("Error: Failed to convert right operand to float type in ir_assign.\n");
+            return false;
+        }
+    } else if (left->val->getType()->isIntegerType() && !rightValue->getType()->isIntegerType()) {
+        // 目标类型是整数，源类型不是，需要转换
+        rightValue = convertToInt(rightValue, module->getCurrentFunction(), node->blockInsts);
+        if (!rightValue) {
+            printf("Error: Failed to convert right operand to integer type in ir_assign.\n");
+            return false;
+        }
+    }
+
     // 创建 store 指令，将右侧值存储到左侧地址
     StoreInstruction * storeInst = new StoreInstruction(module->getCurrentFunction(), rightValue, left->val, 4);
 
@@ -925,6 +942,39 @@ bool IRGenerator::ir_assign(ast_node * node)
     return true;
 }
 
+Value * IRGenerator::convertToFloat(Value * val, Function * func, InterCode & blockInsts)
+{
+    if (val->getType()->isFloatType()) {
+        return val; // 已经是浮点数，无需转换
+    }
+
+    if (val->getType()->isIntegerType()) {
+        // 整数转浮点
+        Instruction * convInst = new BitcastInstruction(func, val, FloatType::getTypeFloat());
+        blockInsts.addInst(convInst);
+        return convInst;
+    }
+
+    printf("Error: Cannot convert value to float type\n");
+    return nullptr;
+}
+
+Value * IRGenerator::convertToInt(Value * val, Function * func, InterCode & blockInsts)
+{
+    if (val->getType()->isIntegerType()) {
+        return val; // 已经是整数，无需转换
+    }
+
+    if (val->getType()->isFloatType()) {
+        // 浮点转整数
+        Instruction * convInst = new BitcastInstruction(func, val, IntegerType::getTypeInt());
+        blockInsts.addInst(convInst);
+        return convInst;
+    }
+
+    printf("Error: Cannot convert value to integer type\n");
+    return nullptr;
+}
 /// @brief return节点翻译成线性中间IR
 /// @param node AST节点
 /// @return 翻译是否成功，true：成功，false：失败
@@ -950,16 +1000,13 @@ bool IRGenerator::ir_return(ast_node * node)
 
     // 处理返回值
     if (right && right->val) {
-        if (needsLoad(right->val)) {
-            // 变量需要load
-            LoadInstruction * loadRight = new LoadInstruction(currentFunc, right->val, right->val, 4);
-            node->blockInsts.addInst(right->blockInsts);
-            node->blockInsts.addInst(loadRight);
-            returnValue = loadRight;
-        } else {
-            // 常量或表达式结果
-            node->blockInsts.addInst(right->blockInsts);
-            returnValue = right->val;
+        Value * returnValue = right->val;
+
+        // 类型转换检查
+        if (currentFunc->getReturnType()->isFloatType() && !returnValue->getType()->isFloatType()) {
+            returnValue = convertToFloat(returnValue, currentFunc, node->blockInsts);
+        } else if (currentFunc->getReturnType()->isIntegerType() && !returnValue->getType()->isIntegerType()) {
+            returnValue = convertToInt(returnValue, currentFunc, node->blockInsts);
         }
 
         // 如果函数有返回值变量，则将返回值存储到函数的返回值变量中
@@ -1086,11 +1133,7 @@ bool IRGenerator::ir_declare_statment(ast_node * node)
 /// @return 翻译是否成功，true：成功，false：失败
 bool IRGenerator::ir_variable_declare(ast_node * node)
 {
-    // 共有两个孩子，第一个类型，第二个变量名
-
-    // TODO 这里可强化类型等检查
-
-    // 确保节点有两个子节点：类型节点和变量名或赋值节点
+    // 共有两个孩子，第一个类型，第二个变量名或赋值节点
     if (node->sons.size() < 2) {
         printf("Error: Invalid node structure in ir_variable_declare.\n");
         return false;
@@ -1104,44 +1147,50 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
         return false;
     }
 
-    // 检查当前是否在全局作用域（函数外部）
+    // 检查当前是否在全局作用域
     Function * currentFunc = module->getCurrentFunction();
     if (!currentFunc) {
-        // 全局变量处理
         return ir_global_variable_declare(node, typeNode, varOrAssignNode);
     }
 
-    // 如果是赋值节点（AST_OP_ASSIGN）
+    // 处理变量声明（带或不带初始化）
+    ast_node * varNode = nullptr;
+    ast_node * initExprNode = nullptr;
+
     if (varOrAssignNode->node_type == ast_operator_type::AST_OP_ASSIGN) {
-        // 获取赋值节点的子节点：变量名和初值表达式
-        ast_node * varNode = varOrAssignNode->sons[0];
-        ast_node * initExprNode = varOrAssignNode->sons[1];
+        // 带初始化的声明
+        varNode = varOrAssignNode->sons[0];
+        initExprNode = varOrAssignNode->sons[1];
 
         if (!varNode || !initExprNode) {
             printf("Error: Invalid assignment structure in ir_variable_declare.\n");
             return false;
         }
+    } else {
+        // 不带初始化的声明
+        varNode = varOrAssignNode;
+    }
 
-        // 检查是否是数组初始化
+    // 为变量分配Value和栈空间
+    Value * varValue = module->newVarValue(typeNode->type, varNode->name);
+    if (!varValue) {
+        printf("Error: Failed to allocate variable in ir_variable_declare.\n");
+        return false;
+    }
+
+    AllocaInstruction * allocaInst =
+        new AllocaInstruction(currentFunc, varValue, typeNode->type, typeNode->type->getSize());
+    node->blockInsts.addInst(allocaInst);
+    varNode->val = varValue;
+
+    // 处理初始化部分
+    if (initExprNode) {
+        // 处理数组初始化
         if (initExprNode->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
-            // 处理数组声明和初始化
             return ir_array_variable_declare_with_init(node, typeNode, varNode, initExprNode);
         }
 
-        // 在符号表中为变量分配 Value
-        Value * varValue = module->newVarValue(typeNode->type, varNode->name);
-        if (!varValue) {
-            printf("Error: Failed to allocate variable in ir_variable_declare.\n");
-            return false;
-        }
-        // 创建 alloca 指令，为变量分配栈空间
-        AllocaInstruction * allocaInst =
-            new AllocaInstruction(module->getCurrentFunction(), varValue, typeNode->type, 4);
-
-        // 将变量名节点的 Value 设置为分配的 Value
-        varNode->val = varValue;
-
-        // 计算初值表达式
+        // 处理普通初始化
         if (!ir_visit_ast_node(initExprNode)) {
             printf("Error: Failed to evaluate initialization expression.\n");
             return false;
@@ -1149,46 +1198,45 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
 
         Value * initValue = nullptr;
 
-        // 处理初始值
-        if (needsLoad(initExprNode->val)) {
-            // 初始值是变量，需要加载
-            LoadInstruction * loadInit =
-                new LoadInstruction(module->getCurrentFunction(), initExprNode->val, initExprNode->val, 4);
+        // 处理浮点数常量初始化
+        if (initExprNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
+            initValue = module->newConstFloat(initExprNode->float_val);
+            node->blockInsts.addInst(initExprNode->blockInsts);
+        }
+        // 处理需要加载的情况
+        else if (needsLoad(initExprNode->val)) {
+            LoadInstruction * loadInit = new LoadInstruction(currentFunc,
+                                                             initExprNode->val,
+                                                             initExprNode->val,
+                                                             initExprNode->val->getType()->getSize());
             node->blockInsts.addInst(initExprNode->blockInsts);
             node->blockInsts.addInst(loadInit);
             initValue = loadInit;
         } else {
-            // 初始值是常量或表达式结果，直接使用
             node->blockInsts.addInst(initExprNode->blockInsts);
             initValue = initExprNode->val;
         }
 
-        // 创建 store 指令，将初始值存储到变量
-        StoreInstruction * storeInst = new StoreInstruction(module->getCurrentFunction(), initValue, varValue, 4);
+        // 类型转换检查
+        if (initValue) {
+            if (typeNode->type->isFloatType() && !initValue->getType()->isFloatType()) {
+                initValue = convertToFloat(initValue, currentFunc, node->blockInsts);
+                if (!initValue) {
+                    printf("Error: Failed to convert to float in variable initialization.\n");
+                    return false;
+                }
+            } else if (typeNode->type->isIntegerType() && !initValue->getType()->isIntegerType()) {
+                initValue = convertToInt(initValue, currentFunc, node->blockInsts);
+                if (!initValue) {
+                    printf("Error: Failed to convert to int in variable initialization.\n");
+                    return false;
+                }
+            }
 
-        node->blockInsts.addInst(allocaInst);
-
-        // node->blockInsts.addInst(initExprNode->blockInsts);
-
-        node->blockInsts.addInst(storeInst);
-
-    } else {
-        // 如果是普通变量声明（没有初值）
-        ast_node * varNode = varOrAssignNode;
-
-        // 在符号表中为变量分配 Value
-        Value * varValue = module->newVarValue(typeNode->type, varNode->name);
-
-        // 创建 alloca 指令，为变量分配栈空间
-        AllocaInstruction * allocaInst =
-            new AllocaInstruction(module->getCurrentFunction(), varValue, typeNode->type, 4);
-
-        // 添加指令到当前节点
-        node->blockInsts.addInst(allocaInst);
-
-        if (!varValue) {
-            printf("Error: Failed to allocate variable in ir_variable_declare.\n");
-            return false;
+            // 存储初始化值
+            StoreInstruction * storeInst =
+                new StoreInstruction(currentFunc, initValue, varValue, typeNode->type->getSize());
+            node->blockInsts.addInst(storeInst);
         }
     }
 
@@ -1212,11 +1260,19 @@ bool IRGenerator::ir_global_variable_declare(ast_node * node, ast_node * typeNod
         }
 
         // 处理初值
-        // TODO: 目前只支持整型常量初值，要加浮点数
         Value * initValue = nullptr;
         if (initExprNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
-            // 整数常量初值
-            initValue = module->newConstInt(initExprNode->integer_val);
+            if (typeNode->type->isFloatType()) {
+                initValue = module->newConstFloat(static_cast<float>(initExprNode->integer_val));
+            } else {
+                initValue = module->newConstInt(initExprNode->integer_val);
+            }
+        } else if (initExprNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
+            if (typeNode->type->isIntegerType()) {
+                initValue = module->newConstInt(static_cast<int32_t>(initExprNode->float_val));
+            } else {
+                initValue = module->newConstFloat(initExprNode->float_val);
+            }
         } else {
             printf("Error: Global variable initialization only supports constants.\n");
             return false;

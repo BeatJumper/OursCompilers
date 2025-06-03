@@ -169,6 +169,17 @@ void Module::insertGlobalValueDirectly(GlobalVariable * val)
     globalVariableMap.emplace(val->getName(), val);
     globalVariableVector.push_back(val);
 }
+void Module::insertConstFloatDirectly(ConstFloat * val)
+{
+    // 检查是否已存在相同的常量
+    for (auto existing: constFloatVector) {
+        if (existing->getVal() == val->getVal()) {
+            return; // 已存在，不重复插入
+        }
+    }
+    // 添加到常量列表
+    constFloatVector.push_back(val);
+}
 
 /// @brief Value直接插入到符号表中的全局变量中
 /// @param name Value的名称
@@ -196,6 +207,20 @@ ConstInt * Module::newConstInt(int32_t intVal)
 
     return val;
 }
+ConstFloat * Module::newConstFloat(float floatVal)
+{
+    // 查找浮点数字符串
+    ConstFloat * val = findConstFloat(floatVal);
+    if (!val) {
+        // 不存在，则创建浮点数常量Value
+        val = new ConstFloat(floatVal);
+
+        insertConstFloatDirectly(val);
+        constFloatVector.push_back(val);
+    }
+
+    return val;
+}
 
 /// @brief 根据整数值获取当前符号
 /// \param name 变量名
@@ -211,6 +236,16 @@ ConstInt * Module::findConstInt(int32_t val)
     }
 
     return temp;
+}
+
+ConstFloat * Module::findConstFloat(float floatVal)
+{
+    for (auto val: constFloatVector) {
+        if (val->getVal() == floatVal) {
+            return val;
+        }
+    }
+    return nullptr;
 }
 
 /// @brief 在当前的作用域中查找，若没有查找到则创建局部变量或者全局变量。请注意不能创建临时变量

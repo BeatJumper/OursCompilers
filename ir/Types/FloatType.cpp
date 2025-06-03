@@ -30,3 +30,23 @@ FloatType * FloatType::getTypeFloat()
 {
     return oneInstance;
 }
+
+///
+/// @brief 类型比较
+/// @param other 要比较的类型
+/// @return bool 是否是相同类型
+///
+bool FloatType::isSameType(Type * other) const
+{
+    return other && other->isFloatType();
+}
+
+///
+/// @brief 类型转换支持
+/// @param target 目标类型
+/// @return bool 是否可以转换
+///
+bool FloatType::canConvertTo(Type * target) const
+{
+    return target->isFloatType() || target->isIntegerType();
+}

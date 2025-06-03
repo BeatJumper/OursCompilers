@@ -20,6 +20,7 @@
 
 #include "AST.h"
 #include "AttrType.h"
+#include "Types/FloatType.h"
 #include "Types/IntegerType.h"
 #include "Types/VoidType.h"
 
@@ -45,6 +46,13 @@ ast_node::ast_node(digit_int_attr attr)
     : ast_node(ast_operator_type::AST_OP_LEAF_LITERAL_UINT, IntegerType::getTypeInt(), attr.lineno)
 {
     integer_val = attr.val;
+}
+
+// 添加浮点数字面量节点的构造函数
+ast_node::ast_node(digit_float_attr attr)
+    : ast_node(ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT, FloatType::getTypeFloat(), attr.lineno)
+{
+    float_val = attr.val;
 }
 
 /// @brief 针对标识符ID的叶子构造函数
@@ -138,6 +146,12 @@ ast_node * ast_node::New(digit_int_attr attr)
 {
     ast_node * node = new ast_node(attr);
 
+    return node;
+}
+
+ast_node * ast_node::New(digit_float_attr attr)
+{
+    ast_node * node = new ast_node(attr);
     return node;
 }
 
@@ -273,7 +287,10 @@ Type * typeAttr2Type(type_attr & attr)
 {
     if (attr.type == BasicType::TYPE_INT) {
         return IntegerType::getTypeInt();
-    } else {
+    } else if (attr.type == BasicType::TYPE_FLOAT) {
+        return FloatType::getTypeFloat();
+    }
+    else {
         return VoidType::getType();
     }
 }

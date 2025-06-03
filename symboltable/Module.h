@@ -20,6 +20,7 @@
 #include <unordered_map>
 
 #include "ConstInt.h"
+#include "ConstFloat.h"
 #include "Type.h"
 #include "GlobalVariable.h"
 #include "Function.h"
@@ -110,6 +111,7 @@ public:
     /// \param intVal 整数值
     /// \return 临时Value
     ConstInt * newConstInt(int32_t intVal);
+    ConstFloat * newConstFloat(float floatVal);
 
     /// @brief 新建变量型Value，会根据currentFunc的值进行判断创建全局或者局部变量
     /// ! 该函数只有在AST遍历生成线性IR中使用，其它地方不能使用
@@ -140,6 +142,7 @@ protected:
     /// \param name 变量名
     /// \return 变量对应的值
     ConstInt * findConstInt(int32_t val);
+    ConstFloat * findConstFloat(float floatVal);
 
     ///
     /// @brief 新建全局变量，要求name必须有效，并且加入到全局符号表中。
@@ -161,6 +164,7 @@ protected:
     /// @brief Value插入到符号表中
     /// @param val Value信息
     void insertGlobalValueDirectly(GlobalVariable * val);
+    void insertConstFloatDirectly(ConstFloat * val);
 
     /// @brief ConstInt插入到符号表中
     /// @param val Value信息
@@ -239,6 +243,7 @@ public:
 private:
     /// @brief 常量整数向量表，用于释放资源
     std::vector<ConstInt *> constIntVector;
+    std::vector<ConstFloat *> constFloatVector;
 
 public:
     /// @brief 新建64位整型常量

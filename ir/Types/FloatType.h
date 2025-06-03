@@ -42,7 +42,7 @@ public:
     /// @return true
     /// @return false
     ///
-    [[nodiscard]] bool isFloatType() const
+    [[nodiscard]] bool isFloatType()
     {
         return true;
     }
@@ -55,6 +55,20 @@ public:
     {
         return 4;
     }
+
+    ///
+    /// @brief 类型比较
+    /// @param other 要比较的类型
+    /// @return bool 是否是相同类型
+    ///
+    [[nodiscard]] bool isSameType(Type * other) const;
+
+    ///
+    /// @brief 类型转换支持
+    /// @param target 目标类型
+    /// @return bool 是否可以转换
+    ///
+    [[nodiscard]] bool canConvertTo(Type * target) const;
 
 private:
     ///

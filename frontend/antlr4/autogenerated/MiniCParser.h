@@ -16,9 +16,9 @@ public:
     T_L_BRACKET = 6, T_R_BRACKET = 7, T_ASSIGN = 8, T_COMMA = 9, T_ADD = 10, 
     T_SUB = 11, T_MUL = 12, T_DIV = 13, T_MOD = 14, T_LT = 15, T_GT = 16, 
     T_LE = 17, T_GE = 18, T_EQ = 19, T_NE = 20, T_AND = 21, T_OR = 22, T_NOT = 23, 
-    T_RETURN = 24, T_INT = 25, T_VOID = 26, T_IF = 27, T_ELSE = 28, T_WHILE = 29, 
-    T_BREAK = 30, T_CONTINUE = 31, T_CONST = 32, T_ID = 33, T_DIGIT = 34, 
-    WS = 35, LINE_COMMENT = 36, BLOCK_COMMENT = 37
+    T_RETURN = 24, T_INT = 25, T_FLOAT = 26, T_VOID = 27, T_IF = 28, T_ELSE = 29, 
+    T_WHILE = 30, T_BREAK = 31, T_CONTINUE = 32, T_CONST = 33, T_ID = 34, 
+    T_DIGIT = 35, T_FLOAT_DIGIT = 36, WS = 37, LINE_COMMENT = 38, BLOCK_COMMENT = 39
   };
 
   enum {
@@ -213,6 +213,7 @@ public:
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *T_VOID();
     antlr4::tree::TerminalNode *T_INT();
+    antlr4::tree::TerminalNode *T_FLOAT();
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -323,6 +324,7 @@ public:
     BasicTypeContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *T_INT();
+    antlr4::tree::TerminalNode *T_FLOAT();
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -699,6 +701,7 @@ public:
     ExprContext *expr();
     antlr4::tree::TerminalNode *T_R_PAREN();
     antlr4::tree::TerminalNode *T_DIGIT();
+    antlr4::tree::TerminalNode *T_FLOAT_DIGIT();
     LValContext *lVal();
 
 

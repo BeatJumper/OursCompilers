@@ -36,6 +36,12 @@ typedef struct digit_int_attr {
     int64_t lineno; // 行号
 } digit_int_attr;
 
+typedef struct digit_float_attr
+{
+    float val;      // 浮点数值
+    int64_t lineno; // 行号
+} digit_float_attr;
+
 ///
 /// @brief 词法与语法通信的单精度浮点数字面量属性
 ///
