@@ -1,8 +1,8 @@
+int a=11;
 int main()
 {
-    int a=11;
     int b=22;
-    a = a+b;
+    b = a+b;
 
     return 0;
 }
