@@ -143,6 +143,8 @@ set(IR_SRCS
 	ir/Types/IntegerType.cpp
 	ir/Types/FloatType.h
 	ir/Types/FloatType.cpp
+	ir/Types/ArrayType.h
+	ir/Types/ArrayType.cpp
 	ir/Values/ConstInt.h
 	ir/Values/FormalParam.h
 	ir/Values/GlobalVariable.h

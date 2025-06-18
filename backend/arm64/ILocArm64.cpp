@@ -504,7 +504,7 @@ void ILocArm64::leaStack(int rs_reg_no, int base_reg_no, int64_t off)
 /// @param tmp_reg_No
 void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 {
-    // 1. 计算总栈空间需求
+    // 计算总栈空间需求
     int totalSize = 0;
     int protectedRegNum = func->getProtectedReg().size();
     // 局部变量空间
@@ -539,13 +539,6 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 
     // 设置新帧指针
     emit("mov", "x29", "sp");
-
-    // TODO 保存需要保留的寄存器
-    /*int offset = 16; // 跳过FP和LR
-    for (int reg: func->getCalleeSavedRegs()) {
-        emit("str", PlatformArm64::regName[reg], "[x29, #" + toStr(offset) + "]");
-        offset += 8;
-    }*/
 }
 
 /// @brief 调用函数fun
