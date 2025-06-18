@@ -40,7 +40,7 @@ void CodeGeneratorArm64::genHeader()
     //代码段按四字节对齐
     fprintf(fp, "%s\n", ".align 2");
     // 若有浮点运算需求，可添加如下指令支持高级SIMD和浮点单元
-    fprintf(fp, "%s\n", ".fpu neon-fp-armv8");
+    // fpintf(fp, "%s\n", ".fpu neon-fp-armv8");
     //生成的汇编代码将使用 ARM 指令集的指令
     fprintf(fp, "%s\n", ".cpu generic+fp+simd");
 
@@ -50,7 +50,7 @@ void CodeGeneratorArm64::genHeader()
 /// @brief 全局变量Section，主要包含初始化的和未初始化过的
 void CodeGeneratorArm64::genDataSection()
 {
-
+    printf("genDataSection\n");
     fprintf(fp, "\n");
     // 生成数据段
     fprintf(fp, ".data\n");
@@ -58,8 +58,12 @@ void CodeGeneratorArm64::genDataSection()
     bool bssStarted = false;
     bool dataStarted = false;
 
+    int i = 0;
+    printf("for\n");
     // 全局变量分两种情况：初始化的全局变量和未初始化的全局变量
     for (auto var: module->getGlobalVariables()) {
+        i++;
+        printf("循环%d层\n", i);
         if (var->isInBSSSection()) {
             // 在BSS段的全局变量
             if (!bssStarted) {
@@ -170,6 +174,7 @@ void CodeGeneratorArm64::genCodeSection(Function * func)
 
     // 删除无用的Label指令
     iloc.deleteUsedLabel();
+    printf("删除无用的Label指令\n");
 
     // ILOC代码输出为汇编代码
     // 函数入口标签 - 直接生成全局标签
@@ -177,18 +182,21 @@ void CodeGeneratorArm64::genCodeSection(Function * func)
     fprintf(fp, ".type %s, %%function\n", func->getName().c_str());
     fprintf(fp, ".align %d\n", func->getAlignment());
     fprintf(fp, "%s:\n", func->getName().c_str()); // 直接输出函数名标签
+    printf("函数入口标签\n");
 
     // 开启时输出IR指令作为注释
     if (this->showLinearIR) {
-
+        printf("进入if\n");
         // 输出有关局部变量的注释，便于查找问题
         for (auto localVar: func->getVarValues()) {
+            printf("循环中\n");
             std::string str;
             getIRValueStr(localVar, str);
             if (!str.empty()) {
                 fprintf(fp, "%s\n", str.c_str());
             }
         }
+        printf("输出有关局部变量的注释\n");
 
         // 输出指令关联的临时变量信息
         for (auto inst: func->getInterCode().getInsts()) {
@@ -200,8 +208,9 @@ void CodeGeneratorArm64::genCodeSection(Function * func)
                 }
             }
         }
+        printf("输出指令关联的临时变量信息\n");
     }
-
+    printf("output\n");
     iloc.outPut(fp);
 }
 
@@ -229,18 +238,20 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     if (func->getExistFuncCall()) {
         protectedRegNo.push_back(ARM64_LX_REG_NO);
     }
+    printf("寄存器分配中段\n");
 
     // 调整函数调用指令，主要是前8个寄存器传值，后面用栈传递
     // 为了更好的进行寄存器分配，可以进行对函数调用的指令进行预处理
     // 当然也可以不做处理，不过性能更差。这个处理是可选的。
     adjustFuncCallInsts(func);
+    printf("调整函数调用指令\n");
     // 为局部变量和临时变量在栈内分配空间，指定偏移，进行栈空间的分配
     stackAlloc(func);
-
+    printf("为局部变量和临时变量在栈内分配空间\n");
     // 函数形参要求前8个寄存器分配，后面的参数采用栈传递，实现实参的值传递给形参
     // 这一步是必须的
     adjustFormalParamInsts(func);
-
+    printf("函数形参\n");
     // GenBasicBlocks(func);
     // printf("基本块划分成功\n");
 

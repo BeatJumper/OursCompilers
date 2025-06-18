@@ -167,7 +167,10 @@ void ILocArm64::deleteUsedLabel()
 /// @param outputEmpty 是否输出空语句
 void ILocArm64::outPut(FILE * file, bool outputEmpty)
 {
+    int i = 0;
     for (auto arm: code) {
+        i++;
+        printf("循环第%d层\n", i);
         // 跳过无效指令（包括被删除的标签）
         if (arm->dead) {
             continue;
@@ -186,6 +189,7 @@ void ILocArm64::outPut(FILE * file, bool outputEmpty)
             fprintf(file, "\n");
         }
     }
+    printf("循环完毕\n");
 }
 
 /// @brief 获取当前的代码序列

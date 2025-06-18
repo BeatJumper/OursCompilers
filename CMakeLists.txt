@@ -281,8 +281,7 @@ add_custom_command(
 )
 
 # 源代码打包
-set(CPACK_SOURCE_GENERATOR "ZIP;TGZ")
-set(CPACK_SOURCE_PACKAGE_FILE_NAME "${PROJECT_NAME}-${PROJECT_VERSION}-src")
+set(CPACK_SOURCE_GENERATOR "ZIP")
 
 # 忽略不需要源代码目录或文件
 set(CPACK_SOURCE_IGNORE_FILES
@@ -294,6 +293,12 @@ set(CPACK_SOURCE_IGNORE_FILES
 	"/frontend/antlr4/.antlr/;" # antlr自动产生的目录
 	"/.history/;" # 本地历史文件
 	"/tests/;" # 测试文件夹
+	"/thirdparty/;" # antlr
+	"/tools/;" # tools
+	"/cmake/;" # cmake
+	"/.vs/;" # visual studio
+	"/.vscode/;" # vscode
+	"/.cache/;" # cache
 )
 
 # 二进制打包
