@@ -175,6 +175,8 @@ public:
     ///
     void addBasicBlock(InterCode * BasicBlock);
 
+    std::vector<InterCode *> & getBasicBlocks();
+
     ///
     /// @brief 获取下一个栈偏移量
     ///

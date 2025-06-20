@@ -19,7 +19,6 @@
 #include "ArgInstruction.h"
 #include "MoveInstruction.h"
 #include "Instruction.h"
-#include "ConstFloat.h"
 
 /// @brief 构造函数
 /// @param tab 符号表
@@ -50,64 +49,31 @@ void CodeGeneratorArm64::genHeader()
 /// @brief 全局变量Section，主要包含初始化的和未初始化过的
 void CodeGeneratorArm64::genDataSection()
 {
-    printf("genDataSection\n");
-    fprintf(fp, "\n");
-    // 生成数据段
-    fprintf(fp, ".data\n");
+    // 生成代码段
+    fprintf(fp, ".text\n");
 
     bool bssStarted = false;
     bool dataStarted = false;
 
-    int i = 0;
-    printf("for\n");
+    // 目前不支持全局变量和静态变量，以及字符串常量
     // 全局变量分两种情况：初始化的全局变量和未初始化的全局变量
     for (auto var: module->getGlobalVariables()) {
-        i++;
-        printf("循环%d层\n", i);
+
         if (var->isInBSSSection()) {
-            // 在BSS段的全局变量
-            if (!bssStarted) {
-                fprintf(fp, ".bss\n");
-                bssStarted = true;
-            }
+
+            // 在BSS段的全局变量，可以包含初值全是0的变量
             fprintf(fp, ".comm %s, %d, %d\n", var->getName().c_str(), var->getType()->getSize(), var->getAlignment());
         } else {
             // 有初值的全局变量
             if (!dataStarted) {
-                fprintf(fp, ".section .data\n");
+                fprintf(fp, ".data\n");
                 dataStarted = true;
             }
 
             fprintf(fp, ".global %s\n", var->getName().c_str());
             fprintf(fp, ".type %s, %%object\n", var->getName().c_str());
-            fprintf(fp, ".align %d\n", var->getAlignment());
-            fprintf(fp, "%s:\n", var->getName().c_str());
-
-            if (auto constInt = dynamic_cast<ConstInt *>(var)) {
-                fprintf(fp, ".word %d\n", constInt->getVal());
-            } else if (auto constFloat = dynamic_cast<ConstFloat *>(var)) {
-                uint32_t floatBits;
-                float tempFloat = constFloat->getVal();
-                std::memcpy(&floatBits, &tempFloat, sizeof(float));
-                fprintf(fp, ".word %u\n", floatBits);
-            } /*else if (auto constArray = dynamic_cast<ConstArray *>(var)) {
-                // 处理数组类型全局变量
-                for (auto element: constArray->getElements()) {
-                    if (auto constIntElement = dynamic_cast<ConstInt *>(element)) {
-                        fprintf(fp, ".word %d\n", constIntElement->getVal());
-                    } else if (auto constFloatElement = dynamic_cast<ConstFloat *>(element)) {
-                        uint32_t floatBits;
-                        float tempFloatElement = constFloatElement->getVal();
-                        std::memcpy(&floatBits, &tempFloatElement, sizeof(float));
-                        fprintf(fp, ".word %u\n", floatBits);
-                    } else if (auto strElement = dynamic_cast<ConstString *>(element)) {
-                        fprintf(fp, ".asciz \"%s\"\n", strElement->getVal().c_str());
-                    }
-                }
-            } else if (auto constStr = dynamic_cast<ConstString *>(var)) {
-                // 处理字符串常量
-                fprintf(fp, ".asciz \"%s\"\n", constStr->getVal().c_str());
-            }*/
+            fprintf(fp, "%s\n", var->getName().c_str());
+            // TODO 后面设置初始化的值，具体请参考ARM的汇编
         }
     }
 }
@@ -263,51 +229,35 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
 #endif
 }
 
-/// @brief 划分基本块
+/// @brief 为函数找出各基本块所包含的指令，并打包为基本块存入链表
 /// @param func 函数指针
-/*void CodeGeneratorArm64::GenBasicBlocks(Function * func)
+void CodeGeneratorArm64::GenBasicBlocks(Function * func)
 {
-    // 首先获取函数的所有指令
-    std::vector<Instruction *> insts = func->getInterCode().getInsts();
-
     InterCode * BasicBlock = new InterCode();
     Instruction * lastInst = nullptr;
     // 遍历func所有指令
-    for (auto inst: insts) {
+    for (auto inst: func->getInterCode().getInsts()) {
         // 找出所有首指令
+
+        // 没有函数入口指令了
+        /*
         // 函数入口指令
         if (inst->getOp() == IRInstOperator::IRINST_OP_ENTRY) {
             BasicBlock->addInst(inst);
         }
-        // 无条件分支指令
-        else if (inst->getOp() == IRInstOperator::IRINST_OP_GOTO) {
-            BasicBlock->addInst(inst);
+        */
+        BasicBlock->addInst(inst);
+        // 遇到跳转指令就分块
+        if (inst->getOp() == IRInstOperator::IRINST_OP_GOTO || inst->getOp() == IRInstOperator::IRINST_OP_BRANCH) {
             func->addBasicBlock(BasicBlock);
-            BasicBlock->deleteInst();
+            BasicBlock = new InterCode();
         }
-        // 紧跟在一个条件或无条件转移指令之后的指令
-        else if (lastInst != nullptr && lastInst->getOp() == IRInstOperator::IRINST_OP_GOTO) {
-            // 如果当前基本块不为空，添加到函数中
-            if (!BasicBlock->getInsts().empty()) {
-                func->addBasicBlock(BasicBlock);
-            }
-            BasicBlock->deleteInst();
-            BasicBlock->addInst(inst);
-        } else {
-            BasicBlock->addInst(inst);
-        }
-        // 记录前一条指令
-        lastInst = inst;
     }
     // 添加最后一个基本块
     if (!BasicBlock->getInsts().empty()) {
         func->addBasicBlock(BasicBlock);
     }
-
-    // 释放暂存基本块的内存
-    BasicBlock->deleteInst();
-    free(BasicBlock);
-}*/
+}
 
 /// @brief 寄存器分配前对函数内的指令进行调整，以便方便寄存器分配
 /// @param func 要处理的函数
@@ -349,13 +299,16 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
 
     // 当前函数的指令列表
     auto & insts = func->getInterCode().getInsts();
-
+    int len = insts.size();
+    printf("获取指令列表成功:%d个\n", len);
+    int i = 0;
     // 函数返回值用X0寄存器，若函数调用有返回值，则赋值X0到对应寄存器
     for (auto pIter = insts.begin(); pIter != insts.end(); pIter++) {
-
+        i++;
+        printf("循环第%d层\n", i);
         // 检查是否是函数调用指令，并且含有返回值
         if (Instanceof(callInst, FuncCallInstruction *, *pIter)) {
-
+            printf("处理函数调用指令中\n");
             // 实参前8个要寄存器传值，其它参数通过栈传递
 
             // 前8个的后面参数采用栈传递
@@ -377,6 +330,7 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 pIter = insts.insert(pIter, assignInst);
                 pIter++;
             }
+            printf("栈传递参数处理结束\n");
 
             for (int k = 0; k < callInst->getOperandsNum() && k < 8; k++) {
 
@@ -401,15 +355,18 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                     pIter++;
                 }
             }
-
-            for (int k = 0; k < callInst->getOperandsNum(); k++) {
-
+            printf("实参处理结束\n");
+            int callOperandsNum = callInst->getOperandsNum();
+            printf("函数参数个数：%d\n", callOperandsNum);
+            for (int k = 0; k < callOperandsNum; k++) {
+                printf("第%d层循环\n", k);
                 auto arg = callInst->getOperand(k);
 
                 // 再产生ARG指令
                 pIter = insts.insert(pIter, new ArgInstruction(func, arg));
                 pIter++;
             }
+            printf("参数传递指令处理结束\n");
 
             // 有arg指令后可不用参数，展示不删除
             // args.clear();
@@ -429,6 +386,7 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                     pIter = insts.insert(pIter + 1, assignInst);
                 }
             }
+            printf("返回值处理结束\n");
         }
     }
 }

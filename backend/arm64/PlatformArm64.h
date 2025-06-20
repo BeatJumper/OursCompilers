@@ -60,7 +60,7 @@ public:
     static bool isReg(std::string name);
 
     /// @brief 最大寄存器数目
-    static const int maxRegNum = 32;
+    static const int maxRegNum = 63;
 
     /// @brief 可使用的通用寄存器的个数x0-x10
     static const int maxUsableRegNum = 29;
@@ -70,7 +70,7 @@ public:
 
     // 最大向量寄存器数目
     static const int maxVecRegNum = 32;
-    // 向量寄存器的名字，v0 - v31
+    // 向量寄存器的名字，x0 - x31
     static const std::string vecRegName[maxVecRegNum];
 
     // 状态寄存器名字

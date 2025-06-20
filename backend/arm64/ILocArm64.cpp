@@ -277,7 +277,7 @@ void ILocArm64::load_symbol(int rs_reg_no, std::string name)
 
     // add 指令将符号在页内的偏移量加到基地址上
     // :lo12: 表示取符号地址的低 12 位作为偏移量
-    emit("add", PlatformArm64::regName[rs_reg_no], PlatformArm64::regName[rs_reg_no], ":" + name + ":lo12");
+    emit("add", PlatformArm64::regName[rs_reg_no], PlatformArm64::regName[rs_reg_no], ":lo12:" + name);
 }
 
 /// @brief 基址寻址 ldr r0,[fp,#100]
@@ -382,10 +382,10 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
         // 读取全局变量的地址
         // adrp x8, symbol@PAGE
         // add x8, x8, symbol@PAGEOFF
-        load_symbol(rs_reg_no, globalVar->getName());
+        load_symbol(rs_reg_no + 32, globalVar->getName());
 
         // ldr x8, [x8]
-        emit("ldr", PlatformArm64::regName[rs_reg_no], "[" + PlatformArm64::regName[rs_reg_no] + "]");
+        emit("ldr", PlatformArm64::regName[rs_reg_no], "[" + PlatformArm64::regName[rs_reg_no + 32] + "]");
 
     } else {
 
@@ -460,7 +460,7 @@ void ILocArm64::store_var(int src_reg_no, Value * dest_var, int tmp_reg_no)
         load_symbol(tmp_reg_no, globalVar->getName());
 
         // str x8, [x10]
-        emit("str", PlatformArm64::regName[src_reg_no], "[" + PlatformArm64::regName[tmp_reg_no] + "]");
+        emit("str", PlatformArm64::regName[src_reg_no], "[" + PlatformArm64::regName[tmp_reg_no + 32] + "]");
 
     } else {
 
