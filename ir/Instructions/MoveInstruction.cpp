@@ -28,8 +28,8 @@
 MoveInstruction::MoveInstruction(Function * _func, Value * _result, Value * _srcVal1)
     : Instruction(_func, IRInstOperator::IRINST_OP_ASSIGN, VoidType::getType())
 {
-    addOperand(_result);
-    addOperand(_srcVal1);
+    this->addOperand(_result);
+    this->addOperand(_srcVal1);
 }
 
 /// @brief 转换成字符串显示

@@ -34,15 +34,15 @@ CodeGeneratorArm64::~CodeGeneratorArm64()
 void CodeGeneratorArm64::genHeader()
 {
     //指定目标架构为 ARMv8-A
-    fprintf(fp, "%s\n", ".arch armv8-a");
+    fprintf(fp, "	%s\n", ".arch armv8-a");
     //代码段
-    fprintf(fp, "%s\n", ".text");
+    fprintf(fp, "	%s\n", ".text");
     //代码段按四字节对齐
-    fprintf(fp, "%s\n", ".align 2");
+    fprintf(fp, "	%s\n", ".align 2");
     // 若有浮点运算需求，可添加如下指令支持高级SIMD和浮点单元
     // fpintf(fp, "%s\n", ".fpu neon-fp-armv8");
     //生成的汇编代码将使用 ARM 指令集的指令
-    fprintf(fp, "%s\n", ".cpu generic+fp+simd");
+    fprintf(fp, "	%s\n", ".cpu generic+fp+simd");
 
     fprintf(fp, "\n");
 }
@@ -53,43 +53,46 @@ void CodeGeneratorArm64::genDataSection()
     printf("genDataSection\n");
     fprintf(fp, "\n");
     // 生成数据段
-    fprintf(fp, ".data\n");
 
     bool bssStarted = false;
     bool dataStarted = false;
 
-    int i = 0;
-    printf("for\n");
     // 全局变量分两种情况：初始化的全局变量和未初始化的全局变量
     for (auto var: module->getGlobalVariables()) {
-        i++;
-        printf("循环%d层\n", i);
         if (var->isInBSSSection()) {
             // 在BSS段的全局变量
+            fprintf(fp, "	.type %s, @object\n", var->getName().c_str());
             if (!bssStarted) {
-                fprintf(fp, ".bss\n");
+                fprintf(fp, "	.bss\n");
                 bssStarted = true;
             }
-            fprintf(fp, ".comm %s, %d, %d\n", var->getName().c_str(), var->getType()->getSize(), var->getAlignment());
+
+            fprintf(fp, "	.global %s\n", var->getName().c_str());
+            fprintf(fp, "	.align %d:\n", var->getAlignment());
+            fprintf(fp, "%s:\n", var->getName().c_str());
+            fprintf(fp, "	.word 0\n");
+            fprintf(fp, "	.size %s, %d\n", var->getName().c_str(), var->getType()->getSize());
+            //, var->getType()->getSize(), var->getAlignment()
         } else {
             // 有初值的全局变量
+            fprintf(fp, "	.type %s, @object\n", var->getName().c_str());
             if (!dataStarted) {
-                fprintf(fp, ".section .data\n");
+                fprintf(fp, "	.data\n");
                 dataStarted = true;
             }
 
-            fprintf(fp, ".global %s\n", var->getName().c_str());
-            fprintf(fp, ".type %s, %%object\n", var->getName().c_str());
-            fprintf(fp, ".align %d\n", var->getAlignment());
+            fprintf(fp, "	.global %s\n", var->getName().c_str());
+            fprintf(fp, "	.align %d\n", var->getAlignment());
             fprintf(fp, "%s:\n", var->getName().c_str());
 
-            if (auto constInt = dynamic_cast<ConstInt *>(var)) {
-                fprintf(fp, ".word %d\n", constInt->getVal());
-            } else if (auto constFloat = dynamic_cast<ConstFloat *>(var)) {
+            if (auto constInt = dynamic_cast<ConstInt *>(var->getInitValue())) {
+                fprintf(fp, "	.word %d\n", constInt->getVal());
+                fprintf(fp, "	.size %s, %d\n", var->getName().c_str(), var->getType()->getSize());
+            } else if (auto constFloat = dynamic_cast<ConstFloat *>(var->getInitValue())) {
                 uint32_t floatBits;
                 float tempFloat = constFloat->getVal();
                 std::memcpy(&floatBits, &tempFloat, sizeof(float));
-                fprintf(fp, ".word %u\n", floatBits);
+                fprintf(fp, "	.word %u\n", floatBits);
             } /*else if (auto constArray = dynamic_cast<ConstArray *>(var)) {
                 // 处理数组类型全局变量
                 for (auto element: constArray->getElements()) {
@@ -178,25 +181,22 @@ void CodeGeneratorArm64::genCodeSection(Function * func)
 
     // ILOC代码输出为汇编代码
     // 函数入口标签 - 直接生成全局标签
-    fprintf(fp, ".global %s\n", func->getName().c_str());
-    fprintf(fp, ".type %s, %%function\n", func->getName().c_str());
-    fprintf(fp, ".align %d\n", func->getAlignment());
+    fprintf(fp, "	.global %s\n", func->getName().c_str());
+    fprintf(fp, "	.type %s, %%function\n", func->getName().c_str());
+    fprintf(fp, "	.align %d\n", func->getAlignment());
     fprintf(fp, "%s:\n", func->getName().c_str()); // 直接输出函数名标签
     printf("函数入口标签\n");
 
     // 开启时输出IR指令作为注释
     if (this->showLinearIR) {
-        printf("进入if\n");
         // 输出有关局部变量的注释，便于查找问题
         for (auto localVar: func->getVarValues()) {
-            printf("循环中\n");
             std::string str;
             getIRValueStr(localVar, str);
             if (!str.empty()) {
                 fprintf(fp, "%s\n", str.c_str());
             }
         }
-        printf("输出有关局部变量的注释\n");
 
         // 输出指令关联的临时变量信息
         for (auto inst: func->getInterCode().getInsts()) {
@@ -210,8 +210,8 @@ void CodeGeneratorArm64::genCodeSection(Function * func)
         }
         printf("输出指令关联的临时变量信息\n");
     }
-    printf("output\n");
     iloc.outPut(fp);
+    fprintf(fp, "\n");
 }
 
 /// @brief 寄存器分配
@@ -235,14 +235,16 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     std::vector<int32_t> & protectedRegNo = func->getProtectedReg();
 
     protectedRegNo.push_back(ARM64_FP_REG_NO);
-    if (func->getExistFuncCall()) {
+    protectedRegNo.push_back(ARM64_LX_REG_NO);
+    /*if (func->getExistFuncCall()) {
         protectedRegNo.push_back(ARM64_LX_REG_NO);
-    }
+    }*/
     printf("寄存器分配中段\n");
 
     // 调整函数调用指令，主要是前8个寄存器传值，后面用栈传递
     // 为了更好的进行寄存器分配，可以进行对函数调用的指令进行预处理
     // 当然也可以不做处理，不过性能更差。这个处理是可选的。
+    // 当前函数的指令列表
     adjustFuncCallInsts(func);
     printf("调整函数调用指令\n");
     // 为局部变量和临时变量在栈内分配空间，指定偏移，进行栈空间的分配
@@ -319,11 +321,12 @@ void CodeGeneratorArm64::adjustFormalParamInsts(Function * func)
     // 请注意这里所得的所有形参都是对应的实参的值关联的临时变量
     // 如果不是不能使用这里的代码
     auto & params = func->getParams();
+    printf("params：%d\n", int(params.size()));
 
     // 形参的前8个通过寄存器来传值X0-X7
     for (int k = 0; k < (int) params.size() && k <= 7; k++) {
 
-        // 前四个设置分配寄存器
+        // 前八个设置分配寄存器
 
         params[k]->setRegId(k);
     }
@@ -345,71 +348,82 @@ void CodeGeneratorArm64::adjustFormalParamInsts(Function * func)
 /// @param func 要处理的函数
 void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
 {
-    std::vector<Instruction *> newInsts;
-
     // 当前函数的指令列表
     auto & insts = func->getInterCode().getInsts();
 
-    // 函数返回值用X0寄存器，若函数调用有返回值，则赋值X0到对应寄存器
+    // 函数返回值用x0寄存器，若函数调用有返回值，则赋值x0到对应寄存器
+    // 通过栈传递的实参，采用SP + 偏移的方式殉职，偏移肯定非负。
     for (auto pIter = insts.begin(); pIter != insts.end(); pIter++) {
 
         // 检查是否是函数调用指令，并且含有返回值
         if (Instanceof(callInst, FuncCallInstruction *, *pIter)) {
 
             // 实参前8个要寄存器传值，其它参数通过栈传递
+            Function * f = module->findFunction(callInst->getCalledName());
+            int32_t argNum = f->getParams().size();
+            printf("初始函数参数个数：%d\n", argNum);
 
-            // 前8个的后面参数采用栈传递
+            // 除前8个整数寄存器外，后面的参数采用栈传递
             int esp = 0;
-            for (int32_t k = 8; k < callInst->getOperandsNum(); k++) {
+            for (int32_t k = 8; k < argNum; k++) {
 
+                // 获取实参的值
                 auto arg = callInst->getOperand(k);
 
-                // 新建一个内存变量，用于栈传值到形参变量中
-                LocalVariable * newVal = func->newLocalVarValue(IntegerType::getTypeInt());
+                // 栈帧空间（低地址在前，高地址在后）
+                // --------------------- sp
+                // 实参栈传递的空间（排除寄存器传递的实参空间）
+                // ---------------------
+                // 需要保存在栈中的局部变量或临时变量或形参对应变量空间
+                // --------------------- fp
+                // 保护寄存器的空间
+                // ---------------------
+
+                // 新建一个内存变量，把实参的值保存到栈中，以便栈传值，其寻址为SP + 非负偏移
+                MemVariable * newVal = func->newMemVariable(IntegerType::getTypeInt());
                 newVal->setMemoryAddr(ARM64_SP_REG_NO, esp);
                 esp += 8;
 
+                // 引入赋值指令，把实参的值保存到内存变量上
                 Instruction * assignInst = new MoveInstruction(func, newVal, arg);
 
+                // 更换实参变量为内存变量
                 callInst->setOperand(k, newVal);
 
+                // 赋值指令插入到函数调用指令的前面
                 // 函数调用指令前插入后，pIter仍指向函数调用指令
                 pIter = insts.insert(pIter, assignInst);
+                printf("插入一条赋值指令\n");
                 pIter++;
             }
 
-            for (int k = 0; k < callInst->getOperandsNum() && k < 8; k++) {
+            // ARM64的函数调用约定，前8个参数通过寄存器传递
+            int regArgs = std::min(argNum, 8);
+            for (int k = 0; k < regArgs; k++) {
 
-                // 检查实参的类型是否是临时变量。
-                // 如果是临时变量，该变量可更改为寄存器变量即可，或者设置寄存器号
-                // 如果不是，则必须开辟一个寄存器变量，然后赋值即可
+                // 把实参的值通过move指令传递给寄存器
+
                 auto arg = callInst->getOperand(k);
+                Instruction * assignInst = new MoveInstruction(func, PlatformArm64::intRegVal[k], arg);
 
-                if (arg->getRegId() == k) {
-                    // 则说明寄存器已经是实参传递的寄存器，不用创建赋值指令
-                    continue;
-                } else {
-                    // 创建临时变量，指定寄存器
+                callInst->setOperand(k, PlatformArm64::intRegVal[k]);
 
-                    Instruction * assignInst =
-                        new MoveInstruction(func, PlatformArm64::intRegVal[k], callInst->getOperand(k));
-
-                    callInst->setOperand(k, PlatformArm64::intRegVal[k]);
-
-                    // 函数调用指令前插入后，pIter仍指向函数调用指令
-                    pIter = insts.insert(pIter, assignInst);
-                    pIter++;
-                }
+                // 函数调用指令前插入后，pIter仍指向函数调用指令
+                pIter = insts.insert(pIter, assignInst);
+                printf("插入一条赋值指令\n");
+                pIter++;
             }
 
+#if 0
             for (int k = 0; k < callInst->getOperandsNum(); k++) {
 
                 auto arg = callInst->getOperand(k);
 
-                // 再产生ARG指令
+                // 产生ARG指令
                 pIter = insts.insert(pIter, new ArgInstruction(func, arg));
                 pIter++;
             }
+#endif
 
             // 有arg指令后可不用参数，展示不删除
             // args.clear();
@@ -424,9 +438,9 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                     // 其它情况，需要产生赋值指令
                     // 新建一个赋值操作
                     Instruction * assignInst = new MoveInstruction(func, callInst, PlatformArm64::intRegVal[0]);
-
-                    // 函数调用指令的下一个指令的前面插入指令，因为有Exit指令，+1肯定有效
+                    //  函数调用指令的下一个指令的前面插入指令，因为有Exit指令，+1肯定有效
                     pIter = insts.insert(pIter + 1, assignInst);
+                    printf("插入一条赋值指令\n");
                 }
             }
         }
@@ -479,6 +493,25 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
         }
 
         // ... 其他类型指令处理 ...
+        if (inst->getOp() == IRInstOperator::IRINST_OP_FUNC_CALL) {
+            Value * result = inst;
+            LocalVariable * localResult = dynamic_cast<LocalVariable *>(result);
+            if (!localResult->getMemoryAddr()) {
+                printf("4\n");
+                // 获取分配大小（默认为指针大小）
+                int64_t size = localResult->getType()->getSize();
+                if (size == 0) {
+                    size = 8; // 默认指针大小
+                }
+
+                // 8字节对齐
+                size = (size + 7) & ~7;
+
+                // 分配栈空间
+                sp_esp -= size; // 栈向下增长
+                localResult->setMemoryAddr(ARM64_FP_REG_NO, sp_esp);
+            }
+        }
     }
 
     // 遍历指令中临时变量

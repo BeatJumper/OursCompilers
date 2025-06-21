@@ -27,15 +27,9 @@ void CodeGeneratorAsm::genCodeSection()
 {
     // 重新设置为0
     labelIndex = 0;
-    int len = module->getFunctionList().size();
-    int i = 0;
-    printf("函数列表个数：%d\n", len);
     // 遍历所有的函数，以函数为单位，产生指令
     for (auto func: module->getFunctionList()) {
-        i++;
-        printf("第%d次循环\n", i);
         if (!func->isBuiltin()) {
-
             // 针对func产生汇编指令
             genCodeSection(func);
         }

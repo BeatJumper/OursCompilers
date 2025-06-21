@@ -167,10 +167,7 @@ void ILocArm64::deleteUsedLabel()
 /// @param outputEmpty 是否输出空语句
 void ILocArm64::outPut(FILE * file, bool outputEmpty)
 {
-    int i = 0;
     for (auto arm: code) {
-        i++;
-        printf("循环第%d层\n", i);
         // 跳过无效指令（包括被删除的标签）
         if (arm->dead) {
             continue;
@@ -277,7 +274,7 @@ void ILocArm64::load_symbol(int rs_reg_no, std::string name)
 
     // add 指令将符号在页内的偏移量加到基地址上
     // :lo12: 表示取符号地址的低 12 位作为偏移量
-    emit("add", PlatformArm64::regName[rs_reg_no], PlatformArm64::regName[rs_reg_no], ":" + name + ":lo12");
+    emit("add", PlatformArm64::regName[rs_reg_no], PlatformArm64::regName[rs_reg_no], ":lo12:" + name);
 }
 
 /// @brief 基址寻址 ldr r0,[fp,#100]
@@ -382,10 +379,10 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
         // 读取全局变量的地址
         // adrp x8, symbol@PAGE
         // add x8, x8, symbol@PAGEOFF
-        load_symbol(rs_reg_no, globalVar->getName());
+        load_symbol(rs_reg_no + 32, globalVar->getName());
 
         // ldr x8, [x8]
-        emit("ldr", PlatformArm64::regName[rs_reg_no], "[" + PlatformArm64::regName[rs_reg_no] + "]");
+        emit("ldr", PlatformArm64::regName[rs_reg_no], "[" + PlatformArm64::regName[rs_reg_no + 32] + "]");
 
     } else {
 
@@ -457,10 +454,10 @@ void ILocArm64::store_var(int src_reg_no, Value * dest_var, int tmp_reg_no)
         // 全局变量
 
         // 读取符号的地址到寄存器x10
-        load_symbol(tmp_reg_no, globalVar->getName());
+        load_symbol(tmp_reg_no + 32, globalVar->getName());
 
         // str x8, [x10]
-        emit("str", PlatformArm64::regName[src_reg_no], "[" + PlatformArm64::regName[tmp_reg_no] + "]");
+        emit("str", PlatformArm64::regName[src_reg_no], "[" + PlatformArm64::regName[tmp_reg_no + 32] + "]");
 
     } else {
 
@@ -533,13 +530,7 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
     std::string off = "[sp, #-" + std::to_string(totalSize) + "]!";
 
     // 保存FP和LR到栈
-    if (func->getExistFuncCall()) {
-        // 非叶子函数：保存 FP 和 LR
-        emit("stp", "x29", "x30", off);
-    } else {
-        // 叶子函数：只需保存 FP
-        emit("str", "x29", off);
-    }
+    emit("stp", "x29", "x30", off);
 
     // 设置新帧指针
     emit("mov", "x29", "sp");
@@ -584,14 +575,9 @@ void ILocArm64::emitFunctionEpilogue(Function * func)
 
     int size = func->getStackFrameSize();
     std::string off = "[sp], #" + std::to_string(size);
+
     // 恢复FP和LR
-    if (func->getExistFuncCall()) {
-        // 非叶子函数：恢复 FP 和 LR
-        emit("ldp", "x29", "x30", off);
-    } else {
-        // 叶子函数：只需恢复 FP
-        emit("ldr", "x29", off);
-    }
+    emit("ldp", "x29", "x30", off);
 
     // 返回
     emit("ret");

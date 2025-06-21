@@ -303,7 +303,11 @@ void InstSelectorArm64::translate_call(Instruction * inst)
 {
     FuncCallInstruction * callInst = dynamic_cast<FuncCallInstruction *>(inst);
 
-    int32_t operandNum = callInst->getOperandsNum();
+    int32_t operandNum = callInst->getOperandsNum() - 1;
+    if (callInst->hasResultValue()) {
+        operandNum--;
+    }
+    printf("callInst_operandNum：%d\n", operandNum);
 
     if (operandNum != realArgCount) {
 
@@ -326,7 +330,7 @@ void InstSelectorArm64::translate_call(Instruction * inst)
         simpleRegisterAllocator.Allocate(6);
         simpleRegisterAllocator.Allocate(7);
 
-        // 前八个的后面参数采用栈传递
+        // 前8个的后面参数采用栈传递
         int esp = 0;
         for (int32_t k = 8; k < operandNum; k++) {
 
@@ -376,7 +380,7 @@ void InstSelectorArm64::translate_call(Instruction * inst)
     }
 
     // 赋值指令
-    if (callInst->hasResultValue()) {
+    /*if (callInst->hasResultValue()) {
 
         // 新建一个赋值操作
         Instruction * assignInst = new MoveInstruction(func, callInst, PlatformArm64::intRegVal[0]);
@@ -385,7 +389,7 @@ void InstSelectorArm64::translate_call(Instruction * inst)
         translate_assign(assignInst);
 
         delete assignInst;
-    }
+    }*/
 
     // 函数调用后清零，使得下次可正常统计
     realArgCount = 0;
@@ -398,6 +402,7 @@ void InstSelectorArm64::translate_call(Instruction * inst)
 void InstSelectorArm64::translate_arg(Instruction * inst)
 {
     // 翻译之前必须确保源操作数要么是寄存器，要么是内存，否则出错。
+    printf("开始翻译ARG指令, realArgCount：%d\n", realArgCount);
     Value * src = inst->getOperand(0);
 
     // 当前统计的ARG指令个数

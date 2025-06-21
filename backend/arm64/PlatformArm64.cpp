@@ -19,50 +19,10 @@
 #include "FloatType.h"
 
 const std::string PlatformArm64::regName[PlatformArm64::maxRegNum] = {
-    "w0",  // 用于传参或返回值等
-    "w1",  // 用于传参或返回值等
-    "w2",  // 用于传参等
-    "w3",  // 用于传参等
-    "w4",  // 用于传参等
-    "w5",  // 用于传参等
-    "w6",  // 用于传参等
-    "w7",  // 用于传参等
-    "w8",  // 用于特定操作，如系统调用返回地址等
-    "w9",  // 通用寄存器
-    "w10", // 通用寄存器
-    "w11", // 通用寄存器
-    "w12", // 通用寄存器
-    "w13", // 通用寄存器
-    "w14", // 通用寄存器
-    "w15", // 通用寄存器
-    "w16", // 临时寄存器
-    "w17", // 临时寄存器
-    "w18", // 平台保留寄存器
-    "w19", // 通用寄存器
-    "w20", // 通用寄存器
-    "w21", // 通用寄存器
-    "w22", // 通用寄存器
-    "w23", // 通用寄存器
-    "w24", // 通用寄存器
-    "w25", // 通用寄存器
-    "w26", // 通用寄存器
-    "w27", // 通用寄存器
-    "w28", // 通用寄存器
-    "x29", // x29,帧指针
-    "x30", // x30，链接寄存器
-    "sp",  // 堆栈指针寄存器
-};
-
-// 向量寄存器
-const std::string PlatformArm64::vecRegName[PlatformArm64::maxVecRegNum] = {
-    "v0",  "v1",  "v2",  "v3",  "v4",  "v5",  "v6",  "v7",  "v8",  "v9",  "v10", "v11", "v12", "v13", "v14", "v15",
-    "v16", "v17", "v18", "v19", "v20", "v21", "v22", "v23", "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31"};
-
-// 状态寄存器
-const std::string PlatformArm64::statusRegName = "CPSR";
-
-StatusRegVariable * PlatformArm64::statusRegVal =
-    new StatusRegVariable(IntegerType::getTypeInt(), PlatformArm64::statusRegName, 0);
+    "w0",  "w1",  "w2",  "w3",  "w4",  "w5",  "w6",  "w7",  "w8",  "w9",  "w10", "w11", "w12", "w13", "w14", "w15",
+    "w16", "w17", "w18", "w19", "w20", "w21", "w22", "w23", "w24", "w25", "w26", "w27", "w28", "x29", "x30", "sp",
+    "x0",  "x1",  "x2",  "x3",  "x4",  "x5",  "x6",  "x7",  "x8",  "x9",  "x10", "x11", "x12", "x13", "x14", "x15",
+    "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30"};
 
 RegVariable * PlatformArm64::intRegVal[PlatformArm64::maxRegNum] = {
     new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[0], 0),
@@ -96,41 +56,39 @@ RegVariable * PlatformArm64::intRegVal[PlatformArm64::maxRegNum] = {
     new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[28], 28),
     new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[29], 29),
     new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[30], 30),
-    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[31], 31)};
-
-VecRegVariable * PlatformArm64::VecRegVal[PlatformArm64::maxVecRegNum] = {
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[0], 0),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[1], 1),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[2], 2),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[3], 3),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[4], 4),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[5], 5),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[6], 6),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[7], 7),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[8], 8),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[9], 9),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[10], 10),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[11], 11),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[12], 12),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[13], 13),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[14], 14),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[15], 15),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[16], 16),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[17], 17),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[18], 18),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[19], 19),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[20], 20),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[21], 21),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[22], 22),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[23], 23),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[24], 24),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[25], 25),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[26], 26),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[27], 27),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[28], 28),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[29], 29),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[30], 30),
-    new VecRegVariable(FloatType::getTypeFloat(), PlatformArm64::vecRegName[31], 31)};
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[31], 31),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[32], 32),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[33], 33),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[34], 34),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[35], 35),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[36], 36),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[37], 37),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[38], 38),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[39], 39),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[40], 40),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[41], 41),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[42], 42),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[43], 43),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[44], 44),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[45], 45),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[46], 46),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[47], 47),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[48], 48),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[49], 49),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[50], 50),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[51], 51),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[52], 52),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[53], 53),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[54], 54),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[55], 55),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[56], 56),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[57], 57),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[58], 58),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[59], 59),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[60], 60),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[61], 61),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[62], 62),
+};
 
 /// @brief 循环左移两位
 /// @param num

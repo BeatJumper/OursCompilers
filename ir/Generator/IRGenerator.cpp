@@ -271,7 +271,6 @@ bool IRGenerator::ir_function_define(ast_node * node)
     }
     // IR指令追加到当前的节点中
     node->blockInsts.addInst(block_node->blockInsts);
-
     // 此时，所有指令都加入到当前函数中，也就是node->blockInsts
 
     // node节点的指令移动到函数的IR指令列表中
@@ -437,7 +436,21 @@ bool IRGenerator::ir_function_define(ast_node * node)
     // 恢复成外部函数
     module->setCurrentFunction(nullptr);
     module->leaveScope();
+    // 遍历所有的函数，以函数为单位，产生指令
+    for (auto func: module->getFunctionList()) {
+        if (!func->isBuiltin()) {
 
+            auto & insts = func->getInterCode().getInsts();
+
+            // 函数返回值用x0寄存器，若函数调用有返回值，则赋值x0到对应寄存器
+            // 通过栈传递的实参，采用SP + 偏移的方式殉职，偏移肯定非负。
+            for (int i = 0; i < insts.size(); i++) {
+                if (insts[i]->getOp() == IRInstOperator::IRINST_OP_FUNC_CALL) {
+                    printf("ir生成后检测函数调用的参数个数：%d\n", insts[i]->getOperandsNum());
+                }
+            }
+        }
+    }
     printf("==== EXIT ir_function_define ====\n");
     printf("Function has %zu instructions\n", irCode.getInsts().size());
     std::string fullIR;
@@ -600,13 +613,12 @@ bool IRGenerator::ir_function_call(ast_node * node)
     // 关键修复：使用正确的构造函数
     // 不要使用带有vector<Value*>参数的构造函数，而是使用基本构造函数然后添加操作数
     FuncCallInstruction * funcCallInst = new FuncCallInstruction(currentFunc, calledFunction, loadedParams, returnType);
-
     // 添加函数调用指令
     node->blockInsts.addInst(funcCallInst);
 
     // 函数调用结果保存到node中
     node->val = funcCallInst;
-
+    printf("生成中间代码时检测函数调用参数个数：%d\n", (int) funcCallInst->getOperandsNum());
     return true;
 }
 
@@ -1191,7 +1203,11 @@ bool IRGenerator::ir_global_variable_declare(ast_node * node, ast_node * typeNod
         Value * initValue = nullptr;
         if (initExprNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
             // 整数常量初值
+            std::cout << "整数常量初值: " << initExprNode->integer_val << std::endl;
             initValue = module->newConstInt(initExprNode->integer_val);
+            if (auto constInt = dynamic_cast<ConstInt *>(initValue)) {
+                printf("创建后整数常量初值: %d\n", constInt->getVal());
+            }
         } else {
             printf("Error: Global variable initialization only supports constants.\n");
             return false;
@@ -1209,6 +1225,9 @@ bool IRGenerator::ir_global_variable_declare(ast_node * node, ast_node * typeNod
         GlobalVariable * globalVariable = static_cast<GlobalVariable *>(globalVar);
         // TODO: 需要在 GlobalVariable 类中添加 setInitValue 方法
         globalVariable->setInitValue(initValue);
+        if (initExprNode->integer_val != 0) {
+            globalVariable->setBSSSection(false);
+        }
 
         // 设置节点的Value
         varNode->val = globalVar;
@@ -2018,6 +2037,7 @@ bool IRGenerator::ir_global_const_declare(ast_node * node,
     }
 
     // 创建常量值
+    std::cout << "initExprNode->integer_val: " << constValue << std::endl;
     ConstInt * constInt = module->newConstInt(constValue);
     if (!constInt) {
         printf("Error: Failed to create constant value.\n");
