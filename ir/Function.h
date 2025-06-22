@@ -175,7 +175,12 @@ public:
     ///
     void addBasicBlock(InterCode * BasicBlock);
 
+    /// @brief 用于获取基本块列表
+    /// @return 基本块列表
     std::vector<InterCode *> & getBasicBlocks();
+
+    /// @brief 用于清除基本块列表
+    void clearBasicBlocks();
 
     ///
     /// @brief 获取下一个栈偏移量

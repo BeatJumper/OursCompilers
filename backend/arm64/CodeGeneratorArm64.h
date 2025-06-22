@@ -41,10 +41,6 @@ protected:
     /// @param func 要处理的函数
     void registerAllocation(Function * func) override;
 
-    /// @brief 基本块划分
-    /// @param func 要处理的函数
-    void GenBasicBlocks(Function * func);
-
     /// @brief 栈空间分配
     /// @param func 要处理的函数
     void stackAlloc(Function * func);

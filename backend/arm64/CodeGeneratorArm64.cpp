@@ -19,6 +19,7 @@
 #include "ArgInstruction.h"
 #include "MoveInstruction.h"
 #include "Instruction.h"
+#include "InterferenceGraph.h"
 
 /// @brief 构造函数
 /// @param tab 符号表
@@ -114,6 +115,7 @@ void CodeGeneratorArm64::getIRValueStr(Value * val, std::string & str)
 /// @param func 要处理的函数
 void CodeGeneratorArm64::genCodeSection(Function * func)
 {
+
     // 寄存器分配以及栈内局部变量的站内地址重新分配
     registerAllocation(func);
     printf("寄存器分配完成\n");
@@ -198,6 +200,13 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     //  (2) LX寄存器用于函数调用，即R14。没有函数调用的函数可不用保护lx寄存器
     //  (3) R10寄存器用于立即数过大时要通过寄存器寻址，这里简化处理进行预留
 
+    // 创建干涉图
+    InterferenceGraph * graph_ig = new InterferenceGraph(func);
+
+    // TODO 考虑溢出
+    // 进行染色
+    InterferenceGraph::color_graph(graph_ig, PlatformArm64::maxUsableRegNum);
+
     std::vector<int32_t> & protectedRegNo = func->getProtectedReg();
 
     protectedRegNo.push_back(ARM64_FP_REG_NO);
@@ -227,36 +236,6 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     func->toString(irCodeStr);
     std::cout << irCodeStr << std::endl;
 #endif
-}
-
-/// @brief 为函数找出各基本块所包含的指令，并打包为基本块存入链表
-/// @param func 函数指针
-void CodeGeneratorArm64::GenBasicBlocks(Function * func)
-{
-    InterCode * BasicBlock = new InterCode();
-    Instruction * lastInst = nullptr;
-    // 遍历func所有指令
-    for (auto inst: func->getInterCode().getInsts()) {
-        // 找出所有首指令
-
-        // 没有函数入口指令了
-        /*
-        // 函数入口指令
-        if (inst->getOp() == IRInstOperator::IRINST_OP_ENTRY) {
-            BasicBlock->addInst(inst);
-        }
-        */
-        BasicBlock->addInst(inst);
-        // 遇到跳转指令就分块
-        if (inst->getOp() == IRInstOperator::IRINST_OP_GOTO || inst->getOp() == IRInstOperator::IRINST_OP_BRANCH) {
-            func->addBasicBlock(BasicBlock);
-            BasicBlock = new InterCode();
-        }
-    }
-    // 添加最后一个基本块
-    if (!BasicBlock->getInsts().empty()) {
-        func->addBasicBlock(BasicBlock);
-    }
 }
 
 /// @brief 寄存器分配前对函数内的指令进行调整，以便方便寄存器分配

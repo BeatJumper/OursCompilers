@@ -42,9 +42,15 @@ struct InterferenceGraph {
     void restore_node(node_IG * node);
     /// @brief 擦除图中所有颜色
     void flush_all_color();
+    /// @brief 基本块划分
+    /// @param func 要处理的函数
+    void GenBasicBlocks(Function * func);
+    /// @brief 由一个函数创建干涉图
+    /// @param func 需要创建干涉图的函数
+    InterferenceGraph(Function * func);
     /// @brief 对一个活跃分析后的控制流图创建干涉图
     /// @param graph 控制流图
-    InterferenceGraph(ControlFlowGraph * graph);
+    void ExecuteCFG(ControlFlowGraph * graph);
     /// @brief 析构函数
     ~InterferenceGraph();
     /// @brief 对一个干涉图染色

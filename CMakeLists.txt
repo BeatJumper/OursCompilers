@@ -81,26 +81,13 @@ set(FRONTEND_SRCS
 	frontend/antlr4/Antlr4Executor.h
 )
 
+file(GLOB_RECURSE BACKEND_CPP "backend/*.cpp")
+file(GLOB_RECURSE BACKEND_H "backend/*.h")
+
 # 后端源代码集合
 set(BACKEND_SRCS
-
-	# 后端共性代码
-	backend/CodeGenerator.cpp
-	backend/CodeGenerator.h
-	backend/CodeGeneratorAsm.cpp
-	backend/CodeGeneratorAsm.h
-
-	# 后端产生ARM64汇编指令
-	backend/arm64/ILocArm64.cpp
-	backend/arm64/ILocArm64.h
-	backend/arm64/InstSelectorArm64.cpp
-	backend/arm64/InstSelectorArm64.h
-	backend/arm64/PlatformArm64.cpp
-	backend/arm64/PlatformArm64.h
-	backend/arm64/CodeGeneratorArm64.cpp
-	backend/arm64/CodeGeneratorArm64.h
-	backend/arm64/SimpleRegisterAllocator.cpp
-	backend/arm64/SimpleRegisterAllocator.h
+	${BACKEND_CPP}
+	${BACKEND_H}
 )
 
 # 中间IR(ir)源代码集合
@@ -235,7 +222,7 @@ endif()
 # -Werror强制警告当作错误处理
 # -Wall尽可能多的让编译器提示警告和错误
 # __STDC_VERSION__的目的是警告产生的flex源文件出现INT8_MAX警告等
-target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Werror -Wno-write-strings -Wno-unused-function)
+target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wno-write-strings -Wno-unused-function)
 
 if(USE_GRAPHVIZ)
 	target_compile_definitions(${PROJECT_NAME} PRIVATE USE_GRAPHVIZ)

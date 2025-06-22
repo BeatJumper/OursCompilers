@@ -6,10 +6,12 @@
 
 ControlFlowGraph::ControlFlowGraph(Function * func)
 {
+    // 对基本块表里每个基本块都创建一个新的控制流节点
     for (InterCode * BasicIRBlock: func->getBasicBlocks()) {
         Node_CFG * node = new Node_CFG(this, *BasicIRBlock);
         node_list.push_back(node);
     }
+
     for (Node_CFG * node: node_list) {
         for (LabelInstruction * label: node->get_son_label_list()) {
             Node_CFG * son = get_CFG_from_label(label);
@@ -97,12 +99,12 @@ Node_CFG::Node_CFG(ControlFlowGraph * _graph, InterCode & BasicIRBlock)
                 break;
             }
             case IRInstOperator::IRINST_OP_LABEL: {
-                // 将Label指令和目前的基本块节点联系起来
+                // 将基本块自己的Label指令和自己的控制流节点联系起来
                 _graph->add_label_for_CFG((LabelInstruction *) inst, this);
                 break;
             }
             case IRInstOperator::IRINST_OP_BRANCH: {
-                // 一条分支指令会有两个Label
+                // 一条分支指令会通往两个Label
                 LabelInstruction *true_label = ((BranchInstruction *) inst)->getTrueLabel(),
                                  *false_label = ((BranchInstruction *) inst)->getFalseLabel();
                 // 把它们记录下来

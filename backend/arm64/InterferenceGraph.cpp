@@ -43,7 +43,25 @@ void InterferenceGraph::restore_node(node_IG * node)
     }
 }
 
-InterferenceGraph::InterferenceGraph(ControlFlowGraph * graph) : graph_cfg(graph)
+InterferenceGraph::InterferenceGraph(Function * func)
+{
+    // 调用基本块划分函数
+    GenBasicBlocks(func);
+
+    // 生成控制流图
+    graph_cfg = new ControlFlowGraph(func);
+
+    // 用完基本块表之后就可以删了节省空间
+    func->clearBasicBlocks();
+
+    // 进行活跃变量分析，获得每条语句的DEF和USE集合
+    LiveVariableAnalysis(graph_cfg);
+
+    // 完成干涉图构建
+    ExecuteCFG(graph_cfg);
+}
+
+void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
 {
     // 从Value到干涉图节点的映射
     std::map<Value *, node_IG *> value_to_ig;
@@ -76,6 +94,36 @@ void InterferenceGraph::flush_all_color()
 {
     for (node_IG * node: node_set) {
         node->color = 0;
+    }
+}
+
+/// @brief 为函数找出各基本块所包含的指令，并打包为基本块存入链表
+/// @param func 函数指针
+void InterferenceGraph::GenBasicBlocks(Function * func)
+{
+    InterCode * BasicBlock = new InterCode();
+    Instruction * lastInst = nullptr;
+    // 遍历func所有指令
+    for (auto inst: func->getInterCode().getInsts()) {
+        // 找出所有首指令
+
+        // 没有函数入口指令了
+        /*
+        // 函数入口指令
+        if (inst->getOp() == IRInstOperator::IRINST_OP_ENTRY) {
+            BasicBlock->addInst(inst);
+        }
+        */
+        BasicBlock->addInst(inst);
+        // 遇到跳转指令就分块
+        if (inst->getOp() == IRInstOperator::IRINST_OP_GOTO || inst->getOp() == IRInstOperator::IRINST_OP_BRANCH) {
+            func->addBasicBlock(BasicBlock);
+            BasicBlock = new InterCode();
+        }
+    }
+    // 添加最后一个基本块
+    if (!BasicBlock->getInsts().empty()) {
+        func->addBasicBlock(BasicBlock);
     }
 }
 
