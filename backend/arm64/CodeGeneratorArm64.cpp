@@ -51,7 +51,6 @@ void CodeGeneratorArm64::genHeader()
 void CodeGeneratorArm64::genDataSection()
 {
     printf("genDataSection\n");
-    fprintf(fp, "\n");
     // 生成数据段
 
     bool bssStarted = false;

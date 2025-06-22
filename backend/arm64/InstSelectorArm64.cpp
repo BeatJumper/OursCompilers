@@ -301,7 +301,7 @@ void InstSelectorArm64::translate_sdiv_32bit(Instruction * inst)
 /// @param inst IR指令
 void InstSelectorArm64::translate_srem_32bit(Instruction * inst)
 {
-    translate_two_operator(inst, "sdiv");
+    // TODO
 }
 
 /// @brief 函数调用指令翻译成ARM64汇编
@@ -606,5 +606,18 @@ void InstSelectorArm64::translate_store(Instruction * inst)
 /// @param inst IR指令
 void InstSelectorArm64::translate_ret(Instruction * inst)
 {
+    /*Function * func = this->func;
+    Value * returnValue = func->getReturnValue();
+
+    if (returnValue != nullptr) {
+        int32_t resultRegId = returnValue->getRegId();
+
+        // 如果返回值不在w0，将其移动到w0
+        if (resultRegId != 0) {
+            // 使用mov指令将x0的低32位移动到w0（适用于32位返回值）
+            // 或直接使用mov将64位值移动到w0（若返回值为64位但需截断）
+            iloc.inst("mov", PlatformArm64::regName[0], PlatformArm64::regName[resultRegId]);
+        }
+    }*/
     iloc.emitFunctionEpilogue(func);
 }
