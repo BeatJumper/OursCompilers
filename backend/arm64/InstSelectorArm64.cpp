@@ -297,6 +297,13 @@ void InstSelectorArm64::translate_sdiv_32bit(Instruction * inst)
     translate_two_operator(inst, "sdiv");
 }
 
+/// @brief 取余指令翻译成ARM64汇编
+/// @param inst IR指令
+void InstSelectorArm64::translate_srem_32bit(Instruction * inst)
+{
+    translate_two_operator(inst, "sdiv");
+}
+
 /// @brief 函数调用指令翻译成ARM64汇编
 /// @param inst IR指令
 void InstSelectorArm64::translate_call(Instruction * inst)

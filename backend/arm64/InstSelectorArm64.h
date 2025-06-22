@@ -80,6 +80,10 @@ protected:
     /// @param inst IR指令
     void translate_mul_32bit(Instruction * inst);
 
+    /// @brief 取余指令翻译成ARM64汇编
+    /// @param inst IR指令
+    void translate_srem_32bit(Instruction * inst);
+
     /// @brief 有符号除法指令翻译为ARM64位汇编
     /// @param inst IR指令
     void translate_sdiv_32bit(Instruction * inst);

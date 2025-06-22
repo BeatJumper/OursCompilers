@@ -507,33 +507,47 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 {
     // 计算总栈空间需求
     int totalSize = 0;
-    int protectedRegNum = func->getProtectedReg().size();
+    int protectedRegNum = 0;
+
+    // 保存寄存器空间
+    if (func->getExistFuncCall()) {
+        protectedRegNum = func->getProtectedReg().size();
+        totalSize += protectedRegNum * 8;
+    }
+
     // 局部变量空间
     for (auto & local: func->getVarValues()) {
-        // 对齐到8字节边界
-        totalSize = (totalSize + 7) & ~7;
-        local->setOffset(totalSize + protectedRegNum * 8); // 跳过保护寄存器
         totalSize += local->getType()->getSize();
     }
 
-    // 栈传参数空间(超过8个的参数)
-    int stackArgSize = std::max(func->getRealArgcount() - 8, 0) * 8;
+    // 栈传参数空间(超过8个的参数)，先按4字节分配(int,float)
+    int stackArgSize = std::max(func->getRealArgcount() - 8, 0) * 4;
     func->setExtraStackSize(stackArgSize);
     totalSize += stackArgSize;
 
-    // 保存寄存器空间
-    totalSize += func->getProtectedReg().size() * 8;
-
     // 对齐到16字节边界(ARM64要求)
     totalSize = (totalSize + 15) & ~15;
+
     func->setStackFrameSize(totalSize);
-    std::string off = "[sp, #-" + std::to_string(totalSize) + "]!";
+    std::string off = "[sp, #" + std::to_string(totalSize - protectedRegNum * 8) + "]";
 
-    // 保存FP和LR到栈
-    emit("stp", "x29", "x30", off);
+    // 局部变量空间
+    int tem = totalSize - protectedRegNum * 8;
+    for (auto & local: func->getVarValues()) {
+        tem -= local->getType()->getSize();
+        local->setOffset(tem);
+    }
 
-    // 设置新帧指针
-    emit("mov", "x29", "sp");
+    std::string s = "#" + std::to_string(totalSize);
+    emit("sub", "sp", "sp", s);
+
+    if (func->getExistFuncCall()) {
+        // 非叶子函数：保存 FP 和 LR
+        emit("stp", "x29", "x30", off);
+
+        // 设置新帧指针
+        emit("add", "x29", "sp", std::to_string(totalSize - protectedRegNum * 8));
+    }
 }
 
 /// @brief 调用函数fun
@@ -570,14 +584,19 @@ void ILocArm64::emitFunctionEpilogue(Function * func)
         offset -= 8;
     }*/
 
-    // 恢复SP
-    emit("mov", "sp", "x29");
-
     int size = func->getStackFrameSize();
-    std::string off = "[sp], #" + std::to_string(size);
+    int protectedRegNum = 0;
+    if (func->getExistFuncCall()) {
+        protectedRegNum = func->getProtectedReg().size();
+    }
+    std::string off = "[sp, #" + std::to_string(size - protectedRegNum * 8) + "]";
 
     // 恢复FP和LR
-    emit("ldp", "x29", "x30", off);
+    if (func->getExistFuncCall()) {
+        emit("ldp", "x29", "x30", off);
+    }
+    std::string s = "#" + std::to_string(size);
+    emit("add", "sp", "sp", s);
 
     // 返回
     emit("ret");
