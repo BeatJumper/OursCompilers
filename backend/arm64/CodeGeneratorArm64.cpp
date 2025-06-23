@@ -452,13 +452,13 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
         if (local->getRegId() != -1) {
             continue; // 跳过已分配寄存器的变量
         }
-        // 对齐到4字节边界
-        sp_esp = (sp_esp + 3) & ~3;
-        local->setMemoryAddr(ARM64_SP_REG_NO, -sp_esp);
+        // 对齐到8字节边界
+        sp_esp = (sp_esp + 7) & ~7;
+        local->setMemoryAddr(ARM64_FP_REG_NO, -sp_esp);
         sp_esp += local->getType()->getSize();
     }
 
-    /*printf("开始处理Alloca\n");
+    printf("开始处理Alloca\n");
     // 遍历指令中的alloca结果
     for (auto inst: func->getInterCode().getInsts()) {
         if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
@@ -483,7 +483,12 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
         }
 
         // ... 其他类型指令处理 ...
-        if (inst->getOp() == IRInstOperator::IRINST_OP_FUNC_CALL) {
+    }
+
+    // 遍历指令中临时变量
+    for (auto inst: func->getInterCode().getInsts()) {
+
+        if (inst->hasResultValue()) {
             // 有值
             int32_t size = inst->getType()->getSize();
 
@@ -496,26 +501,9 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
             // 累计当前作用域大小
             sp_esp += size;
         }
-    }*/
-
-    // 遍历指令中临时变量
-    for (auto inst: func->getInterCode().getInsts()) {
-
-        if (inst->hasResultValue()) {
-            // 有值
-            int32_t size = inst->getType()->getSize();
-
-            // 按照4字节的大小整数倍分配局部变量
-            size += (4 - size % 4) % 4;
-
-            // 临时变量偏移设置
-            inst->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
-
-            // 累计当前作用域大小
-            sp_esp += size;
-        }
     }
 
     // 设置函数的最大栈帧深度，在加上实参内存传值的空间
+    // 请注意若支持浮点数，则必须保持栈内空间8字节对齐
     func->setMaxDep(sp_esp);
 }
