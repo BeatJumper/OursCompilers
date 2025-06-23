@@ -34,15 +34,15 @@ CodeGeneratorArm64::~CodeGeneratorArm64()
 void CodeGeneratorArm64::genHeader()
 {
     //指定目标架构为 ARMv8-A
-    fprintf(fp, "	%s\n", ".arch armv8-a");
+    fprintf(fp, "%s\n", ".arch armv8-a");
     //代码段
-    fprintf(fp, "	%s\n", ".text");
+    fprintf(fp, "%s\n", ".text");
     //代码段按四字节对齐
-    fprintf(fp, "	%s\n", ".align 2");
+    fprintf(fp, "%s\n", ".align 2");
     // 若有浮点运算需求，可添加如下指令支持高级SIMD和浮点单元
     // fpintf(fp, "%s\n", ".fpu neon-fp-armv8");
     //生成的汇编代码将使用 ARM 指令集的指令
-    fprintf(fp, "	%s\n", ".cpu generic+fp+simd");
+    fprintf(fp, "%s\n", ".cpu generic+fp+simd");
 
     fprintf(fp, "\n");
 }
@@ -52,7 +52,7 @@ void CodeGeneratorArm64::genDataSection()
 {
     printf("genDataSection\n");
     // 生成数据段
-
+    // TODO全局常量
     bool bssStarted = false;
     bool dataStarted = false;
 
@@ -60,38 +60,38 @@ void CodeGeneratorArm64::genDataSection()
     for (auto var: module->getGlobalVariables()) {
         if (var->isInBSSSection()) {
             // 在BSS段的全局变量
-            fprintf(fp, "	.type %s, @object\n", var->getName().c_str());
+            fprintf(fp, ".type %s, @object\n", var->getName().c_str());
             if (!bssStarted) {
-                fprintf(fp, "	.bss\n");
+                fprintf(fp, ".bss\n");
                 bssStarted = true;
             }
 
-            fprintf(fp, "	.global %s\n", var->getName().c_str());
-            fprintf(fp, "	.align %d:\n", var->getAlignment());
+            fprintf(fp, ".global %s\n", var->getName().c_str());
+            fprintf(fp, ".align %d\n", var->getAlignment());
             fprintf(fp, "%s:\n", var->getName().c_str());
-            fprintf(fp, "	.word 0\n");
-            fprintf(fp, "	.size %s, %d\n", var->getName().c_str(), var->getType()->getSize());
+            fprintf(fp, ".word 0\n");
+            fprintf(fp, ".size %s, %d\n", var->getName().c_str(), var->getType()->getSize());
             //, var->getType()->getSize(), var->getAlignment()
         } else {
             // 有初值的全局变量
-            fprintf(fp, "	.type %s, @object\n", var->getName().c_str());
+            fprintf(fp, ".type %s, @object\n", var->getName().c_str());
             if (!dataStarted) {
-                fprintf(fp, "	.data\n");
+                fprintf(fp, ".data\n");
                 dataStarted = true;
             }
 
-            fprintf(fp, "	.global %s\n", var->getName().c_str());
-            fprintf(fp, "	.align %d\n", var->getAlignment());
+            fprintf(fp, ".global %s\n", var->getName().c_str());
+            fprintf(fp, ".align %d\n", var->getAlignment());
             fprintf(fp, "%s:\n", var->getName().c_str());
 
             if (auto constInt = dynamic_cast<ConstInt *>(var->getInitValue())) {
-                fprintf(fp, "	.word %d\n", constInt->getVal());
-                fprintf(fp, "	.size %s, %d\n", var->getName().c_str(), var->getType()->getSize());
+                fprintf(fp, ".word %d\n", constInt->getVal());
+                fprintf(fp, ".size %s, %d\n", var->getName().c_str(), var->getType()->getSize());
             } else if (auto constFloat = dynamic_cast<ConstFloat *>(var->getInitValue())) {
                 uint32_t floatBits;
                 float tempFloat = constFloat->getVal();
                 std::memcpy(&floatBits, &tempFloat, sizeof(float));
-                fprintf(fp, "	.word %u\n", floatBits);
+                fprintf(fp, ".word %u\n", floatBits);
             } /*else if (auto constArray = dynamic_cast<ConstArray *>(var)) {
                 // 处理数组类型全局变量
                 for (auto element: constArray->getElements()) {
@@ -180,9 +180,9 @@ void CodeGeneratorArm64::genCodeSection(Function * func)
 
     // ILOC代码输出为汇编代码
     // 函数入口标签 - 直接生成全局标签
-    fprintf(fp, "	.global %s\n", func->getName().c_str());
-    fprintf(fp, "	.type %s, %%function\n", func->getName().c_str());
-    fprintf(fp, "	.align %d\n", func->getAlignment());
+    fprintf(fp, ".global %s\n", func->getName().c_str());
+    fprintf(fp, ".type %s, %%function\n", func->getName().c_str());
+    fprintf(fp, ".align %d\n", func->getAlignment());
     fprintf(fp, "%s:\n", func->getName().c_str()); // 直接输出函数名标签
     printf("函数入口标签\n");
 
