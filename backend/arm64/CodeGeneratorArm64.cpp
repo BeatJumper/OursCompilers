@@ -200,13 +200,6 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     //  (2) LX寄存器用于函数调用，即R14。没有函数调用的函数可不用保护lx寄存器
     //  (3) R10寄存器用于立即数过大时要通过寄存器寻址，这里简化处理进行预留
 
-    // 创建干涉图
-    InterferenceGraph * graph_ig = new InterferenceGraph(func);
-
-    // TODO 考虑溢出
-    // 进行染色
-    InterferenceGraph::color_graph(graph_ig, PlatformArm64::maxUsableRegNum);
-
     std::vector<int32_t> & protectedRegNo = func->getProtectedReg();
 
     protectedRegNo.push_back(ARM64_FP_REG_NO);
@@ -220,6 +213,29 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     // 当然也可以不做处理，不过性能更差。这个处理是可选的。
     adjustFuncCallInsts(func);
     printf("调整函数调用指令\n");
+
+    // 主要染色过程（不断尝试染色直至成功）
+    while (true) {
+        // 创建干涉图
+        InterferenceGraph * graph_ig = new InterferenceGraph(func);
+
+        // 尝试进行染色
+        printf("干涉图已产生\n");
+        // 染色是否成功
+        bool suc = InterferenceGraph::color_graph(graph_ig, PlatformArm64::maxUsableRegNum);
+        if (suc) {
+            // assert(graph_ig->node_set.size());
+            for (node_IG * node: graph_ig->node_set) {
+                node->val->setLoadRegId(InterferenceGraph::ColorToRegId(node->color));
+                std::cout << node->val->getRegId() << std::endl;
+            }
+            break;
+        } else {
+            // TODO 完成变量溢出的工作
+            assert(false);
+        }
+    }
+
     // 为局部变量和临时变量在栈内分配空间，指定偏移，进行栈空间的分配
     stackAlloc(func);
     printf("为局部变量和临时变量在栈内分配空间\n");
@@ -391,6 +407,7 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
         sp_esp += local->getType()->getSize();
     }
 
+    /*
     printf("开始处理Alloca\n");
     // 遍历指令中的alloca结果
     for (auto inst: func->getInterCode().getInsts()) {
@@ -417,6 +434,7 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
 
         // ... 其他类型指令处理 ...
     }
+    */
 
     // 遍历指令中临时变量
     for (auto inst: func->getInterCode().getInsts()) {

@@ -36,6 +36,7 @@
 #include "FuncCallInstruction.h"
 #include "MoveInstruction.h"
 #include "AllocaInstruction.h"
+#include <iostream>
 
 /// @brief 构造函数
 /// @param _irCode 指令
@@ -177,6 +178,7 @@ void InstSelectorArm64::translate_assign(Instruction * inst)
 
     int32_t arg1_regId = arg1->getRegId();
     int32_t result_regId = result->getRegId();
+    // std::cout << arg1_regId << " " << result_regId;
 
     if (Instanceof(constVal, ConstInt *, arg1)) {
         // 处理常量到内存的赋值
@@ -403,6 +405,8 @@ void InstSelectorArm64::translate_arg(Instruction * inst)
     // 当前统计的ARG指令个数
     int32_t regId = src->getRegId();
 
+    // std::cout << regId << std::endl;
+
     if (realArgCount < 8) {
         // 前八个参数通过寄存器传递
         if (regId != -1) {
@@ -548,10 +552,13 @@ void InstSelectorArm64::translate_cmp(Instruction * inst)
 /// @param inst IR指令
 void InstSelectorArm64::translate_load(Instruction * inst)
 {
+    // assert(false);
     Value * result = inst;
     Value * arg1 = inst->getOperand(0);
 
     int32_t result_regId = result->getRegId();
+
+    // std::cout << result_regId << std::endl;
 
     if (result_regId != -1) {
         // 内存变量 => 寄存器

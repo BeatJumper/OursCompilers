@@ -15,6 +15,7 @@
 ///
 #include <algorithm>
 #include "SimpleRegisterAllocator.h"
+#include <cassert>
 
 ///
 /// @brief Construct a new Simple Register Allocator object
@@ -29,6 +30,8 @@ SimpleRegisterAllocator::SimpleRegisterAllocator()
 ///
 int SimpleRegisterAllocator::Allocate(Value * var, int32_t no)
 {
+    return 16;
+    /*
     if (var && (var->getLoadRegId() != -1)) {
         // 该变量已经分配了Load寄存器了，不需要再次分配
         return var->getLoadRegId();
@@ -86,6 +89,7 @@ int SimpleRegisterAllocator::Allocate(Value * var, int32_t no)
     }
 
     return regno;
+    */
 }
 
 ///
@@ -94,6 +98,7 @@ int SimpleRegisterAllocator::Allocate(Value * var, int32_t no)
 ///
 void SimpleRegisterAllocator::Allocate(int32_t no)
 {
+    /*
     if (regBitmap.test(no)) {
 
         // 指定的寄存器已经被占用
@@ -104,6 +109,7 @@ void SimpleRegisterAllocator::Allocate(int32_t no)
 
     // 占用该寄存器
     bitmapSet(no);
+    */
 }
 
 ///
@@ -112,6 +118,7 @@ void SimpleRegisterAllocator::Allocate(int32_t no)
 ///
 void SimpleRegisterAllocator::free(Value * var)
 {
+    /*
     if (var && (var->getLoadRegId() != -1)) {
 
         // 清除该索引的寄存器，变得可使用
@@ -119,6 +126,7 @@ void SimpleRegisterAllocator::free(Value * var)
         regValues.erase(std::find(regValues.begin(), regValues.end(), var));
         var->setLoadRegId(-1);
     }
+    */
 }
 
 ///
@@ -127,6 +135,7 @@ void SimpleRegisterAllocator::free(Value * var)
 ///
 void SimpleRegisterAllocator::free(int32_t no)
 {
+    /*
     // 无效寄存器，什么都不做，直接返回
     if (no == -1) {
         return;
@@ -145,6 +154,7 @@ void SimpleRegisterAllocator::free(int32_t no)
         (*pIter)->setLoadRegId(-1);
         regValues.erase(pIter);
     }
+    */
 }
 
 ///
@@ -153,6 +163,8 @@ void SimpleRegisterAllocator::free(int32_t no)
 ///
 void SimpleRegisterAllocator::bitmapSet(int32_t no)
 {
+    /*
     regBitmap.set(no);
     usedBitmap.set(no);
+    */
 }

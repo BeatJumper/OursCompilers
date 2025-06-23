@@ -8,14 +8,18 @@ ControlFlowGraph::ControlFlowGraph(Function * func)
 {
     // 对基本块表里每个基本块都创建一个新的控制流节点
     for (InterCode * BasicIRBlock: func->getBasicBlocks()) {
-        Node_CFG * node = new Node_CFG(this, *BasicIRBlock);
+        Node_CFG * node = new Node_CFG(this, BasicIRBlock);
         node_list.push_back(node);
     }
 
     for (Node_CFG * node: node_list) {
+        int i = 0;
         for (LabelInstruction * label: node->get_son_label_list()) {
             Node_CFG * son = get_CFG_from_label(label);
             assert(son != nullptr);
+            std::cout << node->getIRCode()->getCode().size() << std::endl;
+            node->get_next_nodes()[i++] = son;
+            assert(node->get_next_nodes()[0]);
         }
     }
 }
@@ -48,6 +52,11 @@ std::set<LabelInstruction *> & Node_CFG::get_son_label_list()
 std::vector<Node_CFG *> & ControlFlowGraph::get_node_list()
 {
     return node_list;
+}
+
+InterCode * Node_CFG::getIRCode()
+{
+    return IRCode;
 }
 
 Node_CFG ** Node_CFG::get_next_nodes()
@@ -85,22 +94,35 @@ bool ControlFlowGraph::add_label_for_CFG(LabelInstruction * label, Node_CFG * no
     return true;
 }
 
-Node_CFG::Node_CFG(ControlFlowGraph * _graph, InterCode & BasicIRBlock)
+Node_CFG::Node_CFG(ControlFlowGraph * _graph, InterCode * BasicIRBlock)
 {
-    for (Instruction * inst: (BasicIRBlock.getCode())) {
+    IRCode = BasicIRBlock;
+
+    for (auto inst: IRCode->getCode()) {
+        std::string s;
+        inst->toString(s);
+        std::cout << s << "\n";
+    }
+
+    for (Instruction * inst: (BasicIRBlock->getCode())) {
         // 添加语句对应的数据流节点
         dataflow_list.push_back(new Node_Dataflow(inst));
+
+        // 记录到Value表
+        _graph->get_value_list().insert(inst);
         switch (inst->getOp()) {
             case IRInstOperator::IRINST_OP_GOTO: {
                 // 无条件跳转指令的目标Label名
                 LabelInstruction * target_label = ((GotoInstruction *) inst)->getTarget();
                 // 记录子节点Label名
                 add_label_for_successor(target_label);
+                printf("有Goto\n");
                 break;
             }
             case IRInstOperator::IRINST_OP_LABEL: {
                 // 将基本块自己的Label指令和自己的控制流节点联系起来
                 _graph->add_label_for_CFG((LabelInstruction *) inst, this);
+                // printf("有Label\n");
                 break;
             }
             case IRInstOperator::IRINST_OP_BRANCH: {

@@ -21,8 +21,8 @@ struct node_IG {
     /// @brief 获得节点的度数
     /// @return 节点度数
     int degree();
-    /// @brief 目前的颜色（0表示还没涂色）
-    int color = 0;
+    /// @brief 目前的颜色（-1表示还没涂色）
+    int color = -1;
 };
 /// @brief 干涉图
 struct InterferenceGraph {
@@ -30,6 +30,8 @@ struct InterferenceGraph {
     ControlFlowGraph * graph_cfg;
     /// @brief 干涉图中的节点列表
     std::set<node_IG *> node_set;
+    /// @brief 没有被预染色的节点的列表
+    std::set<node_IG *> uncolored_node_set;
     /// @brief 干涉图中添加一条无向边
     /// @param node1 干涉图的一个节点
     /// @param node2 干涉图的另一个节点
@@ -62,12 +64,17 @@ struct InterferenceGraph {
     enum class color_method { WELSH_POWELL, BACKTRACK };
     /// @brief 目前选择的染色算法（默认是WELSH_POWELL算法）
     static const color_method method_chosen = color_method::WELSH_POWELL;
+    /// @brief 将染的颜色对应到对应的寄存器号码
+    /// @param color 颜色
+    /// @return 对应的寄存器号码
+    /// @note 染色中可使用的寄存器目前有X0-X15以及X19-X28，一共26个
+    static int ColorToRegId(int color);
 };
 
 /// @brief 对一个干涉图节点，寻找其目前能染的编号最小的颜色
 /// @param node 干涉图节点
 /// @param color_size 所有颜色总个数（假设颜色编号1~color_size)
-/// @return 寻找到的最小颜色（找不到则返回0）
+/// @return 寻找到的最小颜色（找不到则返回-1）
 static int least_color_for_node(node_IG * node, int color_size);
 
 /// @brief Welsh-Powell算法

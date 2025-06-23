@@ -3,6 +3,7 @@
 #include <vector>
 #include <set>
 #include <map>
+#include <iostream>
 
 #include "Function.h"
 #include "LabelInstruction.h"
@@ -17,7 +18,7 @@ public:
     /// @brief 构造函数
     /// @param _graph 所属控制流图
     /// @param BasicIRBlock 基本块
-    Node_CFG(ControlFlowGraph * _graph, InterCode & BasicIRBlock);
+    Node_CFG(ControlFlowGraph * _graph, InterCode * BasicIRBlock);
 
     /// @brief 析构函数
     ~Node_CFG();
@@ -42,6 +43,10 @@ public:
     /// @return 基本块内的数据流语句清单
     std::vector<Node_Dataflow *> & get_dataflow_list();
 
+    /// @brief 对应IR代码块的getter
+    /// @return 对应IR代码块
+    InterCode * getIRCode();
+
     // 定义友元函数，使其直接能访问private
     friend void LiveVariableAnalysis(ControlFlowGraph * _graph);
 
@@ -58,6 +63,8 @@ private:
     std::set<LabelInstruction *> son_labels;
     /// @brief 基本块内所有IR语句的列表（包含数据流信息）
     std::vector<Node_Dataflow *> dataflow_list;
+    /// @brief 包含的IR代码块
+    InterCode * IRCode;
 };
 
 /// @brief 控制流图

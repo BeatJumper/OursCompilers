@@ -13,6 +13,8 @@
 /// <tr><td>2024-11-21 <td>1.0     <td>zenglj  <td>新做
 /// </table>
 ///
+#ifndef CodeGeneratorArm64_H
+#define CodeGeneratorArm64_H
 #include "CodeGeneratorAsm.h"
 #include "SimpleRegisterAllocator.h"
 
@@ -65,3 +67,4 @@ private:
     ///
     SimpleRegisterAllocator simpleRegisterAllocator;
 };
+#endif

@@ -1,12 +1,27 @@
 #include "Liveness.h"
+#include <iostream>
 
+static void printset(std::set<Value *> & S)
+{
+    for (auto x: S) {
+        std::cout << x << " ";
+    }
+    std::cout << std::endl;
+}
 bool update_live(Node_Dataflow * node, Node_Dataflow * succ1, Node_Dataflow * succ2)
 {
-    // 代入数据流方程
+    printf("node:%lld\n", node);
+    printset(node->liveIN);
+    //  printset(node->liveOUT);
+    // printset(node->def_set);
+    // printset(node->use_set);
+    //  代入数据流方程
     node->liveIN = set_difference(node->liveOUT, node->def_set);
     merge_set(node->liveIN, node->use_set);
     bool ret = false;
-    ret |= merge_set(node->liveOUT, succ1->liveIN);
+    if (succ1) {
+        ret |= merge_set(node->liveOUT, succ1->liveIN);
+    }
     if (succ2) {
         ret |= merge_set(node->liveOUT, succ2->liveIN);
     }
@@ -30,12 +45,23 @@ void LiveVariableAnalysis(ControlFlowGraph * _graph)
                 // 对于基本块内的前 n-1 个指令，只会有1个后继指令
                 need_update |= update_live(dataflow_list[i], dataflow_list[i + 1]);
             }
-
             // 基本块的末端（跳转指令）可能有多个后继
             Node_CFG ** next_nodes = node->get_next_nodes();
+
+            /*
+            assert(node->getIRCode() != nullptr);
+            printf("%d\n", node->getIRCode()->getCode().size());
+            for (auto inst: node->getIRCode()->getCode()) {
+                std::string s;
+                inst->toString(s);
+                std::cout << s << "\n";
+            }
+            assert(next_nodes[0]);
+            */
+
             need_update |= update_live(dataflow_list[dataflow_list.size() - 1],
                                        // 第一个后继
-                                       next_nodes[0]->dataflow_list[0],
+                                       next_nodes[0] ? next_nodes[0]->dataflow_list[0] : nullptr,
                                        // 第二个后继（可能是nullptr)
                                        next_nodes[1] ? next_nodes[1]->dataflow_list[0] : nullptr);
         }
@@ -56,7 +82,8 @@ bool merge_set(std::set<T> & a, std::set<T> & b)
     for (T element: b) {
         a.insert(element);
     }
-    return a.size() == size0;
+    // std::cout << size0 << " " << a.size() << std::endl;
+    return a.size() != size0;
 }
 
 /// @brief 集合求差集的工具函数

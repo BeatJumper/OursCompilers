@@ -32,12 +32,12 @@ void InterferenceGraph::remove_node(node_IG * node)
     for (node_IG * neighbor: node->neighbors) {
         neighbor->remove_neighbor(node);
     }
-    node_set.erase(node);
+    uncolored_node_set.erase(node);
 }
 
 void InterferenceGraph::restore_node(node_IG * node)
 {
-    node_set.insert(node);
+    uncolored_node_set.insert(node);
     for (node_IG * neighbor: node->neighbors) {
         neighbor->add_neighbor(node);
     }
@@ -51,12 +51,13 @@ InterferenceGraph::InterferenceGraph(Function * func)
     // 生成控制流图
     graph_cfg = new ControlFlowGraph(func);
 
+    printf("已生成控制流图\n");
     // 用完基本块表之后就可以删了节省空间
     func->clearBasicBlocks();
-
+    printf("已释放临时基本块表\n");
     // 进行活跃变量分析，获得每条语句的DEF和USE集合
     LiveVariableAnalysis(graph_cfg);
-
+    printf("已经活跃变量分析\n");
     // 完成干涉图构建
     ExecuteCFG(graph_cfg);
 }
@@ -66,10 +67,16 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
     // 从Value到干涉图节点的映射
     std::map<Value *, node_IG *> value_to_ig;
 
+    // 为控制流图中每个Value都创建一个干涉图节点
     for (Value * val: graph->get_value_list()) {
         node_IG * newnode = new node_IG(val);
         value_to_ig[val] = newnode;
         node_set.insert(newnode);
+        // 已经提前指定了寄存器的Value对应的干涉图节点应该预先染色
+        newnode->color = val->getRegId();
+        if (newnode->color != -1) {
+            uncolored_node_set.insert(newnode);
+        }
     }
 
     //扫描函数里每条指令，获取每个时刻的活跃变量集合
@@ -93,7 +100,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
 void InterferenceGraph::flush_all_color()
 {
     for (node_IG * node: node_set) {
-        node->color = 0;
+        node->color = -1;
     }
 }
 
@@ -129,21 +136,21 @@ void InterferenceGraph::GenBasicBlocks(Function * func)
 
 static int least_color_for_node(node_IG * node, int color_size)
 {
-    std::vector<bool> used(color_size + 1, false);
+    std::vector<bool> used(color_size, false);
     for (node_IG * neighbor: node->neighbors) {
         used[neighbor->color] = true;
     }
-    for (int color = 1; color <= color_size; color++) {
+    for (int color = 0; color < color_size; color++) {
         if (!used[color]) {
             return color;
         }
     }
-    return 0;
+    return -1;
 }
 
 static bool welsh_powell(InterferenceGraph * graph, int color_size)
 {
-    std::vector<node_IG *> remain_nodes(graph->node_set.begin(), graph->node_set.end());
+    std::vector<node_IG *> remain_nodes(graph->uncolored_node_set.begin(), graph->uncolored_node_set.end());
 
     // Welsh-Powell算法
     // 按照度数从大到小给剩余节点排序
@@ -159,7 +166,7 @@ static bool welsh_powell(InterferenceGraph * graph, int color_size)
         node->color = least_color_for_node(node, color_size);
 
         // 中途有某个节点无颜色可用，则染色失败
-        if (node->color == 0) {
+        if (node->color == -1) {
             return false;
         }
     }
@@ -172,15 +179,15 @@ static bool backtrack_color(InterferenceGraph * graph, int color_size, std::set<
     // 目前回溯法之时间复杂度：O(m * c^n)，是指数级别，所以节点数只能为个位数，否则时间复杂度无法支持
     // 同时，不需要修改成非递归形式，因为递归深度很浅
 
-    if (iter == graph->node_set.end()) {
+    if (iter == graph->uncolored_node_set.end()) {
         return true;
     }
     node_IG * node = *iter;
-    std::vector<bool> used(color_size + 1, false);
+    std::vector<bool> used(color_size, false);
     for (node_IG * neighbor: node->neighbors) {
         used[neighbor->color] = true;
     }
-    for (int color = 1; color <= color_size; color++) {
+    for (int color = 0; color < color_size; color++) {
         if (!used[color]) {
             node->color = color;
             if (backtrack_color(graph, color_size, ++iter)) {
@@ -189,7 +196,7 @@ static bool backtrack_color(InterferenceGraph * graph, int color_size, std::set<
             iter--;
         }
     }
-    node->color = 0;
+    node->color = -1;
     return false;
 }
 
@@ -201,7 +208,7 @@ bool InterferenceGraph::color_graph(InterferenceGraph * graph, int color_size)
     std::stack<node_IG *> removed_nodes;
 
     // 先删除小度节点
-    for (node_IG * node: graph->node_set) {
+    for (node_IG * node: graph->uncolored_node_set) {
         if (node->degree() < color_size) {
             graph->remove_node(node);
             removed_nodes.push(node);
@@ -216,7 +223,7 @@ bool InterferenceGraph::color_graph(InterferenceGraph * graph, int color_size)
             suc = welsh_powell(graph, color_size);
             break;
         case color_method::BACKTRACK:
-            suc = backtrack_color(graph, color_size, graph->node_set.begin());
+            suc = backtrack_color(graph, color_size, graph->uncolored_node_set.begin());
             break;
     }
 
@@ -230,4 +237,14 @@ bool InterferenceGraph::color_graph(InterferenceGraph * graph, int color_size)
         }
     }
     return suc;
+}
+
+int InterferenceGraph::ColorToRegId(int color)
+{
+    assert(color < PlatformArm64::maxUsableRegNum);
+    if (color <= 15) {
+        return color;
+    } else {
+        return color + 3;
+    }
 }
