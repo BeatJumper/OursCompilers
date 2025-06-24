@@ -105,6 +105,14 @@ enum class IRInstOperator : std::int8_t {
 
     /// @brief 截断指令（trunc）
     IRINST_OP_TRUNC,
+
+    /// @brief 存入栈空间指令
+    /// @note 为了不引入sp或者偏移量，只记录实际要存储的Value
+    IRINST_OP_STACKSTR,
+
+    /// @brief 从栈空间取数据指令
+    /// @note 为了不引入sp或者偏移量，只记录实际要取出的Value
+    IRINST_OP_STACKLDR
 };
 
 ///
@@ -236,7 +244,6 @@ protected:
 
     ///
     /// @brief 寄存器编号，-1表示没有分配寄存器，大于等于0代表是寄存器型Value
-    ///
     int32_t regId = -1;
 
     ///

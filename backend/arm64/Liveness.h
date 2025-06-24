@@ -1,3 +1,5 @@
+#ifndef Liveness_H
+#define Liveness_H
 #include "CFG.h"
 
 // 定义宏来遍历 set 中的二元组合
@@ -34,3 +36,4 @@ bool merge_set(std::set<T> & a, std::set<T> & b);
 template <typename T>
 std::set<T> set_difference(std::set<T> & a, std::set<T> & b);
 
+#endif

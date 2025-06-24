@@ -116,6 +116,10 @@ set(IR_SRCS
 	ir/Instructions/AllocaInstruction.h
 	ir/Instructions/StoreInstruction.cpp
 	ir/Instructions/StoreInstruction.h
+	ir/Instructions/StackLdrInstruction.cpp
+	ir/Instructions/StackLdrInstruction.h
+	ir/Instructions/StackStrInstruction.cpp
+	ir/Instructions/StackStrInstruction.h
 	ir/Instructions/LoadInstruction.cpp
 	ir/Instructions/LoadInstruction.h
 	ir/Instructions/XorInstruction.cpp
@@ -222,7 +226,9 @@ endif()
 # -Werror强制警告当作错误处理
 # -Wall尽可能多的让编译器提示警告和错误
 # __STDC_VERSION__的目的是警告产生的flex源文件出现INT8_MAX警告等
-target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wno-write-strings -Wno-unused-function)
+
+# 这里加入 -g 为调试器的使用做准备
+target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wno-write-strings -Wno-unused-function -g)
 
 if(USE_GRAPHVIZ)
 	target_compile_definitions(${PROJECT_NAME} PRIVATE USE_GRAPHVIZ)

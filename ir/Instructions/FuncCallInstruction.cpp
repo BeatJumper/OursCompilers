@@ -29,6 +29,8 @@ FuncCallInstruction::FuncCallInstruction(Function * _func,
 {
     name = calledFunc->getName();
 
+    // 函数调用指令的regid提前设定为0
+    regId = 0;
     // 实参拷贝
     for (auto & val: _srcVal) {
         addOperand(val);

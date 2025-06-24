@@ -108,6 +108,8 @@ Node_CFG::Node_CFG(ControlFlowGraph * _graph, InterCode * BasicIRBlock)
         // 添加语句对应的数据流节点
         dataflow_list.push_back(new Node_Dataflow(inst));
 
+        // TODO 处理溢出变量
+
         // 记录到Value表
         _graph->get_value_list().insert(inst);
         switch (inst->getOp()) {

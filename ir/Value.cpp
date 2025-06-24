@@ -16,6 +16,7 @@
 ///
 
 #include <algorithm>
+#include <cassert>
 
 #include "Value.h"
 #include "Use.h"
@@ -108,6 +109,7 @@ int32_t Value::getScopeLevel()
 ///
 int32_t Value::getRegId()
 {
+    // assert(false);
     return -1;
 }
 
@@ -141,4 +143,14 @@ int32_t Value::getLoadRegId()
 void Value::setLoadRegId(int32_t regId)
 {
     (void) regId;
+}
+
+void Value::setRegId(int32_t regId)
+{
+    this->regId = regId;
+}
+
+bool Value::get_isleaked()
+{
+    return is_leaked;
 }

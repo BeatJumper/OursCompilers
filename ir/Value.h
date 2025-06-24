@@ -22,6 +22,7 @@
 #include "Use.h"
 #include "Type.h"
 
+class StackLdrInstruction;
 ///
 /// @brief 值类，每个值都要有一个类型，全局变量和局部变量可以有名字，
 /// 但通过运算得到的指令类值没有名字，只有在需要输出时给定名字即可
@@ -47,6 +48,15 @@ protected:
     /// @brief define-use链，这个定值被使用的所有边，即所有的User
     ///
     std::vector<Use *> uses;
+
+    int regId = -1;
+
+    /// @brief 变量是否是溢出到内存的
+    bool is_leaked = false;
+
+    /// @brief 对应的栈加载指令
+    /// @note 如果变量溢出，则IR中它的USE的存在应该被栈加载指令的Value替代
+    StackLdrInstruction * inst_ldr = nullptr;
 
 public:
     /// @brief 构造函数
@@ -124,4 +134,12 @@ public:
     /// @return int32_t 寄存器编号
     ///
     virtual void setLoadRegId(int32_t regId);
+
+    /// @brief 对该Value分配Reg或者Load用的Reg
+    /// @param regId
+    void setRegId(int32_t regId);
+
+    /// @brief 获取一个变量是否被设置为溢出的
+    /// @return 是否溢出到栈
+    bool get_isleaked();
 };

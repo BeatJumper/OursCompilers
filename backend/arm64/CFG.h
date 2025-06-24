@@ -12,6 +12,13 @@
 class ControlFlowGraph;
 struct Node_Dataflow;
 
+static void printset(std::set<Value *> & S)
+{
+    for (auto x: S) {
+        std::cout << x << " ";
+    }
+    std::cout << std::endl;
+}
 /// @brief 控制流图中的节点
 class Node_CFG {
 public:

@@ -1,13 +1,6 @@
 #include "Liveness.h"
 #include <iostream>
 
-static void printset(std::set<Value *> & S)
-{
-    for (auto x: S) {
-        std::cout << x << " ";
-    }
-    std::cout << std::endl;
-}
 bool update_live(Node_Dataflow * node, Node_Dataflow * succ1, Node_Dataflow * succ2)
 {
     printf("node:%lld\n", node);

@@ -223,11 +223,15 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
         printf("干涉图已产生\n");
         // 染色是否成功
         bool suc = InterferenceGraph::color_graph(graph_ig, PlatformArm64::maxUsableRegNum);
+
+        printf("完成染色\n");
         if (suc) {
             // assert(graph_ig->node_set.size());
             for (node_IG * node: graph_ig->node_set) {
+                // assert(node->color != -1);
+                std::cout << node->color << std::endl;
                 node->val->setLoadRegId(InterferenceGraph::ColorToRegId(node->color));
-                std::cout << node->val->getRegId() << std::endl;
+                std::cout << node->val->getLoadRegId() << std::endl;
             }
             break;
         } else {
