@@ -103,6 +103,10 @@ public:
     /// @return Value表
     std::set<Value *> & get_value_list();
 
+    /// @brief 所属函数的getter
+    /// @return 所属函数的Function类指针
+    Function * get_func();
+
 private:
     /// @brief Label到控制流节点的映射表
     std::map<LabelInstruction *, Node_CFG *> LabelToNodeCFG;
@@ -110,6 +114,8 @@ private:
     std::vector<Node_CFG *> node_list;
     /// @brief 控制流图中出现过的所有Value
     std::set<Value *> value_list;
+    /// @brief 所属函数
+    Function * func;
 };
 
 /// @brief IR语句对应的数据流

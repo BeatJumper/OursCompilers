@@ -3,6 +3,7 @@
 #include "Instruction.h"
 #include "Liveness.h"
 #include <cassert>
+#include "StackLdrInstruction.h"
 
 ControlFlowGraph::ControlFlowGraph(Function * func)
 {
@@ -94,6 +95,11 @@ bool ControlFlowGraph::add_label_for_CFG(LabelInstruction * label, Node_CFG * no
     return true;
 }
 
+Function * ControlFlowGraph::get_func()
+{
+    return func;
+}
+
 Node_CFG::Node_CFG(ControlFlowGraph * _graph, InterCode * BasicIRBlock)
 {
     IRCode = BasicIRBlock;
@@ -103,12 +109,32 @@ Node_CFG::Node_CFG(ControlFlowGraph * _graph, InterCode * BasicIRBlock)
         inst->toString(s);
         std::cout << s << "\n";
     }
+    auto insts = BasicIRBlock->getInsts();
 
-    for (Instruction * inst: (BasicIRBlock->getCode())) {
+    // 遍历，寻找溢出变量并处理
+    for (int i = 0; i < insts.size();) {
+        Instruction * inst = insts[i];
+
+        // 对溢出变量的每次USE，都用一个新Value代替，这个新Value即为StackLdrInstruction的返回值Value
+        for (int op_index = 0; op_index < inst->getOperandsNum(); op_index++) {
+            Value * op_val = inst->getOperand(op_index);
+            if (op_val->get_isleaked()) {
+                // 新的Value
+                StackLdrInstruction * newval = new StackLdrInstruction(_graph->get_func(), op_val, op_val->getType());
+                // 插入新Value的取内存指令
+                insts.insert(insts.begin() + i, newval);
+                // 是在i位置前面插入的，所以插入后i位置是新插入的Value，需要把i额外加1
+                i++;
+                // 溢出变量的出现也替换为新Value了
+                inst->getOperands()[op_index]->setUsee(newval);
+            }
+        }
+        i++;
+    }
+
+    for (Instruction * inst: (BasicIRBlock->getInsts())) {
         // 添加语句对应的数据流节点
         dataflow_list.push_back(new Node_Dataflow(inst));
-
-        // TODO 处理溢出变量
 
         // 记录到Value表
         _graph->get_value_list().insert(inst);

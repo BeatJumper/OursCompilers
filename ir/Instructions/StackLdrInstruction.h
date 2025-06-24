@@ -10,6 +10,6 @@ public:
 private:
     int align;
 
-    /// @brief 所属的Value
+    /// @brief 被它所替代的原始Value
     Value * val;
 };
