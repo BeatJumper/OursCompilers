@@ -45,6 +45,17 @@ enum class IRInstOperator : std::int8_t {
 
     /// @brief 整数的除法指令，二元运算
     IRINST_OP_DIV_I,
+    /// @brief 浮点数的加法指令，二元运算
+    IRINST_OP_ADD_F,
+
+    /// @brief 浮点数的减法指令，二元运算
+    IRINST_OP_SUB_F,
+
+    /// @brief 浮点数的乘法指令，二元运算
+    IRINST_OP_MUL_F,
+
+    /// @brief 浮点数的除法指令，二元运算
+    IRINST_OP_DIV_F,
 
     /// @brief 赋值指令，一元运算
     IRINST_OP_ASSIGN,
@@ -123,6 +134,12 @@ enum class IRInstOperator : std::int8_t {
 
     /// @brief memcpy指令
     IRINST_OP_MEMCPY,
+
+    /// @brief sitofp指令（有符号整数转浮点数）
+    IRINST_OP_SITOFP,
+
+    /// @brief fptosi指令（浮点数转有符号整数）
+    IRINST_OP_FPTOSI,
 
 };
 

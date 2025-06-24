@@ -65,6 +65,22 @@ protected:
     /// @return 翻译是否成功，true：成功，false：失败
     bool ir_block(ast_node * node);
 
+    bool ir_add_or_fadd(ast_node * node);
+    bool ir_add_processed(ast_node * node, ast_node * left, ast_node * right);
+    bool ir_fadd_processed(ast_node * node, ast_node * left, ast_node * right);
+
+    bool ir_sub_or_fsub(ast_node * node);
+    bool ir_sub_processed(ast_node * node, ast_node * left, ast_node * right);
+    bool ir_fsub_processed(ast_node * node, ast_node * left, ast_node * right);
+
+    bool ir_mul_or_fmul(ast_node * node);
+    bool ir_mul_processed(ast_node * node, ast_node * left, ast_node * right);
+    bool ir_fmul_processed(ast_node * node, ast_node * left, ast_node * right);
+
+    bool ir_div_or_fdiv(ast_node * node);
+    bool ir_div_processed(ast_node * node, ast_node * left, ast_node * right);
+    bool ir_fdiv_processed(ast_node * node, ast_node * left, ast_node * right);
+
     /// @brief 整数加法AST节点翻译成线性中间IR
     /// @param node AST节点
     /// @return 翻译是否成功，true：成功，false：失败
@@ -324,4 +340,23 @@ private:
                                              ast_node * typeNode,
                                              ast_node * varNode,
                                              ast_node * initExprNode);
+    /// @brief 浮点数加法AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_fadd(ast_node * node);
+
+    /// @brief 浮点数减法AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_fsub(ast_node * node);
+
+    /// @brief 浮点数乘法AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_fmul(ast_node * node);
+
+    /// @brief 浮点数除法AST节点翻译成线性中间IR
+    /// @param node AST节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool ir_fdiv(ast_node * node);
 };

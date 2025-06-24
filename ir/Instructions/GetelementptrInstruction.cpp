@@ -40,10 +40,25 @@ GetelementptrInstruction::GetelementptrInstruction(Function * _func,
 
     // 设置返回类型为元素指针类型
     Type * baseType = _basePtr->getType();
+
     if (baseType->isArrayType()) {
         const ArrayType * arrayType = static_cast<const ArrayType *>(baseType);
         Type * elementType = arrayType->getElementType();
         this->type = new PointerType(elementType);
+    } else if (baseType->isPointerType()) {
+        // 处理指针类型（如多维数组访问的第二层）
+        const PointerType * ptrType = static_cast<const PointerType *>(baseType);
+        const Type * pointeeType = ptrType->getPointeeType();
+
+        if (pointeeType->isArrayType()) {
+            const ArrayType * arrayType = static_cast<const ArrayType *>(pointeeType);
+            Type * elementType = arrayType->getElementType();
+            this->type = new PointerType(elementType);
+        } else {
+            this->type = baseType; // 保持原类型
+        }
+    } else {
+        this->type = baseType; // 保持原类型
     }
 }
 
@@ -56,10 +71,16 @@ void GetelementptrInstruction::toString(std::string & str)
         str += "inbounds ";
     }
 
-    // 获取数组类型
+    // 获取基础类型
     Type * baseType = basePtr->getType();
     if (baseType->isArrayType()) {
         str += baseType->toString() + ", " + baseType->toString() + "* " + basePtr->getIRName();
+        str += ", i64 " + firstIndex->getIRName() + ", i64 " + secondIndex->getIRName();
+    } else if (baseType->isPointerType()) {
+        // 处理指针类型
+        const PointerType * ptrType = static_cast<const PointerType *>(baseType);
+        const Type * pointeeType = ptrType->getPointeeType();
+        str += pointeeType->toString() + ", " + baseType->toString() + " " + basePtr->getIRName();
         str += ", i64 " + firstIndex->getIRName() + ", i64 " + secondIndex->getIRName();
     }
 }

@@ -537,14 +537,20 @@ std::any MiniCCSTVisitor::visitVarDecl(MiniCParser::VarDeclContext * ctx)
     ast_node * stmt_node = create_contain_node(ast_operator_type::AST_OP_DECL_STMT);
 
     // 获取基本类型
-    type_attr typeAttr = std::any_cast<type_attr>(visitBasicType(ctx->basicType()));
+    type_attr baseTypeAttr = std::any_cast<type_attr>(visitBasicType(ctx->basicType()));
 
     for (auto & varCtx: ctx->varDef()) {
-        // 获取变量定义节点（可能是赋值节点或变量节点）
-        ast_node * varDefNode = std::any_cast<ast_node *>(visitVarDef(varCtx));
+        // 获取变量定义节点和维度信息
+        auto varDefResult = std::any_cast<std::pair<ast_node *, type_attr>>(visitVarDef(varCtx));
+        ast_node * varDefNode = varDefResult.first;
+        type_attr varTypeAttr = varDefResult.second;
+
+        // 合并基本类型和数组维度信息
+        varTypeAttr.type = baseTypeAttr.type;
+        varTypeAttr.lineno = baseTypeAttr.lineno;
 
         // 创建类型节点
-        ast_node * type_node = create_type_node(typeAttr);
+        ast_node * type_node = create_type_node(varTypeAttr);
 
         // 创建变量声明节点，第一个子节点是类型，第二个是变量定义
         ast_node * decl_node = ast_node::New(ast_operator_type::AST_OP_VAR_DECL, type_node, varDefNode, nullptr);
@@ -566,28 +572,42 @@ std::any MiniCCSTVisitor::visitVarDef(MiniCParser::VarDefContext * ctx)
     // 创建变量名节点（纯变量名，不包含维度信息）
     auto varNode = ast_node::New(varId, lineNo);
 
-    // 如果是数组，需要在变量名节点中存储维度信息作为属性，但不作为子节点
+    // 创建类型属性来存储数组维度信息
+    type_attr varTypeAttr{BasicType::TYPE_VOID, lineNo, false, {}};
+
+    // 如果是数组，收集维度信息
     if (!ctx->constExp().empty()) {
-        // 将维度信息存储到变量节点的某个属性中
-        // 这里可以扩展varNode的属性来存储维度信息
+        varTypeAttr.is_array = true;
+
         for (auto constExpCtx: ctx->constExp()) {
             auto dimNode = std::any_cast<ast_node *>(visitConstExp(constExpCtx));
-            // 可以考虑在varNode中添加一个专门存储维度的列表
+
+            // 从常量表达式节点获取维度值
+            if (dimNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+                varTypeAttr.dimensions.push_back(dimNode->integer_val);
+            } else {
+                // 如果不是常量，暂时使用-1表示动态大小（后续可以扩展）
+                printf("Warning: Non-constant array dimension at line %ld\n", lineNo);
+                varTypeAttr.dimensions.push_back(-1);
+            }
+
+            // 将维度节点作为变量节点的子节点保存（用于后续处理）
             varNode->insert_son_node(dimNode);
         }
     }
+
+    ast_node * resultNode = varNode;
 
     // 如果存在初值，创建赋值节点
     if (ctx->initVal()) {
         auto initValNode = std::any_cast<ast_node *>(visitInitVal(ctx->initVal()));
 
         // 创建赋值节点：左边是变量名，右边是初始化值
-        auto assignNode = ast_node::New(ast_operator_type::AST_OP_ASSIGN, varNode, initValNode, nullptr);
-        return assignNode;
+        resultNode = ast_node::New(ast_operator_type::AST_OP_ASSIGN, varNode, initValNode, nullptr);
     }
 
-    // 没有初值，直接返回变量名节点
-    return varNode;
+    // 返回节点和类型信息的配对
+    return std::make_pair(resultNode, varTypeAttr);
 }
 
 std::any MiniCCSTVisitor::visitBasicType(MiniCParser::BasicTypeContext * ctx)

@@ -51,11 +51,23 @@ void BinaryInstruction::toString(std::string & str)
         case IRInstOperator::IRINST_OP_DIV_I:
             opStr = "sdiv";
             break;
-        case IRInstOperator::IRINST_OP_MOD_I: // 新增
+        case IRInstOperator::IRINST_OP_MOD_I:
             opStr = "srem";
             break;
-        case IRInstOperator::IRINST_OP_XOR_I: // 新增
+        case IRInstOperator::IRINST_OP_XOR_I:
             opStr = "xor";
+            break;
+        case IRInstOperator::IRINST_OP_ADD_F:
+            opStr = "fadd";
+            break;
+        case IRInstOperator::IRINST_OP_SUB_F:
+            opStr = "fsub";
+            break;
+        case IRInstOperator::IRINST_OP_MUL_F:
+            opStr = "fmul";
+            break;
+        case IRInstOperator::IRINST_OP_DIV_F:
+            opStr = "fdiv";
             break;
         default:
             opStr = "unknown";

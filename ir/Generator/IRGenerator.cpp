@@ -46,6 +46,9 @@
 #include "BitcastInstruction.h"
 #include "MemcpyInstruction.h"
 #include "SextInstruction.h"
+#include "SitofpInstruction.h"
+#include "FptosiInstruction.h"
+#include "PointerType.h"
 
 /// @brief 构造函数
 /// @param _root AST的根
@@ -54,6 +57,7 @@ IRGenerator::IRGenerator(ast_node * _root, Module * _module) : root(_root), modu
 {
     /* 叶子节点 */
     ast2ir_handlers[ast_operator_type::AST_OP_LEAF_LITERAL_UINT] = &IRGenerator::ir_leaf_node_uint;
+    ast2ir_handlers[ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT] = &IRGenerator::ir_leaf_node_float;
     ast2ir_handlers[ast_operator_type::AST_OP_LEAF_VAR_ID] = &IRGenerator::ir_leaf_node_var_id;
     ast2ir_handlers[ast_operator_type::AST_OP_LEAF_TYPE] = &IRGenerator::ir_leaf_node_type;
 
@@ -62,10 +66,10 @@ IRGenerator::IRGenerator(ast_node * _root, Module * _module) : root(_root), modu
     ast2ir_handlers[ast_operator_type::AST_OP_CONST_DECL] = &IRGenerator::ir_const_declare;
 
     /* 表达式运算， 加减 */
-    ast2ir_handlers[ast_operator_type::AST_OP_SUB] = &IRGenerator::ir_sub;
-    ast2ir_handlers[ast_operator_type::AST_OP_ADD] = &IRGenerator::ir_add;
-    ast2ir_handlers[ast_operator_type::AST_OP_MUL] = &IRGenerator::ir_mul;
-    ast2ir_handlers[ast_operator_type::AST_OP_DIV] = &IRGenerator::ir_div;
+    ast2ir_handlers[ast_operator_type::AST_OP_ADD] = &IRGenerator::ir_add_or_fadd;
+    ast2ir_handlers[ast_operator_type::AST_OP_SUB] = &IRGenerator::ir_sub_or_fsub;
+    ast2ir_handlers[ast_operator_type::AST_OP_MUL] = &IRGenerator::ir_mul_or_fmul;
+    ast2ir_handlers[ast_operator_type::AST_OP_DIV] = &IRGenerator::ir_div_or_fdiv;
 
     ast2ir_handlers[ast_operator_type::AST_OP_MOD] = &IRGenerator::ir_mod;
     ast2ir_handlers[ast_operator_type::AST_OP_POSITIVE] = &IRGenerator::ir_positive;
@@ -264,8 +268,13 @@ bool IRGenerator::ir_function_define(ast_node * node)
 
         // 只有main函数初始化为0，其他函数不初始化
         if (name_node->name == "main") {
-            // 创建一个常量0
-            ConstInt * zeroConst = module->newConstInt(0);
+            // 根据返回类型创建相应的常量0
+            Value * zeroConst = nullptr;
+            if (type_node->type->isFloatType()) {
+                zeroConst = module->newConstFloat(0.0f);
+            } else {
+                zeroConst = module->newConstInt(0);
+            }
             // 创建一个store指令，将0存储到retValue
             storeRet = new StoreInstruction(newFunc, zeroConst, retValue, 4);
             irCode.addInst(storeRet);
@@ -650,6 +659,127 @@ bool IRGenerator::ir_block(ast_node * node)
     return true;
 }
 
+bool IRGenerator::ir_add_or_fadd(ast_node * node)
+{
+    // 先递归处理左右操作数，获取它们的值类型
+    ast_node * leftNode = node->sons[0];
+    ast_node * rightNode = node->sons[1];
+
+    ast_node * left = ir_visit_ast_node(leftNode);
+    ast_node * right = ir_visit_ast_node(rightNode);
+
+    if (!left || !right || !left->val || !right->val) {
+        printf("Debug: Failed to process operands in ir_add_or_fadd\n");
+        return false;
+    }
+
+    // 检查操作数的值类型
+    Type * leftType = left->val->getType();
+    Type * rightType = right->val->getType();
+
+    // 如果任一操作数是浮点类型，使用浮点加法
+    if (leftType->isFloatType() || rightType->isFloatType()) {
+        // 将已处理的子节点信息复制到当前节点
+        node->blockInsts.addInst(left->blockInsts);
+        node->blockInsts.addInst(right->blockInsts);
+        return ir_fadd_processed(node, left, right); // 使用已处理的操作数
+    } else {
+        // 将已处理的子节点信息复制到当前节点
+        node->blockInsts.addInst(left->blockInsts);
+        node->blockInsts.addInst(right->blockInsts);
+        return ir_add_processed(node, left, right); // 使用已处理的操作数
+    }
+}
+
+bool IRGenerator::ir_sub_or_fsub(ast_node * node)
+{
+    // 先递归处理左右操作数，获取它们的值类型
+    ast_node * leftNode = node->sons[0];
+    ast_node * rightNode = node->sons[1];
+
+    ast_node * left = ir_visit_ast_node(leftNode);
+    ast_node * right = ir_visit_ast_node(rightNode);
+
+    if (!left || !right || !left->val || !right->val) {
+        return false;
+    }
+
+    // 检查操作数的值类型
+    Type * leftType = left->val->getType();
+    Type * rightType = right->val->getType();
+
+    // 如果任一操作数是浮点类型，使用浮点减法
+    if (leftType->isFloatType() || rightType->isFloatType()) {
+        // 将已处理的子节点信息复制到当前节点
+        node->blockInsts.addInst(left->blockInsts);
+        node->blockInsts.addInst(right->blockInsts);
+        return ir_fsub_processed(node, left, right);
+    } else {
+        // 将已处理的子节点信息复制到当前节点
+        node->blockInsts.addInst(left->blockInsts);
+        node->blockInsts.addInst(right->blockInsts);
+        return ir_sub_processed(node, left, right);
+    }
+}
+
+bool IRGenerator::ir_mul_or_fmul(ast_node * node)
+{
+    // 先递归处理左右操作数，获取它们的值类型
+    ast_node * leftNode = node->sons[0];
+    ast_node * rightNode = node->sons[1];
+
+    ast_node * left = ir_visit_ast_node(leftNode);
+    ast_node * right = ir_visit_ast_node(rightNode);
+
+    if (!left || !right || !left->val || !right->val) {
+        return false;
+    }
+
+    // 检查操作数的值类型
+    Type * leftType = left->val->getType();
+    Type * rightType = right->val->getType();
+
+    // 如果任一操作数是浮点类型，使用浮点乘法
+    if (leftType->isFloatType() || rightType->isFloatType()) {
+        node->blockInsts.addInst(left->blockInsts);
+        node->blockInsts.addInst(right->blockInsts);
+        return ir_fmul_processed(node, left, right);
+    } else {
+        node->blockInsts.addInst(left->blockInsts);
+        node->blockInsts.addInst(right->blockInsts);
+        return ir_mul_processed(node, left, right);
+    }
+}
+
+bool IRGenerator::ir_div_or_fdiv(ast_node * node)
+{
+    // 先递归处理左右操作数，获取它们的值类型
+    ast_node * leftNode = node->sons[0];
+    ast_node * rightNode = node->sons[1];
+
+    ast_node * left = ir_visit_ast_node(leftNode);
+    ast_node * right = ir_visit_ast_node(rightNode);
+
+    if (!left || !right || !left->val || !right->val) {
+        return false;
+    }
+
+    // 检查操作数的值类型
+    Type * leftType = left->val->getType();
+    Type * rightType = right->val->getType();
+
+    // 如果任一操作数是浮点类型，使用浮点除法
+    if (leftType->isFloatType() || rightType->isFloatType()) {
+        node->blockInsts.addInst(left->blockInsts);
+        node->blockInsts.addInst(right->blockInsts);
+        return ir_fdiv_processed(node, left, right);
+    } else {
+        node->blockInsts.addInst(left->blockInsts);
+        node->blockInsts.addInst(right->blockInsts);
+        return ir_div_processed(node, left, right);
+    }
+}
+
 /// @brief 整数加法AST节点翻译成线性中间IR
 /// @param node AST节点
 /// @return 翻译是否成功，true：成功，false：失败
@@ -862,6 +992,360 @@ bool IRGenerator::ir_div(ast_node * node)
     return true;
 }
 
+/// @brief 整数加法AST节点翻译成线性中间IR（使用已处理的操作数）
+/// @param node AST节点
+/// @param left 已处理的左操作数节点
+/// @param right 已处理的右操作数节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_add_processed(ast_node * node, ast_node * left, ast_node * right)
+{
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        // 变量需要load
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 生成加法指令
+    BinaryInstruction * addInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_ADD_I,
+                                                        leftValue,
+                                                        rightValue,
+                                                        IntegerType::getTypeInt());
+    node->blockInsts.addInst(addInst);
+    node->val = addInst;
+
+    return true;
+}
+
+/// @brief 浮点数加法AST节点翻译成线性中间IR
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_fadd(ast_node * node)
+{
+    ast_node * leftNode = node->sons[0];
+    ast_node * rightNode = node->sons[1];
+
+    // 递归生成左右孩子的IR
+    ast_node * left = ir_visit_ast_node(leftNode);
+    ast_node * right = ir_visit_ast_node(rightNode);
+
+    if (!left || !right)
+        return false;
+
+    // 合并左右孩子的IR指令
+    node->blockInsts.addInst(left->blockInsts);
+    node->blockInsts.addInst(right->blockInsts);
+
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        // 变量需要load
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 确保操作数是浮点类型
+    if (!leftValue->getType()->isFloatType()) {
+        leftValue = convertToFloat(leftValue, module->getCurrentFunction(), node->blockInsts);
+        if (!leftValue)
+            return false;
+    }
+    if (!rightValue->getType()->isFloatType()) {
+        rightValue = convertToFloat(rightValue, module->getCurrentFunction(), node->blockInsts);
+        if (!rightValue)
+            return false;
+    }
+
+    // 生成浮点加法指令
+    BinaryInstruction * addInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_ADD_F,
+                                                        leftValue,
+                                                        rightValue,
+                                                        FloatType::getTypeFloat());
+    node->blockInsts.addInst(addInst);
+    node->val = addInst;
+
+    return true;
+}
+
+/// @brief 浮点数加法AST节点翻译成线性中间IR（使用已处理的操作数）
+/// @param node AST节点
+/// @param left 已处理的左操作数节点
+/// @param right 已处理的右操作数节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_fadd_processed(ast_node * node, ast_node * left, ast_node * right)
+{
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        // 变量需要load
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 确保操作数是浮点类型
+    if (!leftValue->getType()->isFloatType()) {
+        leftValue = convertToFloat(leftValue, module->getCurrentFunction(), node->blockInsts);
+        if (!leftValue)
+            return false;
+    }
+    if (!rightValue->getType()->isFloatType()) {
+        rightValue = convertToFloat(rightValue, module->getCurrentFunction(), node->blockInsts);
+        if (!rightValue)
+            return false;
+    }
+
+    // 生成浮点加法指令
+    BinaryInstruction * addInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_ADD_F,
+                                                        leftValue,
+                                                        rightValue,
+                                                        FloatType::getTypeFloat());
+    node->blockInsts.addInst(addInst);
+    node->val = addInst;
+
+    return true;
+}
+
+/// @brief 浮点数减法AST节点翻译成线性中间IR
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_fsub(ast_node * node)
+{
+    ast_node * leftNode = node->sons[0];
+    ast_node * rightNode = node->sons[1];
+
+    // 递归生成左右孩子的IR
+    ast_node * left = ir_visit_ast_node(leftNode);
+    ast_node * right = ir_visit_ast_node(rightNode);
+
+    if (!left || !right)
+        return false;
+
+    // 合并左右孩子的IR指令
+    node->blockInsts.addInst(left->blockInsts);
+    node->blockInsts.addInst(right->blockInsts);
+
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        // 变量需要load
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 确保操作数是浮点类型
+    if (!leftValue->getType()->isFloatType()) {
+        leftValue = convertToFloat(leftValue, module->getCurrentFunction(), node->blockInsts);
+        if (!leftValue)
+            return false;
+    }
+    if (!rightValue->getType()->isFloatType()) {
+        rightValue = convertToFloat(rightValue, module->getCurrentFunction(), node->blockInsts);
+        if (!rightValue)
+            return false;
+    }
+
+    // 生成浮点减法指令
+    BinaryInstruction * subInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_SUB_F,
+                                                        leftValue,
+                                                        rightValue,
+                                                        FloatType::getTypeFloat());
+    node->blockInsts.addInst(subInst);
+    node->val = subInst;
+
+    return true;
+}
+
+/// @brief 浮点数乘法AST节点翻译成线性中间IR
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_fmul(ast_node * node)
+{
+    ast_node * leftNode = node->sons[0];
+    ast_node * rightNode = node->sons[1];
+
+    // 递归生成左右孩子的IR
+    ast_node * left = ir_visit_ast_node(leftNode);
+    ast_node * right = ir_visit_ast_node(rightNode);
+
+    if (!left || !right)
+        return false;
+
+    // 合并左右孩子的IR指令
+    node->blockInsts.addInst(left->blockInsts);
+    node->blockInsts.addInst(right->blockInsts);
+
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        // 变量需要load
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 确保操作数是浮点类型
+    if (!leftValue->getType()->isFloatType()) {
+        leftValue = convertToFloat(leftValue, module->getCurrentFunction(), node->blockInsts);
+        if (!leftValue)
+            return false;
+    }
+    if (!rightValue->getType()->isFloatType()) {
+        rightValue = convertToFloat(rightValue, module->getCurrentFunction(), node->blockInsts);
+        if (!rightValue)
+            return false;
+    }
+
+    // 生成浮点乘法指令
+    BinaryInstruction * mulInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_MUL_F,
+                                                        leftValue,
+                                                        rightValue,
+                                                        FloatType::getTypeFloat());
+    node->blockInsts.addInst(mulInst);
+    node->val = mulInst;
+
+    return true;
+}
+
+/// @brief 浮点数除法AST节点翻译成线性中间IR
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_fdiv(ast_node * node)
+{
+    ast_node * leftNode = node->sons[0];
+    ast_node * rightNode = node->sons[1];
+
+    // 递归生成左右孩子的IR
+    ast_node * left = ir_visit_ast_node(leftNode);
+    ast_node * right = ir_visit_ast_node(rightNode);
+
+    if (!left || !right)
+        return false;
+
+    // 合并左右孩子的IR指令
+    node->blockInsts.addInst(left->blockInsts);
+    node->blockInsts.addInst(right->blockInsts);
+
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        // 变量需要load
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 确保操作数是浮点类型
+    if (!leftValue->getType()->isFloatType()) {
+        leftValue = convertToFloat(leftValue, module->getCurrentFunction(), node->blockInsts);
+        if (!leftValue)
+            return false;
+    }
+    if (!rightValue->getType()->isFloatType()) {
+        rightValue = convertToFloat(rightValue, module->getCurrentFunction(), node->blockInsts);
+        if (!rightValue)
+            return false;
+    }
+
+    // 生成浮点除法指令
+    BinaryInstruction * divInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_DIV_F,
+                                                        leftValue,
+                                                        rightValue,
+                                                        FloatType::getTypeFloat());
+    node->blockInsts.addInst(divInst);
+    node->val = divInst;
+
+    return true;
+}
+
 /// @brief 赋值AST节点翻译成线性中间IR
 /// @param node AST节点
 /// @return 翻译是否成功，true：成功，false：失败
@@ -949,8 +1433,8 @@ Value * IRGenerator::convertToFloat(Value * val, Function * func, InterCode & bl
     }
 
     if (val->getType()->isIntegerType()) {
-        // 整数转浮点
-        Instruction * convInst = new BitcastInstruction(func, val, FloatType::getTypeFloat());
+        // 整数转浮点数 - 使用 sitofp 指令
+        Instruction * convInst = new SitofpInstruction(func, val, FloatType::getTypeFloat());
         blockInsts.addInst(convInst);
         return convInst;
     }
@@ -966,8 +1450,8 @@ Value * IRGenerator::convertToInt(Value * val, Function * func, InterCode & bloc
     }
 
     if (val->getType()->isFloatType()) {
-        // 浮点转整数
-        Instruction * convInst = new BitcastInstruction(func, val, IntegerType::getTypeInt());
+        // 浮点数转整数 - 使用 fptosi 指令
+        Instruction * convInst = new FptosiInstruction(func, val, IntegerType::getTypeInt());
         blockInsts.addInst(convInst);
         return convInst;
     }
@@ -1022,7 +1506,6 @@ bool IRGenerator::ir_return(ast_node * node)
                 // 需要转换为整数
                 returnValue = convertToInt(returnValue, currentFunc, node->blockInsts);
             }
-
         }
     } else if (!returnType->isVoidType()) {
         printf("Error: Non-void function should return a value.\n");
@@ -1129,6 +1612,22 @@ bool IRGenerator::ir_leaf_node_uint(ast_node * node)
     return true;
 }
 
+/// @brief 浮点数字面量叶子节点翻译成线性中间IR
+/// @param node AST节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_leaf_node_float(ast_node * node)
+{
+    float value = node->float_val;
+
+    // 新建浮点数常量
+    ConstFloat * newConst = module->newConstFloat(value);
+
+    // 设置节点的值
+    node->val = newConst;
+
+    return true;
+}
+
 /// @brief 变量声明语句节点翻译成线性中间IR
 /// @param node AST节点
 /// @return 翻译是否成功，true：成功，false：失败
@@ -1205,6 +1704,29 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
         return ir_array_variable_declare_with_init(node, typeNode, varNode, initExprNode);
     }
 
+    // 检查变量节点是否有维度信息（数组声明但没有初始化）
+    if (!varNode->sons.empty()) {
+        // 变量节点有子节点，说明是数组声明，需要创建数组类型
+        std::vector<int> dimensions;
+        for (auto dimNode: varNode->sons) {
+            if (dimNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+                dimensions.push_back(dimNode->integer_val);
+            } else {
+                printf("Error: Non-constant array dimension in variable declaration.\n");
+                return false;
+            }
+        }
+
+        // 创建数组类型
+        ArrayType * arrayType = new ArrayType(typeNode->type, dimensions);
+
+        // 更新类型节点
+        typeNode->type = arrayType;
+
+        // 调用数组处理函数
+        return ir_array_variable_declare_with_init(node, typeNode, varNode, initExprNode);
+    }
+
     // 为变量分配Value和栈空间
     Value * varValue = module->newVarValue(typeNode->type, varNode->name);
     if (!varValue) {
@@ -1233,6 +1755,26 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
         if (initExprNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
             initValue = module->newConstFloat(initExprNode->float_val);
             node->blockInsts.addInst(initExprNode->blockInsts);
+        }
+        // 处理数组访问的情况
+        else if (initExprNode->node_type == ast_operator_type::AST_OP_ARRAY_ACCESS) {
+            // 数组访问返回地址，需要加载值
+            node->blockInsts.addInst(initExprNode->blockInsts);
+
+            // 获取数组元素类型来确定加载大小
+            const Type * elementType = nullptr;
+            if (initExprNode->val->getType()->isPointerType()) {
+                const PointerType * ptrType = static_cast<const PointerType *>(initExprNode->val->getType());
+                elementType = ptrType->getPointeeType();
+            } else {
+                printf("Error: Array access should return pointer type.\n");
+                return false;
+            }
+
+            LoadInstruction * loadInit =
+                new LoadInstruction(currentFunc, initExprNode->val, initExprNode->val, elementType->getSize());
+            node->blockInsts.addInst(loadInit);
+            initValue = loadInit;
         }
         // 处理需要加载的情况
         else if (needsLoad(initExprNode->val)) {
@@ -2238,6 +2780,13 @@ bool IRGenerator::ir_array_access(ast_node * node)
             printf("Error: Array variable %s not found.\n", arrayNode->name.c_str());
             return false;
         }
+    } else if (arrayNode->node_type == ast_operator_type::AST_OP_ARRAY_ACCESS) {
+        // 嵌套数组访问：如 matrix[0][1] 中的 matrix[0] 部分
+        if (!ir_visit_ast_node(arrayNode)) {
+            return false;
+        }
+        node->blockInsts.addInst(arrayNode->blockInsts);
+        arrayVar = arrayNode->val; // 这是一个指向子数组的指针
     } else {
         if (!ir_visit_ast_node(arrayNode)) {
             return false;
@@ -2249,85 +2798,41 @@ bool IRGenerator::ir_array_access(ast_node * node)
     // 处理索引表达式
     Value * indexValue = nullptr;
 
-    if (indexNode->node_type == ast_operator_type::AST_OP_ARRAY_ACCESS) {
-        // 嵌套数组访问：先处理内层访问
-        if (!ir_visit_ast_node(indexNode)) {
-            return false;
-        }
-        node->blockInsts.addInst(indexNode->blockInsts);
+    // 处理索引表达式
+    if (!ir_visit_ast_node(indexNode)) {
+        return false;
+    }
+    node->blockInsts.addInst(indexNode->blockInsts);
 
-        // 修复：检查索引值以确定正确的对齐
-        // 首先检查是否是常量索引
-        int32_t alignment = 4; // 默认对齐
-
-        // 检查内层访问的索引是否为常量0
-        if (indexNode->sons.size() >= 2) {
-            ast_node * innerIndexNode = indexNode->sons[1];
-            if (innerIndexNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
-                try {
-                    int32_t indexVal = std::stoi(innerIndexNode->name);
-                    if (indexVal == 0) {
-                        alignment = 16; // 第一个元素使用16字节对齐
-                    }
-                } catch (...) {
-                    // 解析失败，使用默认对齐
-                }
-            }
-        }
-
-        // 内层数组访问的结果是地址，需要load出值作为索引
+    if (needsLoad(indexNode->val)) {
         LoadInstruction * loadIndex =
-            new LoadInstruction(module->getCurrentFunction(), indexNode->val, indexNode->val, alignment);
+            new LoadInstruction(module->getCurrentFunction(), indexNode->val, indexNode->val, 4);
         node->blockInsts.addInst(loadIndex);
 
-        // 修复：确保 SextInstruction 接收的是 i32 类型的值，而不是指针
-        // loadIndex 的结果类型应该是 i32，检查类型是否正确
+        // 确保 SextInstruction 接收的是 i32 类型的值
         if (loadIndex->getType()->isInt32Type()) {
             SextInstruction * sextIndex =
                 new SextInstruction(module->getCurrentFunction(), loadIndex, IntegerType::getTypeLong());
             node->blockInsts.addInst(sextIndex);
             indexValue = sextIndex;
         } else {
-            printf("Error: Load instruction result type is not i32 in nested array access\n");
+            printf("Error: Load instruction result type is not i32\n");
             return false;
         }
     } else {
-        // 普通索引表达式
-        if (!ir_visit_ast_node(indexNode)) {
-            return false;
-        }
-        node->blockInsts.addInst(indexNode->blockInsts);
-
-        if (needsLoad(indexNode->val)) {
-            LoadInstruction * loadIndex =
-                new LoadInstruction(module->getCurrentFunction(), indexNode->val, indexNode->val, 4);
-            node->blockInsts.addInst(loadIndex);
-
-            // 修复：确保 SextInstruction 接收的是 i32 类型的值
-            if (loadIndex->getType()->isInt32Type()) {
-                SextInstruction * sextIndex =
-                    new SextInstruction(module->getCurrentFunction(), loadIndex, IntegerType::getTypeLong());
-                node->blockInsts.addInst(sextIndex);
-                indexValue = sextIndex;
-            } else {
-                printf("Error: Load instruction result type is not i32\n");
-                return false;
-            }
+        // 对于常量和其他情况，都需要扩展到64位
+        ConstInt * constIndex = dynamic_cast<ConstInt *>(indexNode->val);
+        if (constIndex) {
+            // 直接创建64位常量，而不是使用sext
+            int64_t constVal = constIndex->getLongVal();          // 获取64位值
+            ConstInt * i64Const = module->newConstLong(constVal); // 创建64位常量
+            indexValue = i64Const;
         } else {
-            // 对于常量和其他情况，都需要扩展到64位
-            ConstInt * constIndex = dynamic_cast<ConstInt *>(indexNode->val);
-            if (constIndex) {
-                // 修复：直接创建64位常量，而不是使用sext
-                int64_t constVal = constIndex->getLongVal();          // 获取64位值
-                ConstInt * i64Const = module->newConstLong(constVal); // 创建64位常量
-                indexValue = i64Const;
-            } else {
-                // 其他情况（如表达式结果），需要扩展
-                SextInstruction * sextIndex =
-                    new SextInstruction(module->getCurrentFunction(), indexNode->val, IntegerType::getTypeLong());
-                node->blockInsts.addInst(sextIndex);
-                indexValue = sextIndex;
-            }
+            // 其他情况（如表达式结果），需要扩展
+            SextInstruction * sextIndex =
+                new SextInstruction(module->getCurrentFunction(), indexNode->val, IntegerType::getTypeLong());
+            node->blockInsts.addInst(sextIndex);
+            indexValue = sextIndex;
         }
     }
 
@@ -2369,7 +2874,7 @@ bool IRGenerator::ir_array_init(ast_node * node)
         initValues.push_back(initVal);
     }
 
-	printf("ir_array_init: Initializing array with %zu elements.\n", initValues.size());
+    printf("ir_array_init: Initializing array with %zu elements.\n", initValues.size());
     for (auto val: initValues) {
         if (dynamic_cast<ConstInt *>(val)) {
             printf("Element is ConstantInt\n");
@@ -2413,20 +2918,56 @@ bool IRGenerator::ir_array_variable_declare_with_init(ast_node * node,
                                                       ast_node * initExprNode)
 {
     Function * currentFunc = module->getCurrentFunction();
+    ArrayType * arrayType = nullptr;
+    GlobalVariable * constArray = nullptr;
 
-    // ✅ 设置元素类型，供 ir_array_init 使用
-    initExprNode->type = typeNode->type;
+    // 检查是否已经是数组类型
+    printf("Debug: typeNode->type->isArrayType() = %s\n", typeNode->type->isArrayType() ? "true" : "false");
+    printf("Debug: initExprNode = %p\n", initExprNode);
 
-    // 处理数组初始化列表，调用注册的 ir_array_init 函数
-    if (!ir_visit_ast_node(initExprNode)) {
-        return false;
+    if (typeNode->type->isArrayType()) {
+        printf("Debug: Using existing array type\n");
+        arrayType = static_cast<ArrayType *>(typeNode->type);
+
+        // 如果有初始化表达式，仍然需要处理
+        if (initExprNode) {
+            // 获取数组元素类型
+            Type * elementType = arrayType->getElementType();
+            initExprNode->type = elementType;
+
+            // 处理数组初始化列表，调用注册的 ir_array_init 函数
+            printf("Debug: About to process initExprNode, type = %d\n", (int) initExprNode->node_type);
+            if (!ir_visit_ast_node(initExprNode)) {
+                printf("Error: ir_visit_ast_node failed for initExprNode\n");
+                return false;
+            }
+            printf("Debug: After processing initExprNode, val = %p\n", initExprNode->val);
+            node->blockInsts.addInst(initExprNode->blockInsts);
+        }
+    } else {
+        // 如果有初始化表达式，从初始化列表推导数组大小
+        if (initExprNode) {
+            // ✅ 设置元素类型，供 ir_array_init 使用
+            initExprNode->type = typeNode->type;
+
+            // 处理数组初始化列表，调用注册的 ir_array_init 函数
+            printf("Debug: About to process initExprNode, type = %d\n", (int) initExprNode->node_type);
+            if (!ir_visit_ast_node(initExprNode)) {
+                printf("Error: ir_visit_ast_node failed for initExprNode\n");
+                return false;
+            }
+            printf("Debug: After processing initExprNode, val = %p\n", initExprNode->val);
+            node->blockInsts.addInst(initExprNode->blockInsts);
+
+            // 从初始化列表获取数组大小
+            int arraySize = initExprNode->sons.size();
+            std::vector<int> dimensions = {arraySize};
+            arrayType = new ArrayType(typeNode->type, dimensions);
+        } else {
+            printf("Error: Array type expected but not found.\n");
+            return false;
+        }
     }
-    node->blockInsts.addInst(initExprNode->blockInsts);
-
-    // 从初始化列表获取数组大小
-    int arraySize = initExprNode->sons.size();
-    std::vector<int> dimensions = {arraySize};
-    ArrayType * arrayType = new ArrayType(typeNode->type, dimensions);
 
     // 创建局部数组变量
     Value * arrayVar = module->newVarValue(arrayType, varNode->name);
@@ -2439,33 +2980,295 @@ bool IRGenerator::ir_array_variable_declare_with_init(ast_node * node,
     AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, arrayVar, arrayType, 16);
     node->blockInsts.addInst(allocaInst);
 
-    // 获取常量数组（由 ir_array_init 创建）
-    GlobalVariable * constArray = static_cast<GlobalVariable *>(initExprNode->val);
-    if (!constArray) {
-        printf("Error: Failed to get constant array from initialization.\n");
-        return false;
+    // 如果有初始化表达式，处理初始化
+    if (initExprNode) {
+        // 获取常量数组（由 ir_array_init 创建）
+        printf("Debug: initExprNode->val = %p\n", initExprNode->val);
+        if (initExprNode->val) {
+            printf("Debug: initExprNode->val type = %s\n", initExprNode->val->getType()->toString().c_str());
+        }
+        constArray = static_cast<GlobalVariable *>(initExprNode->val);
+        if (!constArray) {
+            printf("Error: Failed to get constant array from initialization.\n");
+            return false;
+        }
+
+        // 生成 memcpy 指令将常量数组复制到局部数组
+
+        // 1. 将局部数组转换为 i8*
+        BitcastInstruction * destCast = new BitcastInstruction(currentFunc, arrayVar, module->getI8PtrType());
+        node->blockInsts.addInst(destCast);
+
+        // 2. 将常量数组转换为 i8*
+        BitcastInstruction * srcCast = new BitcastInstruction(currentFunc, constArray, module->getI8PtrType());
+        node->blockInsts.addInst(srcCast);
+
+        // 3. 计算拷贝大小
+        Type * elementType = arrayType->getElementType();
+        int totalElements = arrayType->getTotalElements();
+        int elemSize = elementType->getSize();
+        ConstInt * sizeConst = module->newConstInt(totalElements * elemSize);
+
+        // 4. 生成 memcpy 指令
+        MemcpyInstruction * memcpyInst = new MemcpyInstruction(currentFunc, destCast, srcCast, sizeConst, false);
+        node->blockInsts.addInst(memcpyInst);
     }
-
-    // 生成 memcpy 指令将常量数组复制到局部数组
-
-    // 1. 将局部数组转换为 i8*
-    BitcastInstruction * destCast = new BitcastInstruction(currentFunc, arrayVar, module->getI8PtrType());
-    node->blockInsts.addInst(destCast);
-
-    // 2. 将常量数组转换为 i8*
-    BitcastInstruction * srcCast = new BitcastInstruction(currentFunc, constArray, module->getI8PtrType());
-    node->blockInsts.addInst(srcCast);
-
-    // 3. 计算拷贝大小（注意：按元素字节数计算）
-    int elemSize = typeNode->type->getSize(); // 假设 getSize() 提供字节数
-    ConstInt * sizeConst = module->newConstInt(arraySize * elemSize);
-
-    // 4. 生成 memcpy 指令
-    MemcpyInstruction * memcpyInst = new MemcpyInstruction(currentFunc, destCast, srcCast, sizeConst, false);
-    node->blockInsts.addInst(memcpyInst);
+    // 如果没有初始化表达式，数组将保持未初始化状态（这是正常的）
 
     // 设置变量节点的值
     varNode->val = arrayVar;
+
+    return true;
+}
+
+/// @brief 整数减法AST节点翻译成线性中间IR（使用已处理的操作数）
+bool IRGenerator::ir_sub_processed(ast_node * node, ast_node * left, ast_node * right)
+{
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 生成减法指令
+    BinaryInstruction * subInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_SUB_I,
+                                                        leftValue,
+                                                        rightValue,
+                                                        IntegerType::getTypeInt());
+    node->blockInsts.addInst(subInst);
+    node->val = subInst;
+
+    return true;
+}
+
+/// @brief 浮点数减法AST节点翻译成线性中间IR（使用已处理的操作数）
+bool IRGenerator::ir_fsub_processed(ast_node * node, ast_node * left, ast_node * right)
+{
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 确保操作数是浮点类型
+    if (!leftValue->getType()->isFloatType()) {
+        leftValue = convertToFloat(leftValue, module->getCurrentFunction(), node->blockInsts);
+        if (!leftValue)
+            return false;
+    }
+    if (!rightValue->getType()->isFloatType()) {
+        rightValue = convertToFloat(rightValue, module->getCurrentFunction(), node->blockInsts);
+        if (!rightValue)
+            return false;
+    }
+
+    // 生成浮点减法指令
+    BinaryInstruction * subInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_SUB_F,
+                                                        leftValue,
+                                                        rightValue,
+                                                        FloatType::getTypeFloat());
+    node->blockInsts.addInst(subInst);
+    node->val = subInst;
+
+    return true;
+}
+
+/// @brief 整数乘法AST节点翻译成线性中间IR（使用已处理的操作数）
+bool IRGenerator::ir_mul_processed(ast_node * node, ast_node * left, ast_node * right)
+{
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 生成乘法指令
+    BinaryInstruction * mulInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_MUL_I,
+                                                        leftValue,
+                                                        rightValue,
+                                                        IntegerType::getTypeInt());
+    node->blockInsts.addInst(mulInst);
+    node->val = mulInst;
+
+    return true;
+}
+
+/// @brief 浮点数乘法AST节点翻译成线性中间IR（使用已处理的操作数）
+bool IRGenerator::ir_fmul_processed(ast_node * node, ast_node * left, ast_node * right)
+{
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 确保操作数是浮点类型
+    if (!leftValue->getType()->isFloatType()) {
+        leftValue = convertToFloat(leftValue, module->getCurrentFunction(), node->blockInsts);
+        if (!leftValue)
+            return false;
+    }
+    if (!rightValue->getType()->isFloatType()) {
+        rightValue = convertToFloat(rightValue, module->getCurrentFunction(), node->blockInsts);
+        if (!rightValue)
+            return false;
+    }
+
+    // 生成浮点乘法指令
+    BinaryInstruction * mulInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_MUL_F,
+                                                        leftValue,
+                                                        rightValue,
+                                                        FloatType::getTypeFloat());
+    node->blockInsts.addInst(mulInst);
+    node->val = mulInst;
+
+    return true;
+}
+
+/// @brief 整数除法AST节点翻译成线性中间IR（使用已处理的操作数）
+bool IRGenerator::ir_div_processed(ast_node * node, ast_node * left, ast_node * right)
+{
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 生成除法指令
+    BinaryInstruction * divInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_DIV_I,
+                                                        leftValue,
+                                                        rightValue,
+                                                        IntegerType::getTypeInt());
+    node->blockInsts.addInst(divInst);
+    node->val = divInst;
+
+    return true;
+}
+
+/// @brief 浮点数除法AST节点翻译成线性中间IR（使用已处理的操作数）
+bool IRGenerator::ir_fdiv_processed(ast_node * node, ast_node * left, ast_node * right)
+{
+    Value * leftValue = nullptr;
+    Value * rightValue = nullptr;
+
+    // 左操作数
+    if (needsLoad(left->val)) {
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        node->blockInsts.addInst(loadLeft);
+        leftValue = loadLeft;
+    } else {
+        leftValue = left->val;
+    }
+
+    // 右操作数
+    if (needsLoad(right->val)) {
+        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        node->blockInsts.addInst(loadRight);
+        rightValue = loadRight;
+    } else {
+        rightValue = right->val;
+    }
+
+    // 确保操作数是浮点类型
+    if (!leftValue->getType()->isFloatType()) {
+        leftValue = convertToFloat(leftValue, module->getCurrentFunction(), node->blockInsts);
+        if (!leftValue)
+            return false;
+    }
+    if (!rightValue->getType()->isFloatType()) {
+        rightValue = convertToFloat(rightValue, module->getCurrentFunction(), node->blockInsts);
+        if (!rightValue)
+            return false;
+    }
+
+    // 生成浮点除法指令
+    BinaryInstruction * divInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                        IRInstOperator::IRINST_OP_DIV_F,
+                                                        leftValue,
+                                                        rightValue,
+                                                        FloatType::getTypeFloat());
+    node->blockInsts.addInst(divInst);
+    node->val = divInst;
 
     return true;
 }

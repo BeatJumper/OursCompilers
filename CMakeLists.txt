@@ -145,6 +145,10 @@ set(IR_SRCS
 	ir/Instructions/MemcpyInstruction.h
 	ir/Instructions/SextInstruction.cpp
 	ir/Instructions/SextInstruction.h
+	ir/Instructions/SitofpInstruction.cpp
+	ir/Instructions/SitofpInstruction.h
+	ir/Instructions/FptosiInstruction.cpp
+	ir/Instructions/FptosiInstruction.h
 	ir/Types/VoidType.h
 	ir/Types/VoidType.cpp
 	ir/Types/LabelType.h

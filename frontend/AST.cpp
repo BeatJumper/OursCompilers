@@ -20,6 +20,7 @@
 
 #include "AST.h"
 #include "AttrType.h"
+#include "Types/ArrayType.h"
 #include "Types/FloatType.h"
 #include "Types/IntegerType.h"
 #include "Types/VoidType.h"
@@ -285,14 +286,31 @@ ast_node * create_contain_node(ast_operator_type node_type,
 
 Type * typeAttr2Type(type_attr & attr)
 {
+    Type * baseType = nullptr;
+
     if (attr.type == BasicType::TYPE_INT) {
-        return IntegerType::getTypeInt();
+        baseType = IntegerType::getTypeInt();
     } else if (attr.type == BasicType::TYPE_FLOAT) {
-        return FloatType::getTypeFloat();
+        baseType = FloatType::getTypeFloat();
+    } else {
+        baseType = VoidType::getType();
     }
-    else {
-        return VoidType::getType();
+
+    // 如果是数组类型，创建嵌套的 ArrayType
+    if (attr.is_array && !attr.dimensions.empty()) {
+        Type * currentType = baseType;
+
+        // 从最内层开始构建，逆序处理维度
+        // 例如：int[2][3] -> [2 x [3 x i32]]
+        for (int i = attr.dimensions.size() - 1; i >= 0; i--) {
+            std::vector<int> singleDim = {attr.dimensions[i]};
+            currentType = new ArrayType(currentType, singleDim);
+        }
+
+        return currentType;
     }
+
+    return baseType;
 }
 
 /// @brief 创建类型节点
