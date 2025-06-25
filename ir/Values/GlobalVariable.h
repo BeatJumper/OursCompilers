@@ -113,26 +113,8 @@ public:
                 } else if (ConstFloat * constFloat = dynamic_cast<ConstFloat *>(initValueList[i])) {
                     str += "float " + constFloat->getIRName();
                 } else if (GlobalVariable * globalVar = dynamic_cast<GlobalVariable *>(initValueList[i])) {
-                    // 嵌套的全局常量数组，需要展开其内容而不是引用
-                    str += globalVar->getType()->toString() + " ";
-                    if (!globalVar->getInitValueList().empty()) {
-                        str += "[";
-                        for (size_t j = 0; j < globalVar->getInitValueList().size(); ++j) {
-                            if (j > 0)
-                                str += ", ";
-                            Value * nestedVal = globalVar->getInitValueList()[j];
-                            if (ConstInt * constInt = dynamic_cast<ConstInt *>(nestedVal)) {
-                                str += "i32 " + std::to_string(constInt->getVal());
-                            } else if (ConstFloat * constFloat = dynamic_cast<ConstFloat *>(nestedVal)) {
-                                str += "float " + constFloat->getIRName();
-                            } else {
-                                str += "i32 0";
-                            }
-                        }
-                        str += "]";
-                    } else {
-                        str += "zeroinitializer";
-                    }
+                    // 嵌套的全局常量数组，递归展开其内容而不是引用
+                    str += expandGlobalVariableContent(globalVar);
                 } else {
                     str += "i32 0";
                 }
@@ -227,4 +209,44 @@ public:
     {
         return initValueList;
     }
+
+    /// @brief 递归展开全局变量内容（用于嵌套数组的完全展开）
+    /// @param globalVar 要展开的全局变量
+    /// @return 展开后的字符串表示
+    static std::string expandGlobalVariableContent(GlobalVariable * globalVar);
 };
+
+/// @brief 递归展开全局变量内容的实现
+/// @param globalVar 要展开的全局变量
+/// @return 展开后的字符串表示
+inline std::string GlobalVariable::expandGlobalVariableContent(GlobalVariable * globalVar)
+{
+    std::string result = globalVar->getType()->toString() + " ";
+
+    if (!globalVar->getInitValueList().empty()) {
+        result += "[";
+        for (size_t i = 0; i < globalVar->getInitValueList().size(); ++i) {
+            if (i > 0) {
+                result += ", ";
+            }
+
+            Value * val = globalVar->getInitValueList()[i];
+
+            if (ConstInt * constInt = dynamic_cast<ConstInt *>(val)) {
+                result += "i32 " + std::to_string(constInt->getVal());
+            } else if (ConstFloat * constFloat = dynamic_cast<ConstFloat *>(val)) {
+                result += "float " + constFloat->getIRName();
+            } else if (GlobalVariable * nestedGlobalVar = dynamic_cast<GlobalVariable *>(val)) {
+                // 递归展开嵌套的全局变量
+                result += expandGlobalVariableContent(nestedGlobalVar);
+            } else {
+                result += "i32 0"; // 默认值
+            }
+        }
+        result += "]";
+    } else {
+        result += "zeroinitializer";
+    }
+
+    return result;
+}

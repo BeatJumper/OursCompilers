@@ -3129,13 +3129,25 @@ bool IRGenerator::ir_array_init(ast_node * node)
         printf("Debug: Created simple array type [%d x %s]\n", dimensions[0], innerElementType->toString().c_str());
     }
 
-    // 创建带有完整初始值的全局常量数组
-    GlobalVariable * constArray = module->newGlobalConstArray(arrayType);
+    // 检查是否是顶层数组初始化（通过检查父节点类型）
+    bool isTopLevel = true;
+    if (node->parent && node->parent->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
+        isTopLevel = false;
+    }
 
-    // 设置初始值列表
-    constArray->setInitValueList(initValues);
-
-    node->val = constArray;
+    if (isTopLevel) {
+        // 顶层数组：创建真正的全局常量数组
+        GlobalVariable * constArray = module->newGlobalConstArray(arrayType);
+        constArray->setInitValueList(initValues);
+        node->val = constArray;
+        printf("Debug: Created top-level global array: %s\n", constArray->getIRName().c_str());
+    } else {
+        // 嵌套数组：创建临时的虚拟全局变量，不加入到模块中
+        GlobalVariable * tempArray = new GlobalVariable(arrayType, "temp");
+        tempArray->setInitValueList(initValues);
+        node->val = tempArray;
+        printf("Debug: Created temporary nested array for inlining\n");
+    }
 
     return true;
 }
