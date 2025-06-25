@@ -179,14 +179,16 @@ void InstSelectorArm64::translate_assign(Instruction * inst)
     Value * arg1 = inst->getOperand(1);
 
     int32_t arg1_regId = arg1->getLoadRegId();
-    int32_t result_regId = result->getLoadRegId();
+    int32_t result_regId = result->getRegId();
 
     if (Instanceof(constVal, ConstInt *, arg1)) {
-        // 处理常量到内存的赋值
-        int32_t temp_regno = simpleRegisterAllocator.Allocate();
-        iloc.load_imm(temp_regno, constVal->getVal());
-        iloc.store_var(temp_regno, result, ARM64_TMP_REG_NO);
-        simpleRegisterAllocator.free(temp_regno);
+        // 处理常量的赋值
+        if (result_regId != -1) {
+            // 常量到寄存器
+            iloc.load_imm(result_regId, constVal->getVal());
+        } else {
+            // 常量到内存
+        }
     } else if (arg1_regId != -1) {
         // 寄存器 => 内存
         // 寄存器 => 寄存器
@@ -348,78 +350,7 @@ void InstSelectorArm64::translate_call(Instruction * inst)
         }
     }
 
-    if (operandNum) {
-
-        // 强制占用这几个寄存器参数传递的寄存器
-        simpleRegisterAllocator.Allocate(0);
-        simpleRegisterAllocator.Allocate(1);
-        simpleRegisterAllocator.Allocate(2);
-        simpleRegisterAllocator.Allocate(3);
-        simpleRegisterAllocator.Allocate(4);
-        simpleRegisterAllocator.Allocate(5);
-        simpleRegisterAllocator.Allocate(6);
-        simpleRegisterAllocator.Allocate(7);
-
-        // 前8个的后面参数采用栈传递
-        int esp = 0;
-        for (int32_t k = 8; k < operandNum; k++) {
-
-            auto arg = callInst->getOperand(k);
-
-            // 新建一个内存变量，用于栈传值到形参变量中
-            MemVariable * newVal = func->newMemVariable((Type *) PointerType::get(arg->getType()));
-            newVal->setMemoryAddr(ARM64_SP_REG_NO, esp);
-            esp += 8;
-
-            Instruction * assignInst = new MoveInstruction(func, newVal, arg);
-
-            // 翻译赋值指令
-            translate_assign(assignInst);
-
-            delete assignInst;
-        }
-
-        for (int32_t k = 0; k < operandNum && k < 8; k++) {
-
-            auto arg = callInst->getOperand(k);
-
-            // 检查实参的类型是否是临时变量。
-            // 如果是临时变量，该变量可更改为寄存器变量即可，或者设置寄存器号
-            // 如果不是，则必须开辟一个寄存器变量，然后赋值即可
-
-            Instruction * assignInst = new MoveInstruction(func, PlatformArm64::intRegVal[k], arg);
-
-            // 翻译赋值指令
-            translate_assign(assignInst);
-
-            delete assignInst;
-        }
-    }
-
     iloc.call_fun(callInst->getName());
-
-    if (operandNum) {
-        simpleRegisterAllocator.free(0);
-        simpleRegisterAllocator.free(1);
-        simpleRegisterAllocator.free(2);
-        simpleRegisterAllocator.free(3);
-        simpleRegisterAllocator.free(4);
-        simpleRegisterAllocator.free(5);
-        simpleRegisterAllocator.free(6);
-        simpleRegisterAllocator.free(7);
-    }
-
-    // 赋值指令
-    /*if (callInst->hasResultValue()) {
-
-        // 新建一个赋值操作
-        Instruction * assignInst = new MoveInstruction(func, callInst, PlatformArm64::intRegVal[0]);
-
-        // 翻译赋值指令
-        translate_assign(assignInst);
-
-        delete assignInst;
-    }*/
 
     // 函数调用后清零，使得下次可正常统计
     realArgCount = 0;

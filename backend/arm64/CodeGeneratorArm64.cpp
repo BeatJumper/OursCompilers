@@ -223,6 +223,14 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
         return;
     }
 
+    // 函数开始,先释放所有寄存器,强制占用w0-w7寄存器，用于函数调用传递参数
+    for (int i = 0; i < 29; i++) {
+        simpleRegisterAllocator.free(i);
+    }
+    for (int i = 0; i < 8; i++) {
+        simpleRegisterAllocator.Allocate(i);
+    }
+
     std::vector<int32_t> & protectedRegNo = func->getProtectedReg();
 
     protectedRegNo.push_back(ARM64_FP_REG_NO);
@@ -368,16 +376,6 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
 
                 // 获取实参的值
                 auto arg = callInst->getOperand(k);
-
-                // 栈帧空间（低地址在前，高地址在后）
-                // --------------------- sp
-                // 实参栈传递的空间（排除寄存器传递的实参空间）
-                // ---------------------
-                // 需要保存在栈中的局部变量或临时变量或形参对应变量空间
-                // --------------------- fp
-                // 保护寄存器的空间
-                // ---------------------
-
                 // 新建一个内存变量，把实参的值保存到栈中，以便栈传值，其寻址为SP + 非负偏移
                 MemVariable * newVal = func->newMemVariable(IntegerType::getTypeInt());
                 newVal->setMemoryAddr(ARM64_SP_REG_NO, esp);
@@ -409,7 +407,7 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
 
                 // 函数调用指令前插入后，pIter仍指向函数调用指令
                 pIter = insts.insert(pIter, assignInst);
-                printf("插入一条赋值指令\n");
+                printf("插入第%d个参数的赋值指令\n", k);
                 pIter++;
             }
 
@@ -458,7 +456,7 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
             if (Instanceof(constVal, ConstInt *, arg2)) {
                 printf("检测到操作数2为常量，寄存器：%d\n", arg1->getLoadRegId());
                 Instruction * assignInst =
-                    new MoveInstruction(func, PlatformArm64::intRegVal[arg1->getLoadRegId()], arg2);
+                    new MoveInstruction(func, PlatformArm64::intRegVal[arg2->getLoadRegId()], arg2);
                 pIter = insts.insert(pIter, assignInst);
                 printf("插入一条赋值指令\n");
                 pIter++;
