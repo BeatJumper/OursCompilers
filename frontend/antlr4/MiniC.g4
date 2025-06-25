@@ -20,11 +20,14 @@ decl: constDecl | varDecl;
 constDecl:
 	T_CONST basicType constDef (T_COMMA constDef)* T_SEMICOLON;
 
-// 4. 添加常量定义（暂不支持数组）
-constDef: T_ID T_ASSIGN constInitVal;
+// 4. 修改常量定义，支持数组
+constDef:
+	T_ID (T_L_BRACKET constExp T_R_BRACKET)* T_ASSIGN constInitVal;
 
 // 5. 添加常量初值（暂时只支持单个表达式）
-constInitVal: constExp;
+constInitVal:
+	constExp
+	| T_L_BRACE (constInitVal (T_COMMA constInitVal)*)? T_R_BRACE;
 
 // 6. 添加常量表达式
 constExp: addExp; // 常量表达式必须能在编译时求值
@@ -33,13 +36,16 @@ constExp: addExp; // 常量表达式必须能在编译时求值
 funcDef: funcType T_ID T_L_PAREN funcFParams? T_R_PAREN block;
 
 // 函数类型
-funcType: T_VOID | T_INT;
+funcType: T_VOID | T_INT | T_FLOAT;
 
 // 函数形参表
 funcFParams: funcFParam (T_COMMA funcFParam)*;
 
-// 函数形参
-funcFParam: basicType T_ID;
+// 函数形参，支持数组参数
+funcFParam:
+	basicType T_ID (
+		T_L_BRACKET T_R_BRACKET (T_L_BRACKET expr T_R_BRACKET)*
+	)?;
 
 // 语句块看用作函数体，这里允许多个语句，并且不含任何语句
 block: T_L_BRACE blockItemList? T_R_BRACE;
@@ -54,14 +60,20 @@ blockItem: statement | decl;
 varDecl: basicType varDef (T_COMMA varDef)* T_SEMICOLON;
 
 // 基本类型
-basicType: T_INT;
+basicType: T_INT | T_FLOAT;
 
-// 变量定义 ~可以带初值?
-varDef: T_ID (T_ASSIGN expr)?;
+// 变量定义，支持数组
+varDef:
+	T_ID (T_L_BRACKET constExp T_R_BRACKET)* (T_ASSIGN initVal)?;
 
-// 目前语句支持return和赋值语句
+// 添加变量初值，支持数组初始化
+initVal:
+	expr
+	| T_L_BRACE (initVal (T_COMMA initVal)*)? T_R_BRACE;
+
+// 目前语句支持return和赋值语句 TODO: 待确定void是否需要return
 statement:
-	T_RETURN expr T_SEMICOLON										# returnStatement
+	T_RETURN expr? T_SEMICOLON										# returnStatement
 	| lVal T_ASSIGN expr T_SEMICOLON								# assignStatement
 	| block															# blockStatement
 	| expr? T_SEMICOLON												# expressionStatement
@@ -97,10 +109,10 @@ expr: addExp;
 // 加减表达式
 addExp: mulExp (addOp mulExp)*;
 
-// 乘除模表达式 (新增)
+// 乘除模表达式
 mulExp: unaryExp (mulOp unaryExp)*;
 
-// 乘除模运算符 (新增)
+// 乘除模运算符
 mulOp: T_MUL | T_DIV | T_MOD;
 
 // 加减运算符
@@ -116,13 +128,17 @@ unaryExp:
 unaryOp: T_ADD | T_SUB | T_NOT;
 
 // 基本表达式：括号表达式、整数、左值表达式
-primaryExp: T_L_PAREN expr T_R_PAREN | T_DIGIT | lVal;
+primaryExp:
+	T_L_PAREN expr T_R_PAREN
+	| T_DIGIT
+	| T_FLOAT_DIGIT
+	| lVal;
 
 // 实参列表
 realParamList: expr (T_COMMA expr)*;
 
-// 左值表达式
-lVal: T_ID;
+// 左值表达式，支持数组访问
+lVal: T_ID (T_L_BRACKET expr T_R_BRACKET)*;
 
 // 用正规式来进行词法规则的描述
 
@@ -132,15 +148,18 @@ T_SEMICOLON: ';';
 T_L_BRACE: '{';
 T_R_BRACE: '}';
 
+T_L_BRACKET: '[';
+T_R_BRACKET: ']';
+
 T_ASSIGN: '=';
 T_COMMA: ',';
 
 // 算术运算符
 T_ADD: '+';
 T_SUB: '-';
-T_MUL: '*'; // 新增：乘法
-T_DIV: '/'; // 新增：除法
-T_MOD: '%'; // 新增：取模
+T_MUL: '*'; // 乘法
+T_DIV: '/'; // 除法
+T_MOD: '%'; // 取模
 
 // 关系运算符
 T_LT: '<';
@@ -160,6 +179,7 @@ T_NOT: '!'; // 逻辑非
 // 要注意关键字同样也属于T_ID，因此必须放在T_ID的前面，否则会识别成T_ID
 T_RETURN: 'return';
 T_INT: 'int';
+T_FLOAT: 'float';
 T_VOID: 'void';
 T_IF: 'if';
 T_ELSE: 'else';
@@ -176,6 +196,11 @@ T_DIGIT:
 	| '0' [0-7]+ // 八进制（不包括单独的0）  
 	| '0' // 单独的0（十进制）
 	| [1-9] [0-9]*; // 十进制（非零开头）
+
+T_FLOAT_DIGIT:
+	[0-9]+ '.' [0-9]* ([eE] [+-]? [0-9]+)? // 常规小数形式
+	| '.' [0-9]+ ([eE] [+-]? [0-9]+)? // 省略整数部分
+	| [0-9]+ [eE] [+-]? [0-9]+; // 科学计数法
 
 /* 空白符丢弃 */
 WS: [ \r\n\t]+ -> skip;

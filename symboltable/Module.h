@@ -20,9 +20,11 @@
 #include <unordered_map>
 
 #include "ConstInt.h"
+#include "ConstFloat.h"
 #include "Type.h"
 #include "GlobalVariable.h"
 #include "Function.h"
+#include "ArrayType.h"
 
 class ScopeStack;
 
@@ -109,6 +111,7 @@ public:
     /// \param intVal 整数值
     /// \return 临时Value
     ConstInt * newConstInt(int32_t intVal);
+    ConstFloat * newConstFloat(float floatVal);
 
     /// @brief 新建变量型Value，会根据currentFunc的值进行判断创建全局或者局部变量
     /// ! 该函数只有在AST遍历生成线性IR中使用，其它地方不能使用
@@ -139,6 +142,7 @@ protected:
     /// \param name 变量名
     /// \return 变量对应的值
     ConstInt * findConstInt(int32_t val);
+    ConstFloat * findConstFloat(float floatVal);
 
     ///
     /// @brief 新建全局变量，要求name必须有效，并且加入到全局符号表中。
@@ -160,6 +164,7 @@ protected:
     /// @brief Value插入到符号表中
     /// @param val Value信息
     void insertGlobalValueDirectly(GlobalVariable * val);
+    void insertConstFloatDirectly(ConstFloat * val);
 
     /// @brief ConstInt插入到符号表中
     /// @param val Value信息
@@ -215,4 +220,40 @@ public:
 private:
     /// @brief 编译时常量表（用于常量折叠）
     std::unordered_map<std::string, Value *> constValueMap;
+
+public:
+    /// @brief 获取i32类型
+    /// @return i32类型指针
+    Type * getI32Type();
+
+    /// @brief 获取i64类型
+    /// @return i64类型指针
+    Type * getI64Type();
+
+    /// @brief 获取i8指针类型
+    /// @return i8*类型指针
+    Type * getI8PtrType();
+
+    /// @brief 创建全局常量数组
+    /// @param arrayType 数组类型
+    /// @param initValues 初始化值列表
+    /// @return 全局常量数组
+    GlobalVariable * newGlobalConstArray(ArrayType * arrayType);
+
+private:
+    /// @brief 常量整数向量表，用于释放资源
+    std::vector<ConstInt *> constIntVector;
+    std::vector<ConstFloat *> constFloatVector;
+
+public:
+    /// @brief 新建64位整型常量
+    /// @param val 常量值
+    /// @return 常量Value
+    ConstInt * newConstLong(int64_t val);
+
+    /// @brief 新建指定类型的整型常量
+    /// @param val 常量值
+    /// @param type 整数类型
+    /// @return 常量Value
+    ConstInt * newConstInt(int64_t val, Type * type);
 };

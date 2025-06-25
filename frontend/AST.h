@@ -90,6 +90,12 @@ enum class ast_operator_type : int {
     /// @brief 常量声明
     AST_OP_CONST_DECL,
 
+    /// @brief 数组声明语句
+    AST_OP_ARRAY_ACCESS,
+
+    /// @brief 数组声明
+    AST_OP_ARRAY_INIT,
+
     /// @brief 二元运算符+
     AST_OP_ADD,
 
@@ -219,6 +225,8 @@ public:
     /// @param attr 无符号整数字面量
     ast_node(digit_int_attr attr);
 
+	ast_node(digit_float_attr attr);
+
     /// @brief 针对标识符ID的叶子构造函数
     /// @param attr 字符型标识符
     ast_node(var_id_attr attr);
@@ -248,6 +256,8 @@ public:
     /// @param val 词法值
     /// @param line_no 行号
     static ast_node * New(digit_int_attr attr);
+
+	static ast_node * New(digit_float_attr attr);
 
     /// @brief 创建标识符的叶子节点
     /// @param val 词法值

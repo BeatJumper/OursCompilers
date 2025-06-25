@@ -124,21 +124,3 @@ bool Value::getMemoryAddr(int32_t * regId, int64_t * offset)
     (void) offset;
     return false;
 }
-
-///
-/// @brief 对该Value进行Load用的寄存器编号
-/// @return int32_t 寄存器编号
-///
-int32_t Value::getLoadRegId()
-{
-    return -1;
-}
-
-///
-/// @brief 对该Value进行Load用的寄存器编号
-/// @return int32_t 寄存器编号
-///
-void Value::setLoadRegId(int32_t regId)
-{
-    (void) regId;
-}

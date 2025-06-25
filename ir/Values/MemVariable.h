@@ -55,24 +55,6 @@ public:
     }
 
     ///
-    /// @brief 对该Value进行Load用的寄存器编号
-    /// @return int32_t 寄存器编号
-    ///
-    int32_t getLoadRegId() override
-    {
-        return this->loadRegNo;
-    }
-
-    ///
-    /// @brief 对该Value进行Load用的寄存器编号
-    /// @return int32_t 寄存器编号
-    ///
-    void setLoadRegId(int32_t regId) override
-    {
-        this->loadRegNo = regId;
-    }
-
-    ///
     /// @brief 设置内存寻址的基址寄存器和偏移
     /// @param _regId 基址寄存器编号
     /// @param _offset 偏移

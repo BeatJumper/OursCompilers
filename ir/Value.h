@@ -48,6 +48,11 @@ protected:
     ///
     std::vector<Use *> uses;
 
+    ///
+    /// @brief 分配的寄存器编号
+    ///
+    int32_t loadRegId = -1;
+
 public:
     /// @brief 构造函数
     /// @param _type
@@ -117,11 +122,26 @@ public:
     /// @brief 对该Value进行Load用的寄存器编号
     /// @return int32_t 寄存器编号
     ///
-    virtual int32_t getLoadRegId();
+    int32_t getLoadRegId() const
+    {
+        return loadRegId;
+    }
 
     ///
     /// @brief 对该Value进行Load用的寄存器编号
     /// @return int32_t 寄存器编号
     ///
-    virtual void setLoadRegId(int32_t regId);
+    void setLoadRegId(int32_t regId)
+    {
+        loadRegId = regId;
+    }
+
+    ///
+    /// @brief 判断是否已经分配寄存器
+    /// @return int32_t 寄存器编号
+    ///
+    bool isAllocated() const
+    {
+        return loadRegId != -1;
+    }
 };

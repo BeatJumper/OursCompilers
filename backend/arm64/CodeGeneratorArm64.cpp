@@ -20,6 +20,7 @@
 #include "MoveInstruction.h"
 #include "Instruction.h"
 #include "ConstFloat.h"
+#include "BinaryInstruction.h"
 
 /// @brief 构造函数
 /// @param tab 符号表
@@ -226,9 +227,6 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
 
     protectedRegNo.push_back(ARM64_FP_REG_NO);
     protectedRegNo.push_back(ARM64_LX_REG_NO);
-    /*if (func->getExistFuncCall()) {
-        protectedRegNo.push_back(ARM64_LX_REG_NO);
-    }*/
     printf("寄存器分配中段\n");
 
     // 调整函数调用指令，主要是前8个寄存器传值，后面用栈传递
@@ -237,13 +235,24 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     // 当前函数的指令列表
     adjustFuncCallInsts(func);
     printf("调整函数调用指令\n");
-    // 为局部变量和临时变量在栈内分配空间，指定偏移，进行栈空间的分配
-    stackAlloc(func);
-    printf("为局部变量和临时变量在栈内分配空间\n");
+
     // 函数形参要求前8个寄存器分配，后面的参数采用栈传递，实现实参的值传递给形参
     // 这一步是必须的
     adjustFormalParamInsts(func);
     printf("函数形参\n");
+
+    // 当前函数的指令列表,为每个临时变量分配寄存器
+    auto & insts = func->getInterCode().getInsts();
+    for (int i = 0; i < insts.size(); i++) {
+        if (insts[i]->hasResultValue() && insts[i]->getOp() != IRInstOperator::IRINST_OP_ALLOCA) {
+            int32_t regno = simpleRegisterAllocator.Allocate(insts[i]);
+            insts[i]->setLoadRegId(regno);
+        }
+    }
+
+    // 为局部变量和溢出变量在栈内分配空间，指定偏移，进行栈空间的分配
+    stackAlloc(func);
+    printf("为局部变量和临时变量在栈内分配空间\n");
     // GenBasicBlocks(func);
     // printf("基本块划分成功\n");
 
@@ -318,7 +327,7 @@ void CodeGeneratorArm64::adjustFormalParamInsts(Function * func)
 
         // 前八个设置分配寄存器
 
-        params[k]->setRegId(k);
+        params[k]->setLoadRegId(k);
     }
 
     // 根据ARM版C语言的调用约定，除前8个外的实参进行值传递，逆序入栈
@@ -434,6 +443,27 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 }
             }
         }
+        if (Instanceof(binaryInst, BinaryInstruction *, *pIter)) {
+            printf("检测到两元指令\n");
+            Value * arg1 = binaryInst->getOperand(0);
+            Value * arg2 = binaryInst->getOperand(1);
+            if (Instanceof(constVal, ConstInt *, arg1)) {
+                printf("检测到操作数1为常量\n");
+                Instruction * assignInst =
+                    new MoveInstruction(func, PlatformArm64::intRegVal[arg1->getLoadRegId()], arg1);
+                pIter = insts.insert(pIter, assignInst);
+                printf("插入一条赋值指令\n");
+                pIter++;
+            }
+            if (Instanceof(constVal, ConstInt *, arg2)) {
+                printf("检测到操作数2为常量，寄存器：%d\n", arg1->getLoadRegId());
+                Instruction * assignInst =
+                    new MoveInstruction(func, PlatformArm64::intRegVal[arg1->getLoadRegId()], arg2);
+                pIter = insts.insert(pIter, assignInst);
+                printf("插入一条赋值指令\n");
+                pIter++;
+            }
+        }
     }
 }
 
@@ -452,13 +482,13 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
         if (local->getRegId() != -1) {
             continue; // 跳过已分配寄存器的变量
         }
-        // 对齐到8字节边界
-        sp_esp = (sp_esp + 7) & ~7;
-        local->setMemoryAddr(ARM64_FP_REG_NO, -sp_esp);
+        // 对齐到4字节边界
+        sp_esp = (sp_esp + 3) & ~3;
+        local->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
         sp_esp += local->getType()->getSize();
     }
 
-    printf("开始处理Alloca\n");
+    /*printf("开始处理Alloca\n");
     // 遍历指令中的alloca结果
     for (auto inst: func->getInterCode().getInsts()) {
         if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
@@ -483,12 +513,7 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
         }
 
         // ... 其他类型指令处理 ...
-    }
-
-    // 遍历指令中临时变量
-    for (auto inst: func->getInterCode().getInsts()) {
-
-        if (inst->hasResultValue()) {
+        if (inst->getOp() == IRInstOperator::IRINST_OP_FUNC_CALL) {
             // 有值
             int32_t size = inst->getType()->getSize();
 
@@ -501,9 +526,26 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
             // 累计当前作用域大小
             sp_esp += size;
         }
+    }*/
+
+    // 遍历指令中临时变量
+    for (auto inst: func->getInterCode().getInsts()) {
+
+        if (inst->hasResultValue()) {
+            // 有值
+            int32_t size = inst->getType()->getSize();
+
+            // 按照4字节的大小整数倍分配局部变量
+            size += (4 - size % 4) % 4;
+
+            // 临时变量偏移设置
+            inst->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
+
+            // 累计当前作用域大小
+            sp_esp += size;
+        }
     }
 
     // 设置函数的最大栈帧深度，在加上实参内存传值的空间
-    // 请注意若支持浮点数，则必须保持栈内空间8字节对齐
     func->setMaxDep(sp_esp);
 }

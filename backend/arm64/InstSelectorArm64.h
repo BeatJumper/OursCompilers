@@ -70,23 +70,23 @@ protected:
 
     /// @brief 整数加法指令翻译成ARM64汇编
     /// @param inst IR指令
-    void translate_add_32bit(Instruction * inst);
+    void translate_add_i(Instruction * inst);
 
     /// @brief 整数减法指令翻译成ARM64汇编
     /// @param inst IR指令
-    void translate_sub_32bit(Instruction * inst);
+    void translate_sub_i(Instruction * inst);
 
-    /// @brief 乘法指令翻译成ARM64汇编
+    /// @brief 乘法指令翻译成ARiM64汇编
     /// @param inst IR指令
-    void translate_mul_32bit(Instruction * inst);
+    void translate_mul_i(Instruction * inst);
 
     /// @brief 取余指令翻译成ARM64汇编
     /// @param inst IR指令
-    void translate_srem_32bit(Instruction * inst);
+    void translate_mod_i(Instruction * inst);
 
     /// @brief 有符号除法指令翻译为ARM64位汇编
     /// @param inst IR指令
-    void translate_sdiv_32bit(Instruction * inst);
+    void translate_div_i(Instruction * inst);
 
     /// @brief 二元操作指令翻译成ARM64汇编
     /// @param inst IR指令
@@ -144,6 +144,12 @@ protected:
     /// @param inst IR指令
     ///
     void translate_ret(Instruction * inst);
+
+    ///
+    /// @brief fptosi指令翻译成ARM64汇编
+    /// @param inst IR指令
+    ///
+    void translate_fptosi(Instruction * inst);
 
     ///
     /// @brief 输出IR指令

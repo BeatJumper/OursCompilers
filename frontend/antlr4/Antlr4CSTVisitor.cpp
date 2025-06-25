@@ -114,6 +114,9 @@ std::any MiniCCSTVisitor::visitFuncType(MiniCParser::FuncTypeContext * ctx)
     } else if (ctx->T_VOID()) {
         attr.type = BasicType::TYPE_VOID;
         attr.lineno = (int64_t) ctx->T_VOID()->getSymbol()->getLine();
+    } else if (ctx->T_FLOAT()) { // 新增float返回类型
+        attr.type = BasicType::TYPE_FLOAT;
+        attr.lineno = (int64_t) ctx->T_FLOAT()->getSymbol()->getLine();
     }
     // TODO 返回float类型的返回值
     return attr;
@@ -140,11 +143,25 @@ std::any MiniCCSTVisitor::visitFuncFParams(MiniCParser::FuncFParamsContext * ctx
 /// @return AST的节点
 std::any MiniCCSTVisitor::visitFuncFParam(MiniCParser::FuncFParamContext * ctx)
 {
+    // funcFParam: basicType T_ID (T_L_BRACKET T_R_BRACKET (T_L_BRACKET expr T_R_BRACKET)*)?
+
     // 获取形参类型
     auto typeAttr = std::any_cast<type_attr>(visitBasicType(ctx->basicType()));
 
     // 获取形参名称
     auto idNode = ast_node::New(ctx->T_ID()->getText(), (int64_t) ctx->T_ID()->getSymbol()->getLine());
+
+    // 处理数组参数的维度信息
+    if (!ctx->expr().empty()) {
+        // 这是数组参数，处理除第一维之外的维度
+        for (auto exprCtx: ctx->expr()) {
+            auto dimNode = std::any_cast<ast_node *>(visitExpr(exprCtx));
+            idNode->insert_son_node(dimNode);
+        }
+
+        // 标记为数组参数
+        typeAttr.is_array = true;
+    }
 
     // 创建形参节点
     return create_var_decl_node(typeAttr, idNode);
@@ -280,11 +297,14 @@ std::any MiniCCSTVisitor::visitReturnStatement(MiniCParser::ReturnStatementConte
 {
     // 识别的文法产生式：returnStatement -> T_RETURN expr T_SEMICOLON
 
-    // 非终结符，表达式expr遍历
-    auto exprNode = std::any_cast<ast_node *>(visitExpr(ctx->expr()));
-
-    // 创建返回节点，其孩子为Expr
-    return create_contain_node(ast_operator_type::AST_OP_RETURN, exprNode);
+    if (ctx->expr()) {
+        // 有返回值的return语句
+        auto exprNode = std::any_cast<ast_node *>(visitExpr(ctx->expr()));
+        return create_contain_node(ast_operator_type::AST_OP_RETURN, exprNode);
+    } else {
+        // 没有返回值的return语句（void函数）
+        return create_contain_node(ast_operator_type::AST_OP_RETURN);
+    }
 }
 
 /// @brief 非终结运算符expr的遍历
@@ -441,6 +461,24 @@ std::any MiniCCSTVisitor::visitPrimaryExp(MiniCParser::PrimaryExpContext * ctx)
 
         // printf("Debug: Created digit node: name='%s', value=%u\n", digitText.c_str(), val);
 
+    } else if (ctx->T_FLOAT_DIGIT()) { // 新增浮点数字面量处理
+        // 获取浮点数字面量文本
+        std::string floatText = ctx->T_FLOAT_DIGIT()->getText();
+        int64_t lineNo = (int64_t) ctx->T_FLOAT_DIGIT()->getSymbol()->getLine();
+
+        // 解析浮点数值
+        float val = 0.0f;
+        try {
+            val = std::stof(floatText);
+        } catch (const std::exception & e) {
+            printf("Error: Failed to parse float '%s' at line %ld: %s\n", floatText.c_str(), lineNo, e.what());
+            return nullptr;
+        }
+
+        // 创建浮点数字面量节点
+        node = ast_node::New(floatText, lineNo);
+        node->float_val = val;
+        node->node_type = ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT;
     } else if (ctx->lVal()) {
         // 具有左值的表达式
         // 识别 primaryExp: lVal
@@ -456,47 +494,9 @@ std::any MiniCCSTVisitor::visitPrimaryExp(MiniCParser::PrimaryExpContext * ctx)
 
 std::any MiniCCSTVisitor::visitLVal(MiniCParser::LValContext * ctx)
 {
-    // 识别文法产生式：lVal: T_ID;
+    // 识别文法产生式：lVal: T_ID (T_L_BRACKET expr T_R_BRACKET)*;
+
     // 获取ID的名字
-    auto varId = ctx->T_ID()->getText();
-
-    // 获取行号
-    int64_t lineNo = (int64_t) ctx->T_ID()->getSymbol()->getLine();
-
-    return ast_node::New(varId, lineNo);
-}
-
-std::any MiniCCSTVisitor::visitVarDecl(MiniCParser::VarDeclContext * ctx)
-{
-    // varDecl: basicType varDef (T_COMMA varDef)* T_SEMICOLON;
-
-    // 声明语句节点
-    ast_node * stmt_node = create_contain_node(ast_operator_type::AST_OP_DECL_STMT);
-
-    // 类型节点
-    type_attr typeAttr = std::any_cast<type_attr>(visitBasicType(ctx->basicType()));
-
-    for (auto & varCtx: ctx->varDef()) {
-        // 变量名节点
-        ast_node * id_node = std::any_cast<ast_node *>(visitVarDef(varCtx));
-
-        // 创建类型节点
-        ast_node * type_node = create_type_node(typeAttr);
-
-        // 创建变量定义节点
-        ast_node * decl_node = ast_node::New(ast_operator_type::AST_OP_VAR_DECL, type_node, id_node, nullptr);
-
-        // 插入到变量声明语句
-        (void) stmt_node->insert_son_node(decl_node);
-    }
-
-    return stmt_node;
-}
-
-std::any MiniCCSTVisitor::visitVarDef(MiniCParser::VarDefContext * ctx)
-{
-    // varDef: T_ID (T_ASSIGN expr)?;
-
     auto varId = ctx->T_ID()->getText();
 
     // 获取行号
@@ -505,19 +505,109 @@ std::any MiniCCSTVisitor::visitVarDef(MiniCParser::VarDefContext * ctx)
     // 创建变量名节点
     auto varNode = ast_node::New(varId, lineNo);
 
-    // 如果存在初值
-    if (ctx->expr()) {
-        // 遍历表达式节点
-        auto initExprNode = std::any_cast<ast_node *>(visitExpr(ctx->expr()));
-        // 创建赋值节点，将变量名和初值作为子节点
-        auto assignNode = ast_node::New(ast_operator_type::AST_OP_ASSIGN, varNode, initExprNode, nullptr);
+    // 处理数组下标（如果存在）
+    if (!ctx->expr().empty()) {
+        // 修复：为每个下标创建嵌套的数组访问结构
+        ast_node * currentNode = varNode;
 
-        // varNode->insert_son_node(initExprNode);
-        return assignNode;
+        for (auto exprCtx: ctx->expr()) {
+            auto indexNode = std::any_cast<ast_node *>(visitExpr(exprCtx));
+
+            // 创建新的数组访问节点，currentNode作为数组基址，indexNode作为索引
+            ast_node * arrayAccessNode =
+                ast_node::New(ast_operator_type::AST_OP_ARRAY_ACCESS, currentNode, indexNode, nullptr);
+
+            // 更新当前节点为新创建的数组访问节点
+            currentNode = arrayAccessNode;
+        }
+
+        // 返回最外层的数组访问节点
+        return currentNode;
     }
 
-    // 没有初值，直接返回变量名节点
+    // 没有数组下标，直接返回变量名节点
     return varNode;
+}
+
+std::any MiniCCSTVisitor::visitVarDecl(MiniCParser::VarDeclContext * ctx)
+{
+    // varDecl: basicType varDef (T_COMMA varDef)* T_SEMICOLON;
+
+    // 创建声明语句节点
+    ast_node * stmt_node = create_contain_node(ast_operator_type::AST_OP_DECL_STMT);
+
+    // 获取基本类型
+    type_attr baseTypeAttr = std::any_cast<type_attr>(visitBasicType(ctx->basicType()));
+
+    for (auto & varCtx: ctx->varDef()) {
+        // 获取变量定义节点和维度信息
+        auto varDefResult = std::any_cast<std::pair<ast_node *, type_attr>>(visitVarDef(varCtx));
+        ast_node * varDefNode = varDefResult.first;
+        type_attr varTypeAttr = varDefResult.second;
+
+        // 合并基本类型和数组维度信息
+        varTypeAttr.type = baseTypeAttr.type;
+        varTypeAttr.lineno = baseTypeAttr.lineno;
+
+        // 创建类型节点
+        ast_node * type_node = create_type_node(varTypeAttr);
+
+        // 创建变量声明节点，第一个子节点是类型，第二个是变量定义
+        ast_node * decl_node = ast_node::New(ast_operator_type::AST_OP_VAR_DECL, type_node, varDefNode, nullptr);
+
+        // 插入到变量声明语句
+        stmt_node->insert_son_node(decl_node);
+    }
+
+    return stmt_node;
+}
+
+std::any MiniCCSTVisitor::visitVarDef(MiniCParser::VarDefContext * ctx)
+{
+    // varDef: T_ID (T_L_BRACKET constExp T_R_BRACKET)* (T_ASSIGN initVal)?;
+
+    auto varId = ctx->T_ID()->getText();
+    int64_t lineNo = (int64_t) ctx->T_ID()->getSymbol()->getLine();
+
+    // 创建变量名节点（纯变量名，不包含维度信息）
+    auto varNode = ast_node::New(varId, lineNo);
+
+    // 创建类型属性来存储数组维度信息
+    type_attr varTypeAttr{BasicType::TYPE_VOID, lineNo, false, {}};
+
+    // 如果是数组，收集维度信息
+    if (!ctx->constExp().empty()) {
+        varTypeAttr.is_array = true;
+
+        for (auto constExpCtx: ctx->constExp()) {
+            auto dimNode = std::any_cast<ast_node *>(visitConstExp(constExpCtx));
+
+            // 从常量表达式节点获取维度值
+            if (dimNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+                varTypeAttr.dimensions.push_back(dimNode->integer_val);
+            } else {
+                // 如果不是常量，暂时使用-1表示动态大小（后续可以扩展）
+                printf("Warning: Non-constant array dimension at line %ld\n", lineNo);
+                varTypeAttr.dimensions.push_back(-1);
+            }
+
+            // 将维度节点作为变量节点的子节点保存（用于后续处理）
+            varNode->insert_son_node(dimNode);
+        }
+    }
+
+    ast_node * resultNode = varNode;
+
+    // 如果存在初值，创建赋值节点
+    if (ctx->initVal()) {
+        auto initValNode = std::any_cast<ast_node *>(visitInitVal(ctx->initVal()));
+
+        // 创建赋值节点：左边是变量名，右边是初始化值
+        resultNode = ast_node::New(ast_operator_type::AST_OP_ASSIGN, varNode, initValNode, nullptr);
+    }
+
+    // 返回节点和类型信息的配对
+    return std::make_pair(resultNode, varTypeAttr);
 }
 
 std::any MiniCCSTVisitor::visitBasicType(MiniCParser::BasicTypeContext * ctx)
@@ -527,6 +617,9 @@ std::any MiniCCSTVisitor::visitBasicType(MiniCParser::BasicTypeContext * ctx)
     if (ctx->T_INT()) {
         attr.type = BasicType::TYPE_INT;
         attr.lineno = (int64_t) ctx->T_INT()->getSymbol()->getLine();
+    } else if (ctx->T_FLOAT()) { // 新增float类型支持
+        attr.type = BasicType::TYPE_FLOAT;
+        attr.lineno = (int64_t) ctx->T_FLOAT()->getSymbol()->getLine();
     }
 
     return attr;
@@ -887,6 +980,15 @@ std::any MiniCCSTVisitor::visitConstDef(MiniCParser::ConstDefContext * ctx)
     // 创建常量名节点
     auto constNode = ast_node::New(constId, lineNo);
 
+    // 处理数组维度（如果存在）
+    if (!ctx->constExp().empty()) {
+        // 这是数组常量，需要处理维度信息
+        for (auto constExpCtx: ctx->constExp()) {
+            auto dimNode = std::any_cast<ast_node *>(visitConstExp(constExpCtx));
+            constNode->insert_son_node(dimNode);
+        }
+    }
+
     // 获取初始值
     auto initValNode = std::any_cast<ast_node *>(visitConstInitVal(ctx->constInitVal()));
 
@@ -899,9 +1001,23 @@ std::any MiniCCSTVisitor::visitConstDef(MiniCParser::ConstDefContext * ctx)
 /// @return std::any AST的节点
 std::any MiniCCSTVisitor::visitConstInitVal(MiniCParser::ConstInitValContext * ctx)
 {
-    // 识别文法产生式：constInitVal : constExp
+    // 识别文法产生式：constInitVal : constExp | T_L_BRACE (constInitVal (T_COMMA constInitVal)*)? T_R_BRACE
 
-    return visitConstExp(ctx->constExp());
+    if (ctx->constExp()) {
+        // 单个常量表达式
+        return visitConstExp(ctx->constExp());
+    } else {
+        // 数组初始化列表
+        auto initListNode = create_contain_node(ast_operator_type::AST_OP_ARRAY_INIT);
+
+        // 处理所有初始化值
+        for (auto initValCtx: ctx->constInitVal()) {
+            auto initNode = std::any_cast<ast_node *>(visitConstInitVal(initValCtx));
+            initListNode->insert_son_node(initNode);
+        }
+
+        return initListNode;
+    }
 }
 
 /// @brief 非终结符ConstExp的分析
@@ -912,4 +1028,28 @@ std::any MiniCCSTVisitor::visitConstExp(MiniCParser::ConstExpContext * ctx)
     // 识别文法产生式：constExp : addExp
 
     return visitAddExp(ctx->addExp());
+}
+
+/// @brief 非终结符InitVal的分析
+/// @param ctx CST上下文
+/// @return std::any AST的节点
+std::any MiniCCSTVisitor::visitInitVal(MiniCParser::InitValContext * ctx)
+{
+    // 识别文法产生式：initVal : expr | T_L_BRACE (initVal (T_COMMA initVal)*)? T_R_BRACE
+
+    if (ctx->expr()) {
+        // 单个表达式
+        return visitExpr(ctx->expr());
+    } else {
+        // 数组初始化列表
+        auto initListNode = create_contain_node(ast_operator_type::AST_OP_ARRAY_INIT);
+
+        // 处理所有初始化值
+        for (auto initValCtx: ctx->initVal()) {
+            auto initNode = std::any_cast<ast_node *>(visitInitVal(initValCtx));
+            initListNode->insert_son_node(initNode);
+        }
+
+        return initListNode;
+    }
 }

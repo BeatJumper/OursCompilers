@@ -110,24 +110,6 @@ public:
         return is64Bit;
     }
 
-    ///
-    /// @brief 对该Value进行Load用的寄存器编号
-    /// @return int32_t 寄存器编号
-    ///
-    int32_t getLoadRegId() override
-    {
-        return this->loadRegNo;
-    }
-
-    ///
-    /// @brief 对该Value进行Load用的寄存器编号
-    /// @return int32_t 寄存器编号
-    ///
-    void setLoadRegId(int32_t regId) override
-    {
-        this->loadRegNo = regId;
-    }
-
 private:
     ///
     /// @brief 32位整数值
@@ -143,9 +125,4 @@ private:
     /// @brief 是否是64位常量
     ///
     bool is64Bit = false;
-
-    ///
-    /// @brief 变量加载到寄存器中时对应的寄存器编号
-    ///
-    int32_t loadRegNo = -1;
 };

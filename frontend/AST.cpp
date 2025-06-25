@@ -20,6 +20,8 @@
 
 #include "AST.h"
 #include "AttrType.h"
+#include "Types/ArrayType.h"
+#include "Types/FloatType.h"
 #include "Types/IntegerType.h"
 #include "Types/VoidType.h"
 
@@ -45,6 +47,13 @@ ast_node::ast_node(digit_int_attr attr)
     : ast_node(ast_operator_type::AST_OP_LEAF_LITERAL_UINT, IntegerType::getTypeInt(), attr.lineno)
 {
     integer_val = attr.val;
+}
+
+// 添加浮点数字面量节点的构造函数
+ast_node::ast_node(digit_float_attr attr)
+    : ast_node(ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT, FloatType::getTypeFloat(), attr.lineno)
+{
+    float_val = attr.val;
 }
 
 /// @brief 针对标识符ID的叶子构造函数
@@ -138,6 +147,12 @@ ast_node * ast_node::New(digit_int_attr attr)
 {
     ast_node * node = new ast_node(attr);
 
+    return node;
+}
+
+ast_node * ast_node::New(digit_float_attr attr)
+{
+    ast_node * node = new ast_node(attr);
     return node;
 }
 
@@ -271,11 +286,31 @@ ast_node * create_contain_node(ast_operator_type node_type,
 
 Type * typeAttr2Type(type_attr & attr)
 {
+    Type * baseType = nullptr;
+
     if (attr.type == BasicType::TYPE_INT) {
-        return IntegerType::getTypeInt();
+        baseType = IntegerType::getTypeInt();
+    } else if (attr.type == BasicType::TYPE_FLOAT) {
+        baseType = FloatType::getTypeFloat();
     } else {
-        return VoidType::getType();
+        baseType = VoidType::getType();
     }
+
+    // 如果是数组类型，创建嵌套的 ArrayType
+    if (attr.is_array && !attr.dimensions.empty()) {
+        Type * currentType = baseType;
+
+        // 从最内层开始构建，逆序处理维度
+        // 例如：int[2][3] -> [2 x [3 x i32]]
+        for (int i = attr.dimensions.size() - 1; i >= 0; i--) {
+            std::vector<int> singleDim = {attr.dimensions[i]};
+            currentType = new ArrayType(currentType, singleDim);
+        }
+
+        return currentType;
+    }
+
+    return baseType;
 }
 
 /// @brief 创建类型节点

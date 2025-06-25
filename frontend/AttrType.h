@@ -16,6 +16,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 ///
 /// @brief 基本类型枚举类
@@ -35,6 +36,11 @@ typedef struct digit_int_attr {
     uint32_t val;   // 整数值
     int64_t lineno; // 行号
 } digit_int_attr;
+
+typedef struct digit_float_attr {
+    float val;      // 浮点数值
+    int64_t lineno; // 行号
+} digit_float_attr;
 
 ///
 /// @brief 词法与语法通信的单精度浮点数字面量属性
@@ -58,4 +64,6 @@ typedef struct var_id_attr {
 typedef struct type_attr {
     BasicType type; // 类型
     int64_t lineno; // 行号
+    bool is_array = false;
+    std::vector<int> dimensions; // 数组维度信息
 } type_attr;

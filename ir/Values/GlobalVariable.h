@@ -66,24 +66,6 @@ public:
     }
 
     ///
-    /// @brief 对该Value进行Load用的寄存器编号
-    /// @return int32_t 寄存器编号
-    ///
-    int32_t getLoadRegId() override
-    {
-        return this->loadRegNo;
-    }
-
-    ///
-    /// @brief 对该Value进行Load用的寄存器编号
-    /// @return int32_t 寄存器编号
-    ///
-    void setLoadRegId(int32_t regId) override
-    {
-        this->loadRegNo = regId;
-    }
-
-    ///
     /// @brief Declare指令IR显示
     /// @param str
     ///
@@ -176,11 +158,6 @@ public:
     }
 
 private:
-    ///
-    /// @brief 变量加载到寄存器中时对应的寄存器编号
-    ///
-    int32_t loadRegNo = -1;
-
     ///
     /// @brief 默认全局变量在BSS段，没有初始化，或者即使初始化过，但都值都为0
     ///

@@ -18,6 +18,7 @@
 #include "ScopeStack.h"
 #include "Common.h"
 #include "VoidType.h"
+#include "PointerType.h"
 
 Module::Module(std::string _name) : name(_name)
 {
@@ -168,6 +169,17 @@ void Module::insertGlobalValueDirectly(GlobalVariable * val)
     globalVariableMap.emplace(val->getName(), val);
     globalVariableVector.push_back(val);
 }
+void Module::insertConstFloatDirectly(ConstFloat * val)
+{
+    // 检查是否已存在相同的常量
+    for (auto existing: constFloatVector) {
+        if (existing->getVal() == val->getVal()) {
+            return; // 已存在，不重复插入
+        }
+    }
+    // 添加到常量列表
+    constFloatVector.push_back(val);
+}
 
 /// @brief Value直接插入到符号表中的全局变量中
 /// @param name Value的名称
@@ -190,6 +202,21 @@ ConstInt * Module::newConstInt(int32_t intVal)
         val = new ConstInt(intVal);
 
         insertConstIntDirectly(val);
+        constIntVector.push_back(val);
+    }
+
+    return val;
+}
+ConstFloat * Module::newConstFloat(float floatVal)
+{
+    // 查找浮点数字符串
+    ConstFloat * val = findConstFloat(floatVal);
+    if (!val) {
+        // 不存在，则创建浮点数常量Value
+        val = new ConstFloat(floatVal);
+
+        insertConstFloatDirectly(val);
+        constFloatVector.push_back(val);
     }
 
     return val;
@@ -209,6 +236,16 @@ ConstInt * Module::findConstInt(int32_t val)
     }
 
     return temp;
+}
+
+ConstFloat * Module::findConstFloat(float floatVal)
+{
+    for (auto val: constFloatVector) {
+        if (val->getVal() == floatVal) {
+            return val;
+        }
+    }
+    return nullptr;
 }
 
 /// @brief 在当前的作用域中查找，若没有查找到则创建局部变量或者全局变量。请注意不能创建临时变量
@@ -316,9 +353,17 @@ void Module::Delete()
         delete var;
     }
 
+    // 清理常量整数
+    for (auto constInt: constIntVector) {
+        delete constInt;
+    }
+
     // 相关列表清空
     globalVariableMap.clear();
     globalVariableVector.clear();
+
+    constIntMap.clear();
+    constIntVector.clear();
 
     funcMap.clear();
     funcVector.clear();
@@ -419,4 +464,68 @@ bool Module::addConstValue(Type * type, std::string name, Value * value)
     scopeStack->insertValue(value);
 
     return true;
+}
+
+/// @brief 获取i32类型
+/// @return i32类型指针
+Type * Module::getI32Type()
+{
+    return IntegerType::getTypeInt(); // 假设这返回i32类型
+}
+
+/// @brief 获取i64类型
+/// @return i64类型指针
+Type * Module::getI64Type()
+{
+    return IntegerType::getTypeLong(); // 假设这返回i64类型，如果没有需要创建
+}
+
+/// @brief 获取i8指针类型
+/// @return i8*类型指针
+Type * Module::getI8PtrType()
+{
+    // 获取i8类型并创建指针类型
+    Type * i8Type = IntegerType::getTypeChar(); // 假设这返回i8类型
+
+    // 修复：PointerType::get() 返回 const PointerType *，需要转换为 Type *
+    const PointerType * ptrType = PointerType::get(i8Type);
+    return const_cast<Type *>(static_cast<const Type *>(ptrType));
+}
+
+/// @brief 创建全局常量数组
+/// @param arrayType 数组类型
+/// @param initValues 初始化值列表
+/// @return 全局常量数组
+GlobalVariable * Module::newGlobalConstArray(ArrayType * arrayType)
+{
+    static int constArrayCounter = 0;
+    std::string name = "__const.main.arr." + std::to_string(constArrayCounter++);
+
+    GlobalVariable * constArray = new GlobalVariable(arrayType, name);
+    constArray->setConstant(true);
+    constArray->setAlignment(16);
+
+    // 使用 insertGlobalValueDirectly 方法来正确添加到全局变量列表
+    insertGlobalValueDirectly(constArray);
+
+    return constArray;
+}
+
+/// @brief 新建64位整型常量
+/// @param val 常量值
+/// @return 常量Value
+ConstInt * Module::newConstLong(int64_t val)
+{
+    ConstInt * newConst = new ConstInt(val);
+    return newConst;
+}
+
+/// @brief 新建指定类型的整型常量
+/// @param val 常量值
+/// @param type 整数类型
+/// @return 常量Value
+ConstInt * Module::newConstInt(int64_t val, Type * type)
+{
+    ConstInt * newConst = new ConstInt(type, val);
+    return newConst;
 }

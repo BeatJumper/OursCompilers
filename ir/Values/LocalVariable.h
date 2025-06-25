@@ -110,24 +110,6 @@ public:
         return offset;
     }
 
-    ///
-    /// @brief 对该Value进行Load用的寄存器编号
-    /// @return int32_t 寄存器编号
-    ///
-    int32_t getLoadRegId() override
-    {
-        return this->loadRegNo;
-    }
-
-    ///
-    /// @brief 对该Value进行Load用的寄存器编号
-    /// @return int32_t 寄存器编号
-    ///
-    void setLoadRegId(int32_t regId) override
-    {
-        this->loadRegNo = regId;
-    }
-
 private:
     ///
     /// @brief 当前变量所在作用域的层号，全局变量在第0层

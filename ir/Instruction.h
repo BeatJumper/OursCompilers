@@ -22,6 +22,12 @@ class Function;
 /// @brief IR指令操作码
 enum class IRInstOperator : std::int8_t {
 
+    /// @brief 函数入口指令，对应函数的prologue，用户栈空间分配、寄存器保护等
+    IRINST_OP_ENTRY,
+
+    /// @brief 函数出口指令，对应函数的epilogue，用于栈空间的恢复与清理、寄存器恢复等
+    IRINST_OP_EXIT,
+
     /// @brief Label指令，用于语句的跳转
     IRINST_OP_LABEL,
 
@@ -39,6 +45,17 @@ enum class IRInstOperator : std::int8_t {
 
     /// @brief 整数的除法指令，二元运算
     IRINST_OP_DIV_I,
+    /// @brief 浮点数的加法指令，二元运算
+    IRINST_OP_ADD_F,
+
+    /// @brief 浮点数的减法指令，二元运算
+    IRINST_OP_SUB_F,
+
+    /// @brief 浮点数的乘法指令，二元运算
+    IRINST_OP_MUL_F,
+
+    /// @brief 浮点数的除法指令，二元运算
+    IRINST_OP_DIV_F,
 
     /// @brief 赋值指令，一元运算
     IRINST_OP_ASSIGN,
@@ -105,6 +122,25 @@ enum class IRInstOperator : std::int8_t {
 
     /// @brief 截断指令（trunc）
     IRINST_OP_TRUNC,
+
+    /// @brief getelementptr指令
+    IRINST_OP_GEP,
+
+    /// @brief bitcast指令
+    IRINST_OP_BITCAST,
+
+    /// @brief sext指令
+    IRINST_OP_SEXT,
+
+    /// @brief memcpy指令
+    IRINST_OP_MEMCPY,
+
+    /// @brief sitofp指令（有符号整数转浮点数）
+    IRINST_OP_SITOFP,
+
+    /// @brief fptosi指令（浮点数转有符号整数）
+    IRINST_OP_FPTOSI,
+
 };
 
 ///
@@ -198,24 +234,6 @@ public:
     {
         baseRegNo = _regId;
         offset = _offset;
-    }
-
-    ///
-    /// @brief 对该Value进行Load用的寄存器编号
-    /// @return int32_t 寄存器编号
-    ///
-    int32_t getLoadRegId() override
-    {
-        return this->loadRegNo;
-    }
-
-    ///
-    /// @brief 对该Value进行Load用的寄存器编号
-    /// @return int32_t 寄存器编号
-    ///
-    void setLoadRegId(int32_t regId) override
-    {
-        this->loadRegNo = regId;
     }
 
 protected:
