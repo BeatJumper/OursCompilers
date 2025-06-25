@@ -684,6 +684,39 @@ bool IRGenerator::ir_add_or_fadd(ast_node * node)
         return false;
     }
 
+    // 常量折叠检查：如果两个操作数都是常量，直接计算结果
+    ConstInt * leftConstInt = dynamic_cast<ConstInt *>(left->val);
+    ConstInt * rightConstInt = dynamic_cast<ConstInt *>(right->val);
+    ConstFloat * leftConstFloat = dynamic_cast<ConstFloat *>(left->val);
+    ConstFloat * rightConstFloat = dynamic_cast<ConstFloat *>(right->val);
+
+    if ((leftConstInt || leftConstFloat) && (rightConstInt || rightConstFloat)) {
+        // 常量折叠：两个操作数都是常量
+        printf("Debug: Performing constant folding for addition\n");
+
+        // 如果任一操作数是浮点数，结果为浮点数
+        if (leftConstFloat || rightConstFloat) {
+            float leftVal = leftConstFloat ? leftConstFloat->getVal() : static_cast<float>(leftConstInt->getVal());
+            float rightVal = rightConstFloat ? rightConstFloat->getVal() : static_cast<float>(rightConstInt->getVal());
+            float result = leftVal + rightVal;
+
+            ConstFloat * resultConst = module->newConstFloat(result);
+            node->val = resultConst;
+            printf("Debug: Constant folding result: %f + %f = %f\n", leftVal, rightVal, result);
+            return true;
+        } else {
+            // 两个都是整数常量
+            int32_t leftVal = leftConstInt->getVal();
+            int32_t rightVal = rightConstInt->getVal();
+            int32_t result = leftVal + rightVal;
+
+            ConstInt * resultConst = module->newConstInt(result);
+            node->val = resultConst;
+            printf("Debug: Constant folding result: %d + %d = %d\n", leftVal, rightVal, result);
+            return true;
+        }
+    }
+
     // 检查操作数的值类型（如果是指针类型，获取指向的类型）
     Type * leftType = left->val->getType();
     Type * rightType = right->val->getType();
@@ -723,6 +756,39 @@ bool IRGenerator::ir_sub_or_fsub(ast_node * node)
 
     if (!left || !right || !left->val || !right->val) {
         return false;
+    }
+
+    // 常量折叠检查：如果两个操作数都是常量，直接计算结果
+    ConstInt * leftConstInt = dynamic_cast<ConstInt *>(left->val);
+    ConstInt * rightConstInt = dynamic_cast<ConstInt *>(right->val);
+    ConstFloat * leftConstFloat = dynamic_cast<ConstFloat *>(left->val);
+    ConstFloat * rightConstFloat = dynamic_cast<ConstFloat *>(right->val);
+
+    if ((leftConstInt || leftConstFloat) && (rightConstInt || rightConstFloat)) {
+        // 常量折叠：两个操作数都是常量
+        printf("Debug: Performing constant folding for subtraction\n");
+
+        // 如果任一操作数是浮点数，结果为浮点数
+        if (leftConstFloat || rightConstFloat) {
+            float leftVal = leftConstFloat ? leftConstFloat->getVal() : static_cast<float>(leftConstInt->getVal());
+            float rightVal = rightConstFloat ? rightConstFloat->getVal() : static_cast<float>(rightConstInt->getVal());
+            float result = leftVal - rightVal;
+
+            ConstFloat * resultConst = module->newConstFloat(result);
+            node->val = resultConst;
+            printf("Debug: Constant folding result: %f - %f = %f\n", leftVal, rightVal, result);
+            return true;
+        } else {
+            // 两个都是整数常量
+            int32_t leftVal = leftConstInt->getVal();
+            int32_t rightVal = rightConstInt->getVal();
+            int32_t result = leftVal - rightVal;
+
+            ConstInt * resultConst = module->newConstInt(result);
+            node->val = resultConst;
+            printf("Debug: Constant folding result: %d - %d = %d\n", leftVal, rightVal, result);
+            return true;
+        }
     }
 
     // 检查操作数的值类型（如果是指针类型，获取指向的类型）
@@ -766,6 +832,39 @@ bool IRGenerator::ir_mul_or_fmul(ast_node * node)
         return false;
     }
 
+    // 常量折叠检查：如果两个操作数都是常量，直接计算结果
+    ConstInt * leftConstInt = dynamic_cast<ConstInt *>(left->val);
+    ConstInt * rightConstInt = dynamic_cast<ConstInt *>(right->val);
+    ConstFloat * leftConstFloat = dynamic_cast<ConstFloat *>(left->val);
+    ConstFloat * rightConstFloat = dynamic_cast<ConstFloat *>(right->val);
+
+    if ((leftConstInt || leftConstFloat) && (rightConstInt || rightConstFloat)) {
+        // 常量折叠：两个操作数都是常量
+        printf("Debug: Performing constant folding for multiplication\n");
+
+        // 如果任一操作数是浮点数，结果为浮点数
+        if (leftConstFloat || rightConstFloat) {
+            float leftVal = leftConstFloat ? leftConstFloat->getVal() : static_cast<float>(leftConstInt->getVal());
+            float rightVal = rightConstFloat ? rightConstFloat->getVal() : static_cast<float>(rightConstInt->getVal());
+            float result = leftVal * rightVal;
+
+            ConstFloat * resultConst = module->newConstFloat(result);
+            node->val = resultConst;
+            printf("Debug: Constant folding result: %f * %f = %f\n", leftVal, rightVal, result);
+            return true;
+        } else {
+            // 两个都是整数常量
+            int32_t leftVal = leftConstInt->getVal();
+            int32_t rightVal = rightConstInt->getVal();
+            int32_t result = leftVal * rightVal;
+
+            ConstInt * resultConst = module->newConstInt(result);
+            node->val = resultConst;
+            printf("Debug: Constant folding result: %d * %d = %d\n", leftVal, rightVal, result);
+            return true;
+        }
+    }
+
     // 检查操作数的值类型（如果是指针类型，获取指向的类型）
     Type * leftType = left->val->getType();
     Type * rightType = right->val->getType();
@@ -803,6 +902,45 @@ bool IRGenerator::ir_div_or_fdiv(ast_node * node)
 
     if (!left || !right || !left->val || !right->val) {
         return false;
+    }
+
+    // 常量折叠检查：如果两个操作数都是常量，直接计算结果
+    ConstInt * leftConstInt = dynamic_cast<ConstInt *>(left->val);
+    ConstInt * rightConstInt = dynamic_cast<ConstInt *>(right->val);
+    ConstFloat * leftConstFloat = dynamic_cast<ConstFloat *>(left->val);
+    ConstFloat * rightConstFloat = dynamic_cast<ConstFloat *>(right->val);
+
+    if ((leftConstInt || leftConstFloat) && (rightConstInt || rightConstFloat)) {
+        // 常量折叠：两个操作数都是常量
+        printf("Debug: Performing constant folding for division\n");
+
+        // 检查除零错误
+        if ((rightConstInt && rightConstInt->getVal() == 0) || (rightConstFloat && rightConstFloat->getVal() == 0.0f)) {
+            printf("Error: Division by zero in constant folding\n");
+            return false;
+        }
+
+        // 如果任一操作数是浮点数，结果为浮点数
+        if (leftConstFloat || rightConstFloat) {
+            float leftVal = leftConstFloat ? leftConstFloat->getVal() : static_cast<float>(leftConstInt->getVal());
+            float rightVal = rightConstFloat ? rightConstFloat->getVal() : static_cast<float>(rightConstInt->getVal());
+            float result = leftVal / rightVal;
+
+            ConstFloat * resultConst = module->newConstFloat(result);
+            node->val = resultConst;
+            printf("Debug: Constant folding result: %f / %f = %f\n", leftVal, rightVal, result);
+            return true;
+        } else {
+            // 两个都是整数常量
+            int32_t leftVal = leftConstInt->getVal();
+            int32_t rightVal = rightConstInt->getVal();
+            int32_t result = leftVal / rightVal;
+
+            ConstInt * resultConst = module->newConstInt(result);
+            node->val = resultConst;
+            printf("Debug: Constant folding result: %d / %d = %d\n", leftVal, rightVal, result);
+            return true;
+        }
     }
 
     // 检查操作数的值类型（如果是指针类型，获取指向的类型）
