@@ -19,6 +19,7 @@
 #include "Common.h"
 #include "VoidType.h"
 #include "PointerType.h"
+#include "FloatType.h"
 
 Module::Module(std::string _name) : name(_name)
 {
@@ -28,46 +29,56 @@ Module::Module(std::string _name) : name(_name)
     // 确保全局变量作用域入栈，这样全局变量才可以加入
     scopeStack->enterScope();
 
-    // 加入内置函数putint
-    (void) newFunction("putint", VoidType::getType(), {new FormalParam{IntegerType::getTypeInt(), ""}}, true);
+    // === I/O 函数 ===
+
+    // 1) int getint()
     (void) newFunction("getint", IntegerType::getTypeInt(), {}, true);
 
     // 2) int getch()
     (void) newFunction("getch", IntegerType::getTypeInt(), {}, true);
 
-    // 4) int getarray(int[]) - 数组参数需要特殊处理
-    // TODO: 需要实现数组类型支持
-    // (void) newFunction("getarray", IntegerType::getTypeInt(), {new FormalParam{ArrayType::getType(), ""}}, true);
+    // 3) float getfloat()
+    (void) newFunction("getfloat", FloatType::getTypeFloat(), {}, true);
 
-    // 5) int getfarray(float[]) - 浮点数组参数
-    // TODO: 需要实现浮点数组类型支持
+    // 4) int getarray(int[]) - 数组参数使用指针类型
+    Type * intPtrType = const_cast<Type *>(static_cast<const Type *>(PointerType::get(IntegerType::getTypeInt())));
+    (void) newFunction("getarray", IntegerType::getTypeInt(), {new FormalParam{intPtrType, ""}}, true);
+
+    // 5) int getfarray(float[]) - 浮点数组参数使用指针类型
+    Type * floatPtrType = const_cast<Type *>(static_cast<const Type *>(PointerType::get(FloatType::getTypeFloat())));
+    (void) newFunction("getfarray", IntegerType::getTypeInt(), {new FormalParam{floatPtrType, ""}}, true);
+
+    // 6) void putint(int)
+    (void) newFunction("putint", VoidType::getType(), {new FormalParam{IntegerType::getTypeInt(), ""}}, true);
 
     // 7) void putch(int)
     (void) newFunction("putch", VoidType::getType(), {new FormalParam{IntegerType::getTypeInt(), ""}}, true);
 
-    // 8) void putfloat(float) (如果支持float类型)
-    // (void) newFunction("putfloat", VoidType::getType(), {new FormalParam{FloatType::getType(), ""}}, true);
+    // 8) void putfloat(float)
+    (void) newFunction("putfloat", VoidType::getType(), {new FormalParam{FloatType::getTypeFloat(), ""}}, true);
 
-    // 9) void putarray(int, int[]) - 多参数函数
-    // TODO: 需要实现数组类型支持
-    // (void) newFunction("putarray", VoidType::getType(), {
-    //     new FormalParam{IntegerType::getTypeInt(), ""},
-    //     new FormalParam{ArrayType::getType(), ""}
-    // }, true);
+    // 9) void putarray(int, int[])
+    (void) newFunction("putarray",
+                       VoidType::getType(),
+                       {new FormalParam{IntegerType::getTypeInt(), ""}, new FormalParam{intPtrType, ""}},
+                       true);
 
-    // 10) void putfarray(int, float[]) - 浮点数组函数
-    // TODO: 需要实现浮点数组类型支持
+    // 10) void putfarray(int, float[])
+    (void) newFunction("putfarray",
+                       VoidType::getType(),
+                       {new FormalParam{IntegerType::getTypeInt(), ""}, new FormalParam{floatPtrType, ""}},
+                       true);
 
-    // 11) void putf(char*, ...) - 可变参数函数，需要特殊处理
-    // TODO: 需要实现字符串和可变参数支持
+    // 11) void putf(char*, ...) - 使用i8*类型表示字符串
+    Type * i8PtrType = getI8PtrType();
+    (void) newFunction("putf", VoidType::getType(), {new FormalParam{i8PtrType, ""}}, true);
 
     // === 计时函数 ===
 
-    // 12) void starttime()
-    (void) newFunction("starttime", VoidType::getType(), {}, true);
-
-    // 13) void stoptime()
-    (void) newFunction("stoptime", VoidType::getType(), {}, true);
+    // 真实的计时函数：_sysy_starttime(int lineno) 和 _sysy_stoptime(int lineno)
+    // starttime() 和 stoptime() 是宏，会展开为对这些函数的调用
+    (void) newFunction("_sysy_starttime", VoidType::getType(), {new FormalParam{IntegerType::getTypeInt(), ""}}, true);
+    (void) newFunction("_sysy_stoptime", VoidType::getType(), {new FormalParam{IntegerType::getTypeInt(), ""}}, true);
 }
 
 /// @brief 进入作用域，如进入函数体块、语句块等
