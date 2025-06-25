@@ -56,14 +56,15 @@ public:
 
 private:
     ///
-    /// @brief 格式化浮点数输出
+    /// @brief 格式化浮点数输出（LLVM IR格式）
     /// @param val 浮点数值
     /// @return std::string
     ///
     static std::string formatFloat(float val)
     {
         char buffer[32];
-        snprintf(buffer, sizeof(buffer), "%g", val); // 自动处理尾随零
+        // 使用科学计数法格式，这是LLVM IR要求的格式
+        snprintf(buffer, sizeof(buffer), "%.6e", val);
         return buffer;
     }
 
