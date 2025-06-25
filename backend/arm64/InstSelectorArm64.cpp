@@ -84,6 +84,9 @@ void InstSelectorArm64::run()
     for (auto inst: ir) {
         // 逐个指令进行翻译
         if (!inst->isDead()) {
+            std::string s;
+            inst->toString(s);
+            std::cout << s << std::endl;
             translate(inst);
             printf("第%d条指令翻译成功\n", i);
             i++;
@@ -474,14 +477,18 @@ void InstSelectorArm64::translate_br(Instruction * inst)
 /// @brief 栈分配指令翻译成ARM64位汇编
 /// @param inst
 ///
-void InstSelectorArm64::translate_alloca(Instruction * inst)
+void InstSelectorArm64::translate_alloca(Instruction * __inst)
 {
     // 在ARM64中，栈空间在函数入口处一次性分配
     // alloca指令在栈分配阶段已处理（stackAlloc函数中）
     // 此处不需要生成实际汇编指令，仅需确保变量已在栈帧中分配空间
 
     // 获取alloca指令的目标变量（即分配的栈空间地址）
-    Value * result = inst;
+    AllocaInstruction * inst = dynamic_cast<AllocaInstruction *>(__inst);
+    assert(inst);
+    // LocalVariable * result = dynamic_cast<LocalVariable *>(inst->getptr());
+    LocalVariable * result = dynamic_cast<LocalVariable *>(inst->getOperand(0));
+    assert(result);
 
     // 验证变量是否已在栈上分配空间
     int32_t baseRegId;

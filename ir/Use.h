@@ -18,6 +18,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <iostream>
 
 class User;
 class Value;

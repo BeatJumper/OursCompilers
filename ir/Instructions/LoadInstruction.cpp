@@ -5,11 +5,14 @@ LoadInstruction::LoadInstruction(Function * _func, Value * _result, Value * _ptr
 {
     addOperand(_result);
     addOperand(_ptr);
+
+    // ptr = _ptr;
+    //  assert(ptr);
 }
 
 void LoadInstruction::toString(std::string & str)
 {
-    // Value * result = getOperand(0);
+    Value * result = getOperand(0);
     Value * ptr = getOperand(1);
     str = getIRName() + " = load " + getType()->toString() + ", " + ptr->getType()->toString() + "* " +
           ptr->getIRName() + ", align " + std::to_string(align);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Instruction.h"
+#include "LocalVariable.h"
 
 ///
 /// @brief AllocaInstruction class

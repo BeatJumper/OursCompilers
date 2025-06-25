@@ -20,6 +20,7 @@
 #include "MoveInstruction.h"
 #include "Instruction.h"
 #include "InterferenceGraph.h"
+#include "AllocaInstruction.h"
 
 /// @brief 构造函数
 /// @param tab 符号表
@@ -216,6 +217,10 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
 
     // 主要染色过程（不断尝试染色直至成功）
     while (true) {
+        // 为局部变量和临时变量在栈内分配空间，指定偏移，进行栈空间的分配
+        stackAlloc(func);
+        printf("为局部变量和临时变量在栈内分配空间\n");
+
         // 创建干涉图
         InterferenceGraph * graph_ig = new InterferenceGraph(func);
 
@@ -229,9 +234,9 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
             // assert(graph_ig->node_set.size());
             for (node_IG * node: graph_ig->node_set) {
                 // assert(node->color != -1);
-                std::cout << node->color << std::endl;
-                node->val->setLoadRegId(InterferenceGraph::ColorToRegId(node->color));
-                std::cout << node->val->getLoadRegId() << std::endl;
+                std::cout << InterferenceGraph::ColorToRegId(node->color) << std::endl;
+                node->val->setRegId(InterferenceGraph::ColorToRegId(node->color));
+                std::cout << node->val->getRegId() << std::endl;
             }
             break;
         } else {
@@ -240,9 +245,6 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
         }
     }
 
-    // 为局部变量和临时变量在栈内分配空间，指定偏移，进行栈空间的分配
-    stackAlloc(func);
-    printf("为局部变量和临时变量在栈内分配空间\n");
     // 函数形参要求前8个寄存器分配，后面的参数采用栈传递，实现实参的值传递给形参
     // 这一步是必须的
     adjustFormalParamInsts(func);
@@ -400,6 +402,7 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
 
     int64_t sp_esp = 0;
 
+    /*
     // 只处理未分配到寄存器的局部变量
     for (auto local: func->getVarValues()) {
         if (local->getRegId() != -1) {
@@ -410,19 +413,18 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
         local->setMemoryAddr(ARM64_FP_REG_NO, -sp_esp);
         sp_esp += local->getType()->getSize();
     }
+    */
 
-    /*
     printf("开始处理Alloca\n");
     // 遍历指令中的alloca结果
-    for (auto inst: func->getInterCode().getInsts()) {
-        if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
+    for (auto inst1: func->getInterCode().getInsts()) {
+        if (Instanceof(inst, AllocaInstruction *, inst1)) {
+            LocalVariable * ptr = dynamic_cast<LocalVariable *>(inst->getOperand(0));
+            assert(!ptr->getMemoryAddr());
             // 确保alloca的结果变量被分配空间
-            Value * result = inst->getOperand(0);
-            LocalVariable * localResult = dynamic_cast<LocalVariable *>(result);
-
-            if (!localResult->getMemoryAddr()) {
+            if (!ptr->getMemoryAddr()) {
                 // 获取分配大小（默认为指针大小）
-                int64_t size = localResult->getType()->getSize();
+                int64_t size = ptr->getType()->getSize();
                 if (size == 0) {
                     size = 8; // 默认指针大小
                 }
@@ -431,15 +433,19 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
                 size = (size + 7) & ~7;
 
                 // 分配栈空间
-                sp_esp -= size; // 栈向下增长
-                localResult->setMemoryAddr(ARM64_FP_REG_NO, sp_esp);
+                sp_esp += size; // 栈向下增长
+                ptr->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
+                int a;
+                int64_t b;
+                assert(ptr->getMemoryAddr(&a, &b));
+                std::cout << "栈内存分配给" << ptr->getName().c_str() << std::endl;
             }
         }
-
+		
         // ... 其他类型指令处理 ...
     }
-    */
 
+    /*
     // 遍历指令中临时变量
     for (auto inst: func->getInterCode().getInsts()) {
 
@@ -457,6 +463,7 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
             sp_esp += size;
         }
     }
+    */
 
     // 设置函数的最大栈帧深度，在加上实参内存传值的空间
     // 请注意若支持浮点数，则必须保持栈内空间8字节对齐

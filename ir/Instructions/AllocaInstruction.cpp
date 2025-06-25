@@ -21,11 +21,14 @@ AllocaInstruction::AllocaInstruction(Function * _func, Value * _result, Type * _
     : Instruction(_func, IRInstOperator::IRINST_OP_ALLOCA, _type), align(_align)
 {
     addOperand(_result);
+    // is_leaked = true;
+    // ptr = _result;
 }
 
 void AllocaInstruction::toString(std::string & str)
 {
     Value * result = getOperand(0);
+    // Value * result = ptr;
     str = result->getIRName() + " = alloca " + getType()->toString() + ", align " + std::to_string(align);
 
     // 添加分号和注释，显示变量名字

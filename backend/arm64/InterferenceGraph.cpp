@@ -78,12 +78,14 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
         node_set.insert(newnode);
         // 已经提前指定了寄存器的Value对应的干涉图节点应该预先染色
         newnode->color = val->getRegId();
+        // printf("newnode->color = val->getRegId(); %d\n", val->getRegId());
         if (newnode->color == -1) {
             uncolored_node_set.insert(newnode);
         }
     }
+    // std::cout <<　uncolored_node_set.size() << std::endl;
 
-    //扫描函数里每条指令，获取每个时刻的活跃变量集合
+    // 扫描函数里每条指令，获取每个时刻的活跃变量集合
     for (Node_CFG * node_cfg: graph->get_node_list()) {
         for (Node_Dataflow * node_data: node_cfg->get_dataflow_list()) {
             std::string s;
@@ -93,10 +95,15 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
             // assert(node_data->liveOUT.size());
             // assert(node_data->def_set.size());
             std::set<Value *> value_occupy = node_data->liveOUT;
+            std::cout << node_data->liveIN.size() << std::endl;
             merge_set(value_occupy, node_data->def_set);
-
+            std::cout << "合并完了" << std::endl;
             // assert(value_occupy.size() > 1);
-
+            std::cout << "size of def_set:" << node_data->def_set.size() << std::endl;
+            printset(node_data->def_set);
+            std::cout << "size of use_set:" << node_data->use_set.size() << std::endl;
+            printset(node_data->use_set);
+            std::cout << "size of value_occupy:" << value_occupy.size() << std::endl;
             // 这些不同的量两两之间都是互斥的，不能在同一寄存器
             FOR_EACH_PAIR_IN_SET(value_occupy)
             {
@@ -105,8 +112,11 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
                     continue;
                 }
                 // 因此在干涉图中连上一条边
+                // assert(value_to_ig[*it1]);
                 add_edge(value_to_ig[*it1], value_to_ig[*it2]);
+                printf("已经加边\n");
             }
+            std::cout << "干涉边添加完毕" << std::endl;
         }
     }
 }
@@ -172,8 +182,10 @@ static bool welsh_powell(InterferenceGraph * graph, int color_size)
         return a->degree() > b->degree();
     });
 
-    // 按照某序列依次给每个节点染上目前能染的最小编号颜色
-    // 时间复杂度：O(m + n * min(c,n))，m为边数，c为颜色数，n为节点数
+    // assert(remain_nodes.empty());
+    //  std::cout << "最大度数" << remain_nodes[0]->degree() << std::endl;
+    //   按照某序列依次给每个节点染上目前能染的最小编号颜色
+    //   时间复杂度：O(m + n * min(c,n))，m为边数，c为颜色数，n为节点数
     for (node_IG * node: remain_nodes) {
 
         // 尝试染上目前能染的最小编号颜色
@@ -246,11 +258,13 @@ bool InterferenceGraph::color_graph(InterferenceGraph * graph, int color_size)
     }
 
     // 然后，恢复小度节点并对这些小度节点着色
+    // assert(removed_nodes.size() == 15);
     while (!removed_nodes.empty()) {
         node_IG * node = removed_nodes.top();
         removed_nodes.pop();
         graph->restore_node(node);
         if (suc) {
+            // std::cout << node->neighbors.size() << std::endl;
             node->color = least_color_for_node(node, color_size);
             // assert(node->color != -1);
         }

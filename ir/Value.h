@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <string>
 
+#include <cassert>
 #include "Use.h"
 #include "Type.h"
 
@@ -49,7 +50,7 @@ protected:
     ///
     std::vector<Use *> uses;
 
-    int regId = -1;
+    int32_t regId = -1;
 
     /// @brief 变量是否是溢出到内存的
     bool is_leaked = false;

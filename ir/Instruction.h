@@ -165,6 +165,7 @@ public:
     ///
     int32_t getRegId() override
     {
+        std::cout << "getRegId() = " << regId << std::endl;
         return regId;
     }
 
@@ -241,10 +242,6 @@ protected:
     /// @brief 当前指令属于哪个函数
     ///
     Function * func = nullptr;
-
-    ///
-    /// @brief 寄存器编号，-1表示没有分配寄存器，大于等于0代表是寄存器型Value
-    int32_t regId = -1;
 
     ///
     /// @brief 变量在栈内的偏移量，对于全局变量默认为0，临时变量没有意义

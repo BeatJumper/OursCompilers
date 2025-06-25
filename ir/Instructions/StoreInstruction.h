@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Instruction.h"
+#include "AllocaInstruction.h"
 
 class StoreInstruction : public Instruction {
 public:
@@ -9,4 +10,5 @@ public:
 
 private:
     int align;
+    Value * ptr;
 };

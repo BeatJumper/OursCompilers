@@ -4,6 +4,9 @@
 #include "Liveness.h"
 #include <cassert>
 #include "StackLdrInstruction.h"
+#include "AllocaInstruction.h"
+#include "StoreInstruction.h"
+#include "LoadInstruction.h"
 
 ControlFlowGraph::ControlFlowGraph(Function * func)
 {
@@ -67,11 +70,44 @@ Node_CFG ** Node_CFG::get_next_nodes()
 
 Node_Dataflow::Node_Dataflow(Instruction * _inst) : inst(_inst)
 {
-    def_set.insert(inst);
+    /*
+    // 如果是void的返回值，则返回值不占用寄存器
+    if (inst->hasResultValue()) {
+        def_set.insert(inst);
+    }
+
     for (auto usee: inst->getOperandsValue()) {
         if (def_set.count(usee) == 0) {
             // use集中不能包含刚刚def的元素
             use_set.insert(usee);
+        }
+    }
+    */
+    /*
+     * 这里添加一系列指令类型检测的原因：
+     * 有的指令把不产生数据流的变量也存进了操作数，
+     * 同时有的指令的返回值不是他自己的Instruction*
+     * ，所以只能特判。
+     */
+    printf("产生数据流节点\n");
+    if (Instanceof(inst, AllocaInstruction *, _inst)) {
+        // Alloc指令没有直接数据流，所以不做任何事
+    } else if (Instanceof(inst, StoreInstruction *, _inst)) {
+        use_set.insert(inst->getOperand(0));
+    } else if (Instanceof(inst, LoadInstruction *, _inst)) {
+        def_set.insert(inst->getOperand(0));
+    } else if (Instanceof(inst, Instruction *, _inst)) {
+        // printf("其它指令\n");
+        //  Instanceof(inst, Instruction *, _inst);
+        if (inst->hasResultValue()) {
+            def_set.insert(inst);
+        }
+
+        for (auto usee: inst->getOperandsValue()) {
+            if (def_set.count(usee) == 0) {
+                // use集中不能包含刚刚def的元素
+                use_set.insert(usee);
+            }
         }
     }
 }
@@ -109,8 +145,9 @@ Node_CFG::Node_CFG(ControlFlowGraph * _graph, InterCode * BasicIRBlock)
         inst->toString(s);
         std::cout << s << "\n";
     }
-    auto insts = BasicIRBlock->getInsts();
 
+    /*
+    auto insts = BasicIRBlock->getInsts();
     // 遍历，寻找溢出变量并处理
     for (int i = 0; i < insts.size();) {
         Instruction * inst = insts[i];
@@ -131,6 +168,7 @@ Node_CFG::Node_CFG(ControlFlowGraph * _graph, InterCode * BasicIRBlock)
         }
         i++;
     }
+    */
 
     for (Instruction * inst: (BasicIRBlock->getInsts())) {
         // 添加语句对应的数据流节点

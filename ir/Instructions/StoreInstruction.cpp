@@ -5,6 +5,8 @@ StoreInstruction::StoreInstruction(Function * _func, Value * _value, Value * _pt
     : Instruction(_func, IRInstOperator::IRINST_OP_STORE, VoidType::getType()), align(_align)
 {
     addOperand(_value);
+    // ptr = _ptr;
+    //  assert(ptr);
     addOperand(_ptr);
 }
 
