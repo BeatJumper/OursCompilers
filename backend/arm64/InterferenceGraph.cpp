@@ -70,9 +70,17 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
 {
     // 从Value到干涉图节点的映射
     std::map<Value *, node_IG *> value_to_ig;
+    std::set<Value *> all_value_in_cfg;
+
+    for (Node_CFG * node: graph->get_node_list()) {
+        for (Node_Dataflow * node_data: node->get_dataflow_list()) {
+            merge_set(all_value_in_cfg, node_data->def_set);
+            merge_set(all_value_in_cfg, node_data->use_set);
+        }
+    }
 
     // 为控制流图中每个Value都创建一个干涉图节点
-    for (Value * val: graph->get_value_list()) {
+    for (Value * val: all_value_in_cfg) {
         node_IG * newnode = new node_IG(val);
         value_to_ig[val] = newnode;
         node_set.insert(newnode);
@@ -94,16 +102,24 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
             // 某个指令位置下活跃着的量的集合（LiveOUT与def之并）
             // assert(node_data->liveOUT.size());
             // assert(node_data->def_set.size());
-            std::set<Value *> value_occupy = node_data->liveOUT;
-            std::cout << node_data->liveIN.size() << std::endl;
-            merge_set(value_occupy, node_data->def_set);
-            std::cout << "合并完了" << std::endl;
-            // assert(value_occupy.size() > 1);
+
+            std::set<Value *> value_occupy = node_data->liveIN;
+            /*
+            std::cout << "size of LIVE_IN:" << node_data->liveIN.size() << std::endl;
+            printset(node_data->liveIN);
+            std::cout << "size of LIVE_OUT:" << node_data->liveOUT.size() << std::endl;
+            printset(node_data->liveOUT);
+            */
+            // merge_set(value_occupy, node_data->def_set);
+            // std::cout << "合并完了" << std::endl;
+            //  assert(value_occupy.size() > 1);
+            /*
             std::cout << "size of def_set:" << node_data->def_set.size() << std::endl;
             printset(node_data->def_set);
             std::cout << "size of use_set:" << node_data->use_set.size() << std::endl;
             printset(node_data->use_set);
             std::cout << "size of value_occupy:" << value_occupy.size() << std::endl;
+            */
             // 这些不同的量两两之间都是互斥的，不能在同一寄存器
             FOR_EACH_PAIR_IN_SET(value_occupy)
             {
@@ -112,7 +128,10 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
                     continue;
                 }
                 // 因此在干涉图中连上一条边
-                // assert(value_to_ig[*it1]);
+                printval(*it1);
+                printval(*it2);
+                assert(value_to_ig[*it1]);
+                assert(value_to_ig[*it2]);
                 add_edge(value_to_ig[*it1], value_to_ig[*it2]);
                 printf("已经加边\n");
             }

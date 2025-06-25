@@ -12,10 +12,19 @@
 class ControlFlowGraph;
 struct Node_Dataflow;
 
+static void printval(Value * x)
+{
+    std::cout << x->getIRName() << std::endl;
+    if (Instanceof(y, Instruction *, x)) {
+        std::string s;
+        y->toString(s);
+        std::cout << s << std::endl;
+    }
+}
 static void printset(std::set<Value *> & S)
 {
     for (auto x: S) {
-        std::cout << x << " ";
+        printval(x);
     }
     std::cout << std::endl;
 }
@@ -99,9 +108,11 @@ public:
     /// @return 节点表
     std::vector<Node_CFG *> & get_node_list();
 
+    /*
     /// @brief Value表的getter
     /// @return Value表
     std::set<Value *> & get_value_list();
+    */
 
     /// @brief 所属函数的getter
     /// @return 所属函数的Function类指针

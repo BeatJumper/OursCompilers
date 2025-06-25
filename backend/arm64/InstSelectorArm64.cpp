@@ -225,10 +225,14 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
     Value * result = inst;
     Value * arg1 = inst->getOperand(0);
     Value * arg2 = inst->getOperand(1);
-
+    /*
     int32_t arg1_reg_no = arg1->getLoadRegId();
     int32_t arg2_reg_no = arg2->getLoadRegId();
     int32_t result_reg_no = inst->getLoadRegId();
+    */
+    int32_t arg1_reg_no = arg1->getRegId();
+    int32_t arg2_reg_no = arg2->getRegId();
+    int32_t result_reg_no = inst->getRegId();
     int32_t load_result_reg_no, load_arg1_reg_no, load_arg2_reg_no;
 
     // 看arg1是否是寄存器，若是则寄存器寻址，否则要load变量到寄存器中
@@ -587,7 +591,7 @@ void InstSelectorArm64::translate_store(Instruction * inst)
     Value * arg1 = inst->getOperand(0);
     Value * arg2 = inst->getOperand(1);
 
-    int32_t arg1_regId = arg1->getLoadRegId();
+    int32_t arg1_regId = arg1->getRegId();
 
     if (arg1_regId != -1) {
         // 寄存器 => 内存

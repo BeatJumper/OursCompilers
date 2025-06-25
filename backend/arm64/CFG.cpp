@@ -95,7 +95,7 @@ Node_Dataflow::Node_Dataflow(Instruction * _inst) : inst(_inst)
     } else if (Instanceof(inst, StoreInstruction *, _inst)) {
         use_set.insert(inst->getOperand(0));
     } else if (Instanceof(inst, LoadInstruction *, _inst)) {
-        def_set.insert(inst->getOperand(0));
+        def_set.insert(inst);
     } else if (Instanceof(inst, Instruction *, _inst)) {
         // printf("其它指令\n");
         //  Instanceof(inst, Instruction *, _inst);
@@ -117,10 +117,12 @@ std::vector<Node_Dataflow *> & Node_CFG::get_dataflow_list()
     return dataflow_list;
 }
 
+/*
 std::set<Value *> & ControlFlowGraph::get_value_list()
 {
     return value_list;
 }
+*/
 
 bool ControlFlowGraph::add_label_for_CFG(LabelInstruction * label, Node_CFG * node)
 {
@@ -174,8 +176,12 @@ Node_CFG::Node_CFG(ControlFlowGraph * _graph, InterCode * BasicIRBlock)
         // 添加语句对应的数据流节点
         dataflow_list.push_back(new Node_Dataflow(inst));
 
+        // get_value_list()方法弃用
+        /*
         // 记录到Value表
         _graph->get_value_list().insert(inst);
+        */
+
         switch (inst->getOp()) {
             case IRInstOperator::IRINST_OP_GOTO: {
                 // 无条件跳转指令的目标Label名

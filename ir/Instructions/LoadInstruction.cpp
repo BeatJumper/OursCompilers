@@ -1,4 +1,5 @@
 #include "LoadInstruction.h"
+#include "VoidType.h"
 
 LoadInstruction::LoadInstruction(Function * _func, Value * _result, Value * _ptr, int _align)
     : Instruction(_func, IRInstOperator::IRINST_OP_LOAD, _result->getType()), align(_align)
