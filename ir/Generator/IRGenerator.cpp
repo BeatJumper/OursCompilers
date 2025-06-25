@@ -2933,10 +2933,20 @@ bool IRGenerator::ir_array_init(ast_node * node)
            node->sons.size(),
            elementType ? elementType->toString().c_str() : "null");
 
+    // 确定内层元素的类型
+    Type * innerElementType = elementType;
+    if (elementType && elementType->isArrayType()) {
+        // 如果当前类型是数组类型，获取其元素类型作为内层类型
+        const ArrayType * arrType = static_cast<const ArrayType *>(elementType);
+        innerElementType = const_cast<Type *>(arrType->getElementType());
+        printf("Debug: Inner element type = %s\n", innerElementType->toString().c_str());
+    }
+
     for (auto son: node->sons) {
         if (son->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
-            // 嵌套的数组初始化列表 - 传递相同的元素类型
-            son->type = elementType;
+            // 嵌套的数组初始化列表 - 传递内层元素类型
+            son->type = innerElementType;
+            printf("Debug: Setting nested array init type to %s\n", innerElementType->toString().c_str());
         }
 
         if (!ir_visit_ast_node(son)) {
@@ -2976,9 +2986,9 @@ bool IRGenerator::ir_array_init(ast_node * node)
     } else {
         // 一维数组：子元素是基础类型常量
         std::vector<int> dimensions = {static_cast<int>(initValues.size())};
-        arrayType = new ArrayType(elementType, dimensions);
+        arrayType = new ArrayType(innerElementType, dimensions);
 
-        printf("Debug: Created simple array type [%d x %s]\n", dimensions[0], elementType->toString().c_str());
+        printf("Debug: Created simple array type [%d x %s]\n", dimensions[0], innerElementType->toString().c_str());
     }
 
     // 创建带有完整初始值的全局常量数组

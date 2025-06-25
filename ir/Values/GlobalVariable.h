@@ -112,6 +112,9 @@ public:
                     str += "i32 " + std::to_string(constInt->getVal());
                 } else if (ConstFloat * constFloat = dynamic_cast<ConstFloat *>(initValueList[i])) {
                     str += "float " + constFloat->getIRName();
+                } else if (GlobalVariable * globalVar = dynamic_cast<GlobalVariable *>(initValueList[i])) {
+                    // 嵌套的全局常量数组，输出其类型和引用
+                    str += globalVar->getType()->toString() + " " + globalVar->getIRName();
                 } else {
                     str += "i32 0";
                 }
