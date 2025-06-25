@@ -313,6 +313,44 @@ Type * typeAttr2Type(type_attr & attr)
     return baseType;
 }
 
+/// @brief 将类型属性转换为函数参数类型（数组转指针）
+/// @param attr 类型属性
+/// @return 转换后的类型
+Type * typeAttr2ParamType(type_attr & attr)
+{
+    Type * baseType = nullptr;
+
+    if (attr.type == BasicType::TYPE_INT) {
+        baseType = IntegerType::getTypeInt();
+    } else if (attr.type == BasicType::TYPE_FLOAT) {
+        baseType = FloatType::getTypeFloat();
+    } else {
+        baseType = VoidType::getType();
+    }
+
+    // 如果是数组参数，转换为指针类型
+    if (attr.is_array) {
+        if (attr.dimensions.empty()) {
+            // 一维数组参数：int arr[] -> i32*
+            return new PointerType(baseType);
+        } else {
+            // 多维数组参数：int matrix[][4] -> [4 x i32]*
+            Type * currentType = baseType;
+
+            // 从最内层开始构建，逆序处理维度
+            for (int i = attr.dimensions.size() - 1; i >= 0; i--) {
+                std::vector<int> singleDim = {attr.dimensions[i]};
+                currentType = new ArrayType(currentType, singleDim);
+            }
+
+            // 最外层转换为指针
+            return new PointerType(currentType);
+        }
+    }
+
+    return baseType;
+}
+
 /// @brief 创建类型节点
 /// @param type 类型信息
 /// @return 创建的节点
@@ -392,6 +430,15 @@ ast_node * createVarDeclNode(Type * type, var_id_attr & id)
 ast_node * createVarDeclNode(type_attr & type, var_id_attr & id)
 {
     return createVarDeclNode(typeAttr2Type(type), id);
+}
+
+/// @brief 创建函数参数声明节点（数组转指针）
+/// @param type 类型属性
+/// @param id 变量ID属性
+/// @return 创建的节点
+ast_node * createParamDeclNode(type_attr & type, var_id_attr & id)
+{
+    return createVarDeclNode(typeAttr2ParamType(type), id);
 }
 
 ///

@@ -26,6 +26,7 @@
 #include "Value.h"
 #include "VoidType.h"
 #include "LabelInstruction.h"
+#include "PointerType.h"
 
 ///
 /// @brief AST节点的类型。C++专门因为枚举类来区分C语言的结构体
@@ -225,7 +226,7 @@ public:
     /// @param attr 无符号整数字面量
     ast_node(digit_int_attr attr);
 
-	ast_node(digit_float_attr attr);
+    ast_node(digit_float_attr attr);
 
     /// @brief 针对标识符ID的叶子构造函数
     /// @param attr 字符型标识符
@@ -257,7 +258,7 @@ public:
     /// @param line_no 行号
     static ast_node * New(digit_int_attr attr);
 
-	static ast_node * New(digit_float_attr attr);
+    static ast_node * New(digit_float_attr attr);
 
     /// @brief 创建标识符的叶子节点
     /// @param val 词法值
@@ -314,6 +315,12 @@ create_func_def(ast_node * type_node, ast_node * name_node, ast_node * block = n
 /// @return 变量声明节点
 ast_node * create_var_decl_node(type_attr typeAttr, ast_node * idNode);
 
+/// @brief 创建函数参数声明节点（数组转指针）
+/// @param type 类型属性
+/// @param id 变量ID属性
+/// @return 创建的节点
+ast_node * createParamDeclNode(type_attr & type, var_id_attr & id);
+
 /// @brief 创建函数定义类型的内部AST节点
 /// @param type 返回值类型
 /// @param id 函数名字
@@ -345,6 +352,13 @@ ast_node * create_type_node(type_attr & type);
 /// @return Type* 类型
 ///
 Type * typeAttr2Type(type_attr & attr);
+
+///
+/// @brief 类型属性转换成函数参数类型（数组转指针）
+/// @param attr 词法属性
+/// @return Type* 类型
+///
+Type * typeAttr2ParamType(type_attr & attr);
 
 ///
 /// @brief 根据第一个变量定义创建变量声明语句节点

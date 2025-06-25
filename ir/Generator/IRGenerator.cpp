@@ -49,6 +49,7 @@
 #include "SitofpInstruction.h"
 #include "FptosiInstruction.h"
 #include "PointerType.h"
+#include "ConstFloat.h"
 
 /// @brief 构造函数
 /// @param _root AST的根
@@ -587,8 +588,18 @@ bool IRGenerator::ir_function_call(ast_node * node)
 
             Value * paramValue = nullptr;
 
-            // 处理参数值
-            if (needsLoad(temp->val)) {
+            // 检查参数是否是数组类型，如果是数组需要传递首地址
+            if (temp->val->getType()->isArrayType()) {
+                // 数组参数：需要获取数组的首地址
+                // 使用 getelementptr 获取数组首元素地址
+                ConstInt * zeroConst = module->newConstInt(0);
+                ConstInt * zeroConst2 = module->newConstInt(0);
+
+                GetelementptrInstruction * gepInst =
+                    new GetelementptrInstruction(currentFunc, temp->val, zeroConst, zeroConst2);
+                node->blockInsts.addInst(gepInst);
+                paramValue = gepInst;
+            } else if (needsLoad(temp->val)) {
                 // 参数是变量，需要加载
                 LoadInstruction * loadParam = new LoadInstruction(currentFunc, temp->val, temp->val, 4);
                 node->blockInsts.addInst(loadParam);
@@ -673,9 +684,19 @@ bool IRGenerator::ir_add_or_fadd(ast_node * node)
         return false;
     }
 
-    // 检查操作数的值类型
+    // 检查操作数的值类型（如果是指针类型，获取指向的类型）
     Type * leftType = left->val->getType();
     Type * rightType = right->val->getType();
+
+    // 如果是指针类型，获取指向的类型（用于数组元素）
+    if (leftType->isPointerType()) {
+        const PointerType * ptrType = static_cast<const PointerType *>(leftType);
+        leftType = const_cast<Type *>(ptrType->getPointeeType());
+    }
+    if (rightType->isPointerType()) {
+        const PointerType * ptrType = static_cast<const PointerType *>(rightType);
+        rightType = const_cast<Type *>(ptrType->getPointeeType());
+    }
 
     // 如果任一操作数是浮点类型，使用浮点加法
     if (leftType->isFloatType() || rightType->isFloatType()) {
@@ -704,9 +725,19 @@ bool IRGenerator::ir_sub_or_fsub(ast_node * node)
         return false;
     }
 
-    // 检查操作数的值类型
+    // 检查操作数的值类型（如果是指针类型，获取指向的类型）
     Type * leftType = left->val->getType();
     Type * rightType = right->val->getType();
+
+    // 如果是指针类型，获取指向的类型（用于数组元素）
+    if (leftType->isPointerType()) {
+        const PointerType * ptrType = static_cast<const PointerType *>(leftType);
+        leftType = const_cast<Type *>(ptrType->getPointeeType());
+    }
+    if (rightType->isPointerType()) {
+        const PointerType * ptrType = static_cast<const PointerType *>(rightType);
+        rightType = const_cast<Type *>(ptrType->getPointeeType());
+    }
 
     // 如果任一操作数是浮点类型，使用浮点减法
     if (leftType->isFloatType() || rightType->isFloatType()) {
@@ -735,9 +766,19 @@ bool IRGenerator::ir_mul_or_fmul(ast_node * node)
         return false;
     }
 
-    // 检查操作数的值类型
+    // 检查操作数的值类型（如果是指针类型，获取指向的类型）
     Type * leftType = left->val->getType();
     Type * rightType = right->val->getType();
+
+    // 如果是指针类型，获取指向的类型（用于数组元素）
+    if (leftType->isPointerType()) {
+        const PointerType * ptrType = static_cast<const PointerType *>(leftType);
+        leftType = const_cast<Type *>(ptrType->getPointeeType());
+    }
+    if (rightType->isPointerType()) {
+        const PointerType * ptrType = static_cast<const PointerType *>(rightType);
+        rightType = const_cast<Type *>(ptrType->getPointeeType());
+    }
 
     // 如果任一操作数是浮点类型，使用浮点乘法
     if (leftType->isFloatType() || rightType->isFloatType()) {
@@ -764,9 +805,19 @@ bool IRGenerator::ir_div_or_fdiv(ast_node * node)
         return false;
     }
 
-    // 检查操作数的值类型
+    // 检查操作数的值类型（如果是指针类型，获取指向的类型）
     Type * leftType = left->val->getType();
     Type * rightType = right->val->getType();
+
+    // 如果是指针类型，获取指向的类型（用于数组元素）
+    if (leftType->isPointerType()) {
+        const PointerType * ptrType = static_cast<const PointerType *>(leftType);
+        leftType = const_cast<Type *>(ptrType->getPointeeType());
+    }
+    if (rightType->isPointerType()) {
+        const PointerType * ptrType = static_cast<const PointerType *>(rightType);
+        rightType = const_cast<Type *>(ptrType->getPointeeType());
+    }
 
     // 如果任一操作数是浮点类型，使用浮点除法
     if (leftType->isFloatType() || rightType->isFloatType()) {
@@ -1398,15 +1449,22 @@ bool IRGenerator::ir_assign(ast_node * node)
         return false;
     }
 
+    // 获取目标类型（如果是指针类型，获取指向的类型）
+    Type * targetType = left->val->getType();
+    if (targetType->isPointerType()) {
+        const PointerType * ptrType = static_cast<const PointerType *>(targetType);
+        targetType = const_cast<Type *>(ptrType->getPointeeType());
+    }
+
     // 类型转换检查
-    if (left->val->getType()->isFloatType() && !rightValue->getType()->isFloatType()) {
+    if (targetType->isFloatType() && !rightValue->getType()->isFloatType()) {
         // 目标类型是浮点数，源类型不是，需要转换
         rightValue = convertToFloat(rightValue, module->getCurrentFunction(), node->blockInsts);
         if (!rightValue) {
             printf("Error: Failed to convert right operand to float type in ir_assign.\n");
             return false;
         }
-    } else if (left->val->getType()->isIntegerType() && !rightValue->getType()->isIntegerType()) {
+    } else if (targetType->isIntegerType() && !rightValue->getType()->isIntegerType()) {
         // 目标类型是整数，源类型不是，需要转换
         rightValue = convertToInt(rightValue, module->getCurrentFunction(), node->blockInsts);
         if (!rightValue) {
@@ -2281,18 +2339,28 @@ bool IRGenerator::needsLoad(Value * val)
     if (!val)
         return false;
 
-    // 如果是指令结果，不需要加载
-    if (dynamic_cast<Instruction *>(val) != nullptr) {
-        return false;
-    }
-
     // 如果是常量，不需要加载
     if (dynamic_cast<ConstInt *>(val) != nullptr) {
         return false;
     }
 
+    // 如果是浮点数常量，不需要加载
+    if (dynamic_cast<ConstFloat *>(val) != nullptr) {
+        return false;
+    }
+
     // 如果是形参，不需要加载
     if (dynamic_cast<FormalParam *>(val) != nullptr) {
+        return false;
+    }
+
+    // 检查是否是指令结果
+    if (Instruction * inst = dynamic_cast<Instruction *>(val)) {
+        // GetelementptrInstruction 的结果是地址，需要加载来获取值
+        if (dynamic_cast<GetelementptrInstruction *>(inst) != nullptr) {
+            return true;
+        }
+        // 其他指令结果（如算术运算、load指令等）不需要再次加载
         return false;
     }
 
@@ -2859,41 +2927,59 @@ bool IRGenerator::ir_array_init(ast_node * node)
 
     // 收集初始化值
     std::vector<Value *> initValues;
+    Type * elementType = node->type; // 基础元素类型
+
+    printf("ir_array_init: Processing %zu elements, elementType = %s\n",
+           node->sons.size(),
+           elementType ? elementType->toString().c_str() : "null");
+
     for (auto son: node->sons) {
+        if (son->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
+            // 嵌套的数组初始化列表 - 传递相同的元素类型
+            son->type = elementType;
+        }
+
         if (!ir_visit_ast_node(son)) {
             return false;
         }
         node->blockInsts.addInst(son->blockInsts);
 
         Value * initVal = son->val;
-        if (needsLoad(initVal)) {
+
+        // 对于常量值，不需要load
+        if (dynamic_cast<ConstInt *>(initVal) || dynamic_cast<ConstFloat *>(initVal)) {
+            initValues.push_back(initVal);
+        } else if (dynamic_cast<GlobalVariable *>(initVal)) {
+            // 这是嵌套数组的全局常量，直接使用
+            initValues.push_back(initVal);
+        } else if (needsLoad(initVal)) {
             LoadInstruction * loadInst = new LoadInstruction(currentFunc, initVal, initVal, 4);
             node->blockInsts.addInst(loadInst);
-            initVal = loadInst;
+            initValues.push_back(loadInst);
+        } else {
+            initValues.push_back(initVal);
         }
-        initValues.push_back(initVal);
     }
 
     printf("ir_array_init: Initializing array with %zu elements.\n", initValues.size());
-    for (auto val: initValues) {
-        if (dynamic_cast<ConstInt *>(val)) {
-            printf("Element is ConstantInt\n");
-        } else if (dynamic_cast<ConstFloat *>(val)) {
-            printf("Element is ConstantFloat\n");
-        } else if (dynamic_cast<GlobalVariable *>(val)) {
-            printf("Element is GlobalVariable\n");
-        } else {
-            printf("Element is unknown type\n");
-        }
-    }
 
-    // ✅ 使用传入的元素类型（不再强制 int）
-    if (!node->type) {
-        printf("Error: Element type is null in ir_array_init.\n");
-        return false;
+    // 确定数组类型
+    ArrayType * arrayType = nullptr;
+
+    if (!initValues.empty() && dynamic_cast<GlobalVariable *>(initValues[0])) {
+        // 多维数组：子元素是全局常量数组
+        Type * innerType = initValues[0]->getType();
+        std::vector<int> dimensions = {static_cast<int>(initValues.size())};
+        arrayType = new ArrayType(innerType, dimensions);
+
+        printf("Debug: Created nested array type [%d x %s]\n", dimensions[0], innerType->toString().c_str());
+    } else {
+        // 一维数组：子元素是基础类型常量
+        std::vector<int> dimensions = {static_cast<int>(initValues.size())};
+        arrayType = new ArrayType(elementType, dimensions);
+
+        printf("Debug: Created simple array type [%d x %s]\n", dimensions[0], elementType->toString().c_str());
     }
-    std::vector<int> dimensions = {static_cast<int>(initValues.size())};
-    ArrayType * arrayType = new ArrayType(node->type, dimensions);
 
     // 创建带有完整初始值的全局常量数组
     GlobalVariable * constArray = module->newGlobalConstArray(arrayType);

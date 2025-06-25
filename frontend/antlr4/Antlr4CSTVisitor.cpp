@@ -152,19 +152,28 @@ std::any MiniCCSTVisitor::visitFuncFParam(MiniCParser::FuncFParamContext * ctx)
     auto idNode = ast_node::New(ctx->T_ID()->getText(), (int64_t) ctx->T_ID()->getSymbol()->getLine());
 
     // 处理数组参数的维度信息
-    if (!ctx->expr().empty()) {
-        // 这是数组参数，处理除第一维之外的维度
+    // 检查是否有 T_L_BRACKET T_R_BRACKET 对（即使是空的）
+    if (ctx->T_L_BRACKET().size() > 0) {
+        // 这是数组参数，在C语言中数组参数会退化为指针
+        typeAttr.is_array = true;
+
+        // 处理除第一维之外的维度（第一维总是空的，退化为指针）
         for (auto exprCtx: ctx->expr()) {
             auto dimNode = std::any_cast<ast_node *>(visitExpr(exprCtx));
             idNode->insert_son_node(dimNode);
-        }
 
-        // 标记为数组参数
-        typeAttr.is_array = true;
+            // 收集维度信息
+            if (dimNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+                typeAttr.dimensions.push_back(dimNode->integer_val);
+            }
+        }
     }
 
-    // 创建形参节点
-    return create_var_decl_node(typeAttr, idNode);
+    // 创建形参节点 - 对于函数参数，数组需要转换为指针
+    Type * paramType = typeAttr2ParamType(typeAttr);
+    ast_node * typeNode = ast_node::New(paramType);
+
+    return ast_node::New(ast_operator_type::AST_OP_VAR_DECL, typeNode, idNode, nullptr);
 }
 
 /// @brief 非终结运算符block的遍历

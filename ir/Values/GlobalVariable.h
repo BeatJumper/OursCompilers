@@ -18,6 +18,7 @@
 
 #include "GlobalValue.h"
 #include "IRConstant.h"
+#include "ConstFloat.h"
 
 ///
 /// @brief 全局变量，寻址时通过符号名或变量名来寻址
@@ -105,11 +106,14 @@ public:
             for (size_t i = 0; i < initValueList.size(); ++i) {
                 if (i > 0)
                     str += ", ";
-                str += "i32 ";
+
+                // 根据实际类型输出正确的类型和值
                 if (ConstInt * constInt = dynamic_cast<ConstInt *>(initValueList[i])) {
-                    str += std::to_string(constInt->getVal());
+                    str += "i32 " + std::to_string(constInt->getVal());
+                } else if (ConstFloat * constFloat = dynamic_cast<ConstFloat *>(initValueList[i])) {
+                    str += "float " + constFloat->getIRName();
                 } else {
-                    str += "0";
+                    str += "i32 0";
                 }
             }
             str += "]";
