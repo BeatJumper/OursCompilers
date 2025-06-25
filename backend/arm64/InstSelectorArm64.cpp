@@ -194,7 +194,7 @@ void InstSelectorArm64::translate_assign(Instruction * inst)
         // 寄存器 => 寄存器
 
         // x8 -> xs 可能用到x9
-        iloc.store_var(arg1_regId, result, ARM64_TMP_REG_NO);
+        iloc.store_var(result_regId, arg1, ARM64_TMP_REG_NO);
     } else if (result_regId != -1) {
         // 内存变量 => 寄存器
 

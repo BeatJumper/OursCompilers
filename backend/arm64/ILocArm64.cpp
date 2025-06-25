@@ -447,7 +447,7 @@ void ILocArm64::store_var(int src_reg_no, Value * dest_var, int tmp_reg_no)
         if (src_reg_no != dest_reg_id) {
 
             // mov x2,x8 | 这里有优化空间——消除x8
-            emit("mov", PlatformArm64::regName[dest_reg_id], PlatformArm64::regName[src_reg_no]);
+            emit("mov", PlatformArm64::regName[src_reg_no], PlatformArm64::regName[dest_reg_id]);
         }
 
     } else if (Instanceof(globalVar, GlobalVariable *, dest_var)) {
