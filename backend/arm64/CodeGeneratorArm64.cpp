@@ -503,6 +503,20 @@ void CodeGeneratorArm64::adjustBinaryInsts(Function * func)
                     pIter++;
                 }
             }
+            if (binaryInst->getOp() == IRInstOperator::IRINST_OP_ADD_I ||
+                binaryInst->getOp() == IRInstOperator::IRINST_OP_SUB_I) {
+                printf("检测到两元加法减法指令\n");
+                Value * arg1 = binaryInst->getOperand(0);
+                if (Instanceof(constVal, ConstInt *, arg1)) {
+                    printf("检测到操作数1为常量\n");
+                    Value * newval = new Value(arg1->getType());
+                    Instruction * assignInst = new MoveInstruction(func, newval, arg1);
+                    binaryInst->getOperands()[0] = new Use(newval, binaryInst);
+                    pIter = insts.insert(pIter, assignInst);
+                    printf("插入一条赋值指令\n");
+                    pIter++;
+                }
+            }
         }
     }
 }
