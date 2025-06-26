@@ -57,8 +57,9 @@ private:
         std::set<BasicBlock *> successors;       ///< 后继基本块
         LabelInstruction * label;                ///< 基本块的标签（可能为nullptr）
         bool reachable;                          ///< 是否可达
-        
-        BasicBlock() : label(nullptr), reachable(false) {}
+
+        BasicBlock() : label(nullptr), reachable(false)
+        {}
     };
 
     /// @brief 构建控制流图
@@ -74,9 +75,8 @@ private:
     /// @param blocks 基本块列表
     /// @param instructions 原始指令序列
     /// @return 优化后的指令序列
-    std::vector<Instruction *> removeUnreachableBlocks(
-        const std::vector<BasicBlock *> & blocks,
-        const std::vector<Instruction *> & instructions);
+    std::vector<Instruction *> removeUnreachableBlocks(const std::vector<BasicBlock *> & blocks,
+                                                       const std::vector<Instruction *> & instructions);
 
     /// @brief 移除冗余的跳转指令
     /// @param instructions 指令序列
@@ -87,6 +87,11 @@ private:
     /// @param inst 指令
     /// @return 是否是终结指令
     bool isTerminatorInstruction(Instruction * inst);
+
+    /// @brief 检查指令是否是return指令
+    /// @param inst 指令
+    /// @return 是否是return指令
+    bool isReturnInstruction(Instruction * inst);
 
     /// @brief 检查指令是否是标签指令
     /// @param inst 指令

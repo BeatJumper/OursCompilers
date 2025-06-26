@@ -228,29 +228,78 @@ void InstSelectorArm64::translate_assign(Instruction * inst)
 /// @param op2_reg_no 源操作数2寄存器号
 void InstSelectorArm64::translate_two_operator(Instruction * inst, string operator_name)
 {
+    printf("Debug: translate_two_operator - inst=%p, operator=%s\n", inst, operator_name.c_str());
+
     Value * result = inst;
     Value * arg1 = inst->getOperand(0);
     Value * arg2 = inst->getOperand(1);
+
+    printf("Debug: translate_two_operator - result=%p, arg1=%p, arg2=%p\n", result, arg1, arg2);
+
+    if (!arg1 || !arg2) {
+        printf("Error: translate_two_operator - null operand detected\n");
+        return;
+    }
 
     int32_t arg1_reg_no = arg1->getRegId();
     int32_t arg2_reg_no = arg2->getRegId();
     int32_t result_reg_no = result->getRegId();
 
-    string s1 = PlatformArm64::regName[arg1_reg_no];
-    string s2 = PlatformArm64::regName[arg2_reg_no];
+    printf("Debug: translate_two_operator - arg1_reg=%d, arg2_reg=%d, result_reg=%d\n",
+           arg1_reg_no,
+           arg2_reg_no,
+           result_reg_no);
 
-    // 看arg1是否是寄存器，若是则寄存器寻址，否则要load变量到寄存器中
-    if (Instanceof(constVal, ConstInt *, arg1)) {
-        if (inst->getOp() == IRInstOperator::IRINST_OP_ADD_I || inst->getOp() == IRInstOperator::IRINST_OP_SUB_I) {
-            s1 = to_string(constVal->getVal());
-        }
+    // 检查结果寄存器是否有效
+    if (result_reg_no < 0 || result_reg_no >= PlatformArm64::maxRegNum) {
+        printf("Error: translate_two_operator - invalid result_reg_no=%d\n", result_reg_no);
+        return;
     }
 
-    // 看arg2是否是寄存器，若是则寄存器寻址，否则要load变量到寄存器中
-    if (Instanceof(constVal, ConstInt *, arg2)) {
+    // 处理操作数：如果不在寄存器中，需要先加载到临时寄存器
+    string s1, s2;
+
+    // 处理第一个操作数
+    if (Instanceof(constVal, ConstInt *, arg1)) {
+        // 操作数1是常量
         if (inst->getOp() == IRInstOperator::IRINST_OP_ADD_I || inst->getOp() == IRInstOperator::IRINST_OP_SUB_I) {
-            s2 = to_string(constVal->getVal());
+            s1 = "#" + to_string(constVal->getVal());
+        } else {
+            // 对于其他操作，将常量加载到临时寄存器
+            iloc.load_imm(ARM64_TMP_REG_NO, constVal->getVal());
+            s1 = PlatformArm64::regName[ARM64_TMP_REG_NO];
         }
+    } else if (arg1_reg_no >= 0 && arg1_reg_no < PlatformArm64::maxRegNum) {
+        // 操作数1在寄存器中
+        s1 = PlatformArm64::regName[arg1_reg_no];
+    } else {
+        // 操作数1不在寄存器中，需要加载到临时寄存器
+        printf("Debug: arg1 not in register, loading to temp register\n");
+        iloc.load_var(ARM64_TMP_REG_NO, arg1);
+        s1 = PlatformArm64::regName[ARM64_TMP_REG_NO];
+    }
+
+    // 处理第二个操作数
+    if (Instanceof(constVal, ConstInt *, arg2)) {
+        // 操作数2是常量
+        if (inst->getOp() == IRInstOperator::IRINST_OP_ADD_I || inst->getOp() == IRInstOperator::IRINST_OP_SUB_I) {
+            s2 = "#" + to_string(constVal->getVal());
+        } else {
+            // 对于其他操作，将常量加载到临时寄存器
+            int temp_reg = (s1 == PlatformArm64::regName[ARM64_TMP_REG_NO]) ? ARM64_TMP_REG_NO + 1 : ARM64_TMP_REG_NO;
+            iloc.load_imm(temp_reg, constVal->getVal());
+            s2 = PlatformArm64::regName[temp_reg];
+        }
+    } else if (arg2_reg_no >= 0 && arg2_reg_no < PlatformArm64::maxRegNum) {
+        // 操作数2在寄存器中
+        s2 = PlatformArm64::regName[arg2_reg_no];
+    } else {
+        // 操作数2不在寄存器中，需要加载到另一个临时寄存器
+        printf("Debug: arg2 not in register, loading to temp register\n");
+        // 使用不同的临时寄存器避免冲突
+        int temp_reg = (s1 == PlatformArm64::regName[ARM64_TMP_REG_NO]) ? ARM64_TMP_REG_NO + 1 : ARM64_TMP_REG_NO;
+        iloc.load_var(temp_reg, arg2);
+        s2 = PlatformArm64::regName[temp_reg];
     }
 
     iloc.inst(operator_name, PlatformArm64::regName[result_reg_no], s1, s2);
@@ -260,6 +309,19 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
 /// @param inst IR指令
 void InstSelectorArm64::translate_add_i(Instruction * inst)
 {
+    printf("Debug: translate_add_i - inst=%p\n", inst);
+    if (inst) {
+        printf("Debug: translate_add_i - operands count=%d\n", inst->getOperandsNum());
+        if (inst->getOperandsNum() >= 2) {
+            Value * arg1 = inst->getOperand(0);
+            Value * arg2 = inst->getOperand(1);
+            printf("Debug: translate_add_i - arg1=%p, arg2=%p\n", arg1, arg2);
+            if (arg1)
+                printf("Debug: translate_add_i - arg1 IRName=%s\n", arg1->getIRName().c_str());
+            if (arg2)
+                printf("Debug: translate_add_i - arg2 IRName=%s\n", arg2->getIRName().c_str());
+        }
+    }
     translate_two_operator(inst, "add");
 }
 
@@ -577,7 +639,15 @@ void InstSelectorArm64::translate_load(Instruction * inst)
 
     int32_t result_regId = result->getRegId();
 
-    // printf("Debug: translate_load - result_regId=%d, arg1_regId=%d\n", result_regId, arg1->getRegId());
+    printf("Debug: translate_load - result=%p, arg1=%p\n", result, arg1);
+    printf("Debug: translate_load - result_regId=%d, arg1_regId=%d\n", result_regId, arg1->getRegId());
+
+    if (arg1 == nullptr) {
+        printf("Error: load instruction operand is null\n");
+        return;
+    }
+
+    printf("Debug: translate_load - arg1 name=%s, IRName=%s\n", arg1->getName().c_str(), arg1->getIRName().c_str());
 
     if (result_regId != -1) {
         // 内存变量 => 寄存器

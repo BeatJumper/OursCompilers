@@ -206,10 +206,21 @@ std::any MiniCCSTVisitor::visitBlockItemList(MiniCParser::BlockItemListContext *
     for (auto blockItemCtx: ctx->blockItem()) {
 
         // 非终结符，需遍历
-        auto blockItem = std::any_cast<ast_node *>(visitBlockItem(blockItemCtx));
+        auto blockItemResult = visitBlockItem(blockItemCtx);
 
-        // 插入到块节点中
-        (void) block_node->insert_son_node(blockItem);
+        // 安全地检查std::any是否包含有效的ast_node*
+        try {
+            auto blockItem = std::any_cast<ast_node *>(blockItemResult);
+
+            // 检查是否为空语句（nullptr），空语句不插入到AST中
+            if (blockItem != nullptr) {
+                // 插入到块节点中
+                (void) block_node->insert_son_node(blockItem);
+            }
+        } catch (const std::bad_any_cast & e) {
+            // 如果转换失败，说明返回的不是ast_node*类型，跳过
+            std::cout << "Warning: Failed to cast blockItem to ast_node*, skipping..." << std::endl;
+        }
     }
 
     return block_node;
@@ -230,7 +241,7 @@ std::any MiniCCSTVisitor::visitBlockItem(MiniCParser::BlockItemContext * ctx)
         return visitDecl(ctx->decl());
     }
 
-    return nullptr;
+    return std::any(static_cast<ast_node *>(nullptr));
 }
 
 /// @brief 非终结运算符statement中的遍历
@@ -254,13 +265,13 @@ std::any MiniCCSTVisitor::visitStatement(MiniCParser::StatementContext * ctx)
 
     // 检查是否是 break 语句
     if (Instanceof(breakCtx, MiniCParser::BreakStatementContext *, ctx)) {
-        std::cout << "Detected break statement" << std::endl;
+        std::cout << "=== FOUND BREAK STATEMENT: " << ctx->getText() << " ===" << std::endl;
         return visitBreakStatement(breakCtx);
     }
 
     // 检查是否是 continue 语句
     if (Instanceof(continueCtx, MiniCParser::ContinueStatementContext *, ctx)) {
-        std::cout << "Detected continue statement" << std::endl;
+        std::cout << "=== FOUND CONTINUE STATEMENT: " << ctx->getText() << " ===" << std::endl;
         return visitContinueStatement(continueCtx);
     }
 

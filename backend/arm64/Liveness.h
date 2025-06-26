@@ -26,7 +26,14 @@ void LiveVariableAnalysis(ControlFlowGraph * _graph);
 /// @note 把集合b的元素逐个加入集合a
 /// @note 时间复杂度：O(Blog(A+B)) 其中A，B分别代表集合a和b的大小
 template <typename T>
-bool merge_set(std::set<T> & a, std::set<T> & b);
+bool merge_set(std::set<T> & a, std::set<T> & b)
+{
+    int size0 = a.size();
+    for (T element: b) {
+        a.insert(element);
+    }
+    return a.size() != size0;
+}
 
 /// @brief 集合求差集的工具函数
 /// @tparam T 集合内元素类型

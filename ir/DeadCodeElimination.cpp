@@ -90,21 +90,30 @@ bool DeadCodeElimination::removeRedundantJumps(std::vector<Instruction *> & inst
         Instruction * inst = instructions[i];
         bool shouldKeep = true;
 
+        // 暂时禁用冗余跳转消除，以保护break和continue语句
+        // TODO: 实现更智能的跳转分析，区分结构性跳转和控制流跳转
+        /*
         // 检查是否是冗余的跳转指令
         if (inst->getOp() == IRInstOperator::IRINST_OP_GOTO) {
             // 检查是否跳转到下一条指令
             if (isRedundantJump(instructions, i)) {
+                GotoInstruction * gotoInst = dynamic_cast<GotoInstruction *>(inst);
+                std::cout << "Removing redundant jump at position " << i;
+                if (gotoInst && gotoInst->getTarget()) {
+                    std::cout << " (target: " << gotoInst->getTarget()->getIRName() << ")";
+                }
+                std::cout << std::endl;
                 shouldKeep = false;
                 optimized = true;
-                std::cout << "Removing redundant jump at position " << i << std::endl;
             }
         }
-        // 检查是否是return后的死代码
-        else if (i > 0 && isTerminatorInstruction(instructions[i - 1]) && !isLabelInstruction(inst)) {
-            // 前一条指令是终结指令，当前指令不是标签，则是死代码
+        */
+        // 检查是否是return后的死代码（只对return语句后的代码进行死代码消除）
+        if (i > 0 && isReturnInstruction(instructions[i - 1]) && !isLabelInstruction(inst)) {
+            // 前一条指令是return指令，当前指令不是标签，则是死代码
             shouldKeep = false;
             optimized = true;
-            std::cout << "Removing dead instruction after terminator at position " << i << std::endl;
+            std::cout << "Removing dead instruction after return at position " << i << std::endl;
         }
 
         if (shouldKeep) {
@@ -174,6 +183,18 @@ bool DeadCodeElimination::isTerminatorInstruction(Instruction * inst)
     return (op == IRInstOperator::IRINST_OP_GOTO ||   // 无条件跳转
             op == IRInstOperator::IRINST_OP_BRANCH || // 条件跳转
             op == IRInstOperator::IRINST_OP_RET);     // 返回
+}
+
+/// @brief 检查指令是否是return指令
+/// @param inst 指令
+/// @return 是否是return指令
+bool DeadCodeElimination::isReturnInstruction(Instruction * inst)
+{
+    if (!inst) {
+        return false;
+    }
+
+    return inst->getOp() == IRInstOperator::IRINST_OP_RET;
 }
 
 /// @brief 检查指令是否是标签指令

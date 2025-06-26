@@ -515,6 +515,13 @@ bool IRGenerator::ir_block(ast_node * node)
         }
 
         node->blockInsts.addInst(temp->blockInsts);
+
+        // 检查当前语句是否包含终结指令（如return、break、continue）
+        // 如果包含，则后续语句为不可达代码，应该停止处理
+        if (hasTerminatorInstruction(temp->blockInsts)) {
+            // 跳出循环，不再处理后续语句
+            break;
+        }
     }
 
     // 离开作用域
@@ -2168,6 +2175,8 @@ bool IRGenerator::ir_if_else(ast_node * node)
 
 bool IRGenerator::ir_break(ast_node * node)
 {
+    printf("=== IR_BREAK: Processing break statement ===\n");
+
     if (loopLabelStack.empty()) {
         printf("Error: break statement not inside a loop.\n");
         return false;
@@ -2175,6 +2184,7 @@ bool IRGenerator::ir_break(ast_node * node)
 
     // 获取当前循环的退出标签
     LabelInstruction * exitLabel = loopLabelStack.top().exitLabel;
+    printf("=== IR_BREAK: Generating goto to exit label %s ===\n", exitLabel->getIRName().c_str());
 
     // 生成跳转到退出标签的指令
     node->blockInsts.addInst(new GotoInstruction(module->getCurrentFunction(), exitLabel));
@@ -2184,6 +2194,8 @@ bool IRGenerator::ir_break(ast_node * node)
 
 bool IRGenerator::ir_continue(ast_node * node)
 {
+    printf("=== IR_CONTINUE: Processing continue statement ===\n");
+
     if (loopLabelStack.empty()) {
         printf("Error: continue statement not inside a loop.\n");
         return false;
@@ -2191,6 +2203,7 @@ bool IRGenerator::ir_continue(ast_node * node)
 
     // 获取当前循环的条件检查标签
     LabelInstruction * condLabel = loopLabelStack.top().condLabel;
+    printf("=== IR_CONTINUE: Generating goto to condition label %s ===\n", condLabel->getIRName().c_str());
 
     // 生成跳转到条件检查标签的指令
     node->blockInsts.addInst(new GotoInstruction(module->getCurrentFunction(), condLabel));

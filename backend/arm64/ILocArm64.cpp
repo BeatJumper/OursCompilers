@@ -358,6 +358,14 @@ void ILocArm64::mov_reg(int rs_reg_no, int src_reg_no)
 /// @param src_var 源操作数
 void ILocArm64::load_var(int rs_reg_no, Value * src_var)
 {
+    printf("Debug: load_var - rs_reg_no=%d, src_var=%p\n", rs_reg_no, src_var);
+
+    if (src_var == nullptr) {
+        printf("Error: load_var - src_var is null\n");
+        return;
+    }
+
+    printf("Debug: load_var - src_var name=%s, IRName=%s\n", src_var->getName().c_str(), src_var->getIRName().c_str());
 
     if (Instanceof(constVal, ConstInt *, src_var)) {
         // 整型常量

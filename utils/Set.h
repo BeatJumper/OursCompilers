@@ -174,3 +174,16 @@ public:
     ///
     bool empty();
 };
+
+/// @brief 合并两个std::set，将第二个set的所有元素添加到第一个set中
+/// @tparam T set中元素的类型
+/// @param target 目标set（会被修改）
+/// @param source 源set（不会被修改）
+/// @return 是否有新元素被添加到target中
+template <typename T>
+bool merge_set(std::set<T> & target, const std::set<T> & source)
+{
+    size_t original_size = target.size();
+    target.insert(source.begin(), source.end());
+    return target.size() > original_size;
+}
