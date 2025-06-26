@@ -282,6 +282,11 @@ private:
     /// @return 翻译是否成功，true：成功，false：失败
     bool ir_condition_expr(ast_node * node, LabelInstruction * trueLabel, LabelInstruction * falseLabel);
 
+    /// @brief 检查指令序列是否包含终结指令（如break、continue、return）
+    /// @param blockInsts 指令序列
+    /// @return true：包含终结指令，false：不包含
+    bool hasTerminatorInstruction(const InterCode & blockInsts);
+
     /// @brief 常量声明语句节点翻译
     /// @param node AST节点
     /// @return 翻译是否成功，true：成功，false：失败

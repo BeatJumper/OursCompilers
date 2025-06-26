@@ -2273,8 +2273,12 @@ bool IRGenerator::ir_if_else(ast_node * node)
     }
     node->blockInsts.addInst(thenNode->blockInsts);
 
-    // 跳转到结束标签
-    node->blockInsts.addInst(new GotoInstruction(currentFunc, endLabel));
+    // 检查当前节点的指令序列是否已经有终结指令（如break、continue、return）
+    bool thenHasTerminator = hasTerminatorInstruction(node->blockInsts);
+    if (!thenHasTerminator) {
+        // 只有在没有终结指令时才添加跳转到结束标签
+        node->blockInsts.addInst(new GotoInstruction(currentFunc, endLabel));
+    }
 
     // else分支标签（如果存在）
     if (elseNode) {
@@ -2286,8 +2290,12 @@ bool IRGenerator::ir_if_else(ast_node * node)
         }
         node->blockInsts.addInst(elseNode->blockInsts);
 
-        // 跳转到结束标签
-        node->blockInsts.addInst(new GotoInstruction(currentFunc, endLabel));
+        // 检查else分支是否已经有终结指令
+        bool elseHasTerminator = hasTerminatorInstruction(node->blockInsts);
+        if (!elseHasTerminator) {
+            // 只有在没有终结指令时才添加跳转到结束标签
+            node->blockInsts.addInst(new GotoInstruction(currentFunc, endLabel));
+        }
     }
 
     // 结束标签
@@ -2789,6 +2797,29 @@ bool IRGenerator::ir_condition_expr(ast_node * node, LabelInstruction * trueLabe
 
             return true;
     }
+}
+
+/// @brief 检查指令序列是否包含终结指令（如break、continue、return）
+/// @param blockInsts 指令序列
+/// @return true：包含终结指令，false：不包含
+bool IRGenerator::hasTerminatorInstruction(const InterCode & blockInsts)
+{
+    const auto & insts = blockInsts.getCode();
+    if (insts.empty()) {
+        return false;
+    }
+
+    // 检查指令序列中是否包含任何终结指令
+    for (Instruction * inst: insts) {
+        IRInstOperator op = inst->getOp();
+        if (op == IRInstOperator::IRINST_OP_GOTO ||   // break, continue
+            op == IRInstOperator::IRINST_OP_RET ||    // return
+            op == IRInstOperator::IRINST_OP_BRANCH) { // 条件跳转
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// @brief 常量声明语句节点翻译成线性中间IR

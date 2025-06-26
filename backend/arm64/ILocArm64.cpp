@@ -133,31 +133,31 @@ ILocArm64::~ILocArm64()
     }
 }
 
-/// @brief 删除无用的Label指令
+/// @brief 删除无用的指令
 void ILocArm64::deleteUsedLabel()
 {
-    std::list<ArmInst *> labelInsts;
+    std::list<ArmInst *> Insts;
     for (ArmInst * arm: code) {
         if ((!arm->dead) && (arm->opcode[0] == '.') && (arm->opcode.find(".L") == 0) && // 只处理.L开头的标签
             (arm->result == ":")) {
-            labelInsts.push_back(arm);
+            Insts.push_back(arm);
         }
     }
 
-    for (ArmInst * labelArm: labelInsts) {
+    for (ArmInst * Arm: Insts) {
         bool labelUsed = false;
 
         for (ArmInst * arm: code) {
             // 检查所有分支指令（b, beq, bne等）
             if ((!arm->dead) && (arm->opcode.find("b") == 0) && // 所有b开头的指令
-                (arm->result == labelArm->opcode)) {
+                (arm->result == Arm->opcode)) {
                 labelUsed = true;
                 break;
             }
         }
 
         if (!labelUsed) {
-            labelArm->setDead();
+            Arm->setDead();
         }
     }
 }

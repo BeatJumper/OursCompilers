@@ -33,6 +33,7 @@
 
 #include "LabelInstruction.h"
 #include "GotoInstruction.h"
+#include "BranchInstruction.h"
 #include "FuncCallInstruction.h"
 #include "MoveInstruction.h"
 #include "AllocaInstruction.h"
@@ -61,6 +62,17 @@ InstSelectorArm64::InstSelectorArm64(vector<Instruction *> & _irCode, ILocArm64 
     translator_handlers[IRInstOperator::IRINST_OP_BR] = &InstSelectorArm64::translate_br;
     translator_handlers[IRInstOperator::IRINST_OP_ALLOCA] = &InstSelectorArm64::translate_alloca;
     translator_handlers[IRInstOperator::IRINST_OP_ICMP] = &InstSelectorArm64::translate_cmp;
+
+    // 添加传统比较指令的翻译
+    translator_handlers[IRInstOperator::IRINST_OP_LT] = &InstSelectorArm64::translate_cmp;
+    translator_handlers[IRInstOperator::IRINST_OP_LE] = &InstSelectorArm64::translate_cmp;
+    translator_handlers[IRInstOperator::IRINST_OP_GT] = &InstSelectorArm64::translate_cmp;
+    translator_handlers[IRInstOperator::IRINST_OP_GE] = &InstSelectorArm64::translate_cmp;
+    translator_handlers[IRInstOperator::IRINST_OP_EQ] = &InstSelectorArm64::translate_cmp;
+    translator_handlers[IRInstOperator::IRINST_OP_NE] = &InstSelectorArm64::translate_cmp;
+
+    // 添加传统分支指令的翻译
+    translator_handlers[IRInstOperator::IRINST_OP_BRANCH] = &InstSelectorArm64::translate_br;
 
     translator_handlers[IRInstOperator::IRINST_OP_LOAD] = &InstSelectorArm64::translate_load;
     translator_handlers[IRInstOperator::IRINST_OP_STORE] = &InstSelectorArm64::translate_store;
@@ -144,7 +156,7 @@ void InstSelectorArm64::translate_label(Instruction * inst)
     Instanceof(labelInst, LabelInstruction *, inst);
 
     // 生成符合ARM64标准的标签格式：.L前缀 + 唯一数字标识
-    std::string arm64Label = ".L" + labelInst->getName();
+    std::string arm64Label = ".L" + labelInst->getIRName();
     iloc.label(arm64Label);
 }
 
@@ -152,6 +164,10 @@ void InstSelectorArm64::translate_label(Instruction * inst)
 /// @param inst IR指令
 void InstSelectorArm64::translate_goto(Instruction * inst)
 {
+    if (inst->isDead()) {
+        printf("检测到一个br指令为Dead\n");
+        return;
+    }
     GotoInstruction * gotoInst = dynamic_cast<GotoInstruction *>(inst);
     LabelInstruction * target = gotoInst->getTarget();
 
@@ -164,7 +180,7 @@ void InstSelectorArm64::translate_goto(Instruction * inst)
         }
     }
 
-    std::string arm64Label = ".L" + target->getName();
+    std::string arm64Label = ".L" + target->getIRName();
     iloc.jump(arm64Label);
 }
 
@@ -396,28 +412,37 @@ void InstSelectorArm64::translate_arg(Instruction * inst)
 ///
 void InstSelectorArm64::translate_br(Instruction * inst)
 {
-    // br i1 <cond>, label <iftrue>, label <iffalse>
-    // 获取条件操作数
-    Value * cond = inst->getOperand(0);
+    // 尝试转换为 BranchInstruction
+    BranchInstruction * branchInst = dynamic_cast<BranchInstruction *>(inst);
+    if (!branchInst) {
+        printf("Error: Not a BranchInstruction\n");
+        return;
+    }
 
-    // 获取不同分支的标签
-    LabelInstruction * iftrue = dynamic_cast<LabelInstruction *>(inst->getOperand(1));
-    LabelInstruction * iffalse = dynamic_cast<LabelInstruction *>(inst->getOperand(2));
+    // 获取条件操作数和标签
+    Value * cond = branchInst->getCondition();
+    LabelInstruction * iftrue = branchInst->getTrueLabel();
+    LabelInstruction * iffalse = branchInst->getFalseLabel();
+
+    // 检查指针是否有效
+    if (!cond || !iftrue || !iffalse) {
+        printf("Error: Invalid operands in br instruction\n");
+        return;
+    }
 
     // 获取条件操作数分配的寄存器号
     int32_t cond_reg_no = cond->getRegId();
+    printf("Debug: br instruction cond_reg_no = %d\n", cond_reg_no);
 
     if (cond_reg_no == -1) {
-        // 如果不是寄存器变量，分配一个寄存器
-        // TODO 应该没啥用，暂时不用管
-        // int32_t load_cond_reg_no = simpleRegisterAllocator.Allocate(cond);
-        // iloc.load_var(load_cond_reg_no, cond);
-        // cond_reg_no = load_cond_reg_no;
+        printf("Error: Condition operand not allocated to register\n");
+        return;
     }
 
     // 生成符合标准的标签格式
-    std::string trueLabel = ".L" + iftrue->getName();
-    std::string falseLabel = ".L" + iffalse->getName();
+    std::string trueLabel = ".L" + iftrue->getIRName();
+    std::string falseLabel = ".L" + iffalse->getIRName();
+    printf("Debug: trueLabel = %s, falseLabel = %s\n", trueLabel.c_str(), falseLabel.c_str());
 
     iloc.inst("cmp", PlatformArm64::regName[cond_reg_no], "#0");
     iloc.inst("b.ne", trueLabel); // 使用标准标签格式
@@ -468,39 +493,59 @@ void InstSelectorArm64::translate_cmp(Instruction * inst)
     // 获取操作数
     Value * arg1 = inst->getOperand(0);
     Value * arg2 = inst->getOperand(1);
+    Value * result = inst;
 
     // 获取操作数的寄存器编号
     int32_t arg1_reg_no = arg1->getRegId();
     int32_t arg2_reg_no = arg2->getRegId();
+    int32_t result_reg_no = result->getRegId();
 
-    // 看arg1是否是寄存器，若是则寄存器寻址，否则要load变量到寄存器中
-    if (arg1_reg_no == -1) {
-        // 分配一个寄存器
-        // TODO 可能需要在寄存器分配前检查cmp指令是否有常量，并插入常量的赋值语句
-        // load_arg1_reg_no = simpleRegisterAllocator.Allocate(arg1);
-        // 加载arg1到寄存器
-        // iloc.load_var(load_arg1_reg_no, arg1);
-    } else {
-        // load_arg1_reg_no = arg1_reg_no;
-    }
+    // 处理常量操作数
+    std::string arg1_str = PlatformArm64::regName[arg1_reg_no];
+    std::string arg2_str;
 
-    // 看arg2是否是寄存器，若是则寄存器寻址，否则要load变量到寄存器中
-    if (arg2_reg_no == -1) {
-        // 分配一个寄存器
-        // TODO 可能需要在寄存器分配前检查cmp指令是否有常量，并插入常量的赋值语句
-        // load_arg2_reg_no = simpleRegisterAllocator.Allocate(arg2);
-        // 加载arg2到寄存器
-        // iloc.load_var(load_arg2_reg_no, arg2);
+    if (Instanceof(constVal, ConstInt *, arg2)) {
+        // 第二个操作数是常量
+        arg2_str = "#" + std::to_string(constVal->getVal());
     } else {
-        // load_arg2_reg_no = arg2_reg_no;
+        arg2_str = PlatformArm64::regName[arg2_reg_no];
     }
 
     // 生成比较指令
-    iloc.inst("cmp", PlatformArm64::regName[arg1_reg_no], PlatformArm64::regName[arg2_reg_no]);
+    iloc.inst("cmp", arg1_str, arg2_str);
 
-    // 释放寄存器
-    // simpleRegisterAllocator.free(arg1);
-    // simpleRegisterAllocator.free(arg2);
+    // 根据比较类型设置结果寄存器
+    IRInstOperator op = inst->getOp();
+    std::string condition;
+
+    switch (op) {
+        case IRInstOperator::IRINST_OP_LT:
+        case IRInstOperator::IRINST_OP_ICMP: // 假设 icmp slt
+            condition = "lt";
+            break;
+        case IRInstOperator::IRINST_OP_LE:
+            condition = "le";
+            break;
+        case IRInstOperator::IRINST_OP_GT:
+            condition = "gt";
+            break;
+        case IRInstOperator::IRINST_OP_GE:
+            condition = "ge";
+            break;
+        case IRInstOperator::IRINST_OP_EQ:
+            condition = "eq";
+            break;
+        case IRInstOperator::IRINST_OP_NE:
+            condition = "ne";
+            break;
+        default:
+            condition = "lt"; // 默认为小于
+            break;
+    }
+
+    // 设置结果寄存器：如果条件成立则为1，否则为0
+    // 使用 cset 指令根据条件设置结果
+    iloc.inst("cset", PlatformArm64::regName[result_reg_no], condition);
 }
 
 /// @brief load指令翻译成ARM64汇编
