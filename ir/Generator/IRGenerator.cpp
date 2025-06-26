@@ -2902,6 +2902,10 @@ bool IRGenerator::ir_global_const_declare(ast_node * node,
     // 将其转换为 GlobalVariable 并设置初值
     GlobalVariable * globalVar = static_cast<GlobalVariable *>(globalConst);
     globalVar->setInitValue(constInt);
+    // 设置BSS
+    if (constInt->getVal() != 0) {
+        globalVar->setBSSSection(false);
+    }
     globalVar->setConstant(true);
 
     // 设置节点值
