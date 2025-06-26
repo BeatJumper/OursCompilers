@@ -297,144 +297,12 @@ bool IRGenerator::ir_function_define(ast_node * node)
     // node节点的指令移动到函数的IR指令列表中
     irCode.addInst(node->blockInsts);
 
-    // 现在irCode中，第一条是allocaRet指令，第二条是storeRet指令
-    // 然后是处理block部分得到的指令，这些指令的第一部分是对decl-stmt节点的处理，是若干个alloca指令，store指令
-    // 如果可能的话，赋值是是变量赋值，会有load指令
-    // 所以目前，第二条storeRet指令会夹在第一条alloca指令和后面block的decl-stmt指令中间
-    // 但希望实现的效果是store指令在所有alloca指令后面
-    // 所以对irCode中的指令进行重新排序,
-    // 逻辑是遇到第一条store指令，将其放到最后一条alloca指令后面即可，后面再遇到store不用管了
-
-    //=============指令重排序逻辑开始===================
-
-    auto & insts = irCode.getInsts();
-    std::vector<Instruction *> allocaInsts;
-    std::vector<Instruction *> initStoreInsts; // 变量初始化相关的store指令
-    std::vector<Instruction *> otherInsts;
-
-    // 预分配容量以避免在循环中多次重新分配
-    size_t totalInsts = insts.size();
-    allocaInsts.reserve(totalInsts / 4);    // 估算alloca指令数量
-    initStoreInsts.reserve(totalInsts / 4); // 估算store指令数量
-    otherInsts.reserve(totalInsts / 2);     // 估算其他指令数量
-
-    // 找到第一个非ENTRY指令的位置作为插入点
-    int insertPos = -1;
-    for (size_t i = 0; i < insts.size(); ++i) {
-        if (insts[i]->getOp() == IRInstOperator::IRINST_OP_LABEL) {
-            // 入口标签之后就是插入点
-            insertPos = (int) i + 1;
-            break;
-        }
-    }
-
-    if (insertPos == -1) {
-        printf("Error: No entry label found for reordering.\n");
-        return false;
-    }
-
-    // 收集所有alloca指令的目标变量
-    std::vector<Value *> allocaTargets;
-    for (size_t i = insertPos; i < insts.size(); ++i) {
-        if (dynamic_cast<AllocaInstruction *>(insts[i])) {
-            AllocaInstruction * allocaInst = static_cast<AllocaInstruction *>(insts[i]);
-            // AllocaInstruction的第一个操作数应该是目标变量
-            if (allocaInst->getOperandsNum() > 0) {
-                allocaTargets.push_back(allocaInst->getOperand(0));
-            }
-            allocaInsts.push_back(insts[i]);
-        }
-    }
-
-    // 分类其他指令
-    for (size_t i = insertPos; i < insts.size(); ++i) {
-        Instruction * inst = insts[i];
-
-        if (dynamic_cast<AllocaInstruction *>(inst)) {
-            // alloca指令已经处理过了
-            continue;
-        } else if (dynamic_cast<StoreInstruction *>(inst)) {
-            StoreInstruction * storeInst = static_cast<StoreInstruction *>(inst);
-
-            // 检查这个store指令是否对应某个alloca指令的初始化
-            bool isInitStore = false;
-            if (storeInst->getOperandsNum() >= 2) {
-                Value * storeSource = storeInst->getOperand(0); // store指令的第一个操作数是源值
-                Value * storeTarget = storeInst->getOperand(1); // store指令的第二个操作数是目标
-
-                // 检查目标是否在alloca目标列表中
-                bool targetInAllocaList = false;
-                for (Value * allocaTarget: allocaTargets) {
-                    if (storeTarget == allocaTarget) {
-                        targetInAllocaList = true;
-                        break;
-                    }
-                }
-
-                if (targetInAllocaList) {
-                    // 进一步检查是否是初始化store
-                    // 初始化store的源值应该是：
-                    // 1. 常量值（如变量初始化）
-                    // 2. 函数形参（如 %0, %1, %2 等，但只对有参数的函数）
-                    if (dynamic_cast<ConstInt *>(storeSource)) {
-                        // 常量初始化
-                        isInitStore = true;
-                    } else if (dynamic_cast<FormalParam *>(storeSource)) {
-                        // 形参初始化
-                        isInitStore = true;
-                    } else {
-                        // 检查是否是形参值，但需要排除指令结果
-                        if (!dynamic_cast<Instruction *>(storeSource)) {
-                            // 不是指令结果，再检查名字格式
-                            std::string sourceName = storeSource->getIRName();
-                            if (sourceName.size() >= 2 && sourceName[0] == '%' && std::isdigit(sourceName[1]) &&
-                                sourceName.find_first_not_of("0123456789", 1) == std::string::npos) {
-                                // 这是形参（%0, %1, %2 等格式），且不是指令结果
-                                isInitStore = true;
-                            }
-                        }
-                        // 如果源值是指令结果（如 load 指令的结果），则不是初始化store
-                    }
-                }
-            }
-
-            if (isInitStore) {
-                initStoreInsts.push_back(inst);
-            } else {
-                otherInsts.push_back(inst);
-            }
-        } else {
-            otherInsts.push_back(inst);
-        }
-    }
-
-    // 重新构建指令序列
-    std::vector<Instruction *> newInsts;
-
-    // 保留前面的ENTRY等指令
-    for (int i = 0; i < insertPos; ++i) {
-        newInsts.push_back(insts[i]);
-    }
-
-    // 先添加所有alloca指令
-    for (auto allocaInst: allocaInsts) {
-        newInsts.push_back(allocaInst);
-    }
-
-    // 再添加所有对应的初始化store指令
-    for (auto storeInst: initStoreInsts) {
-        newInsts.push_back(storeInst);
-    }
-
-    // 最后添加其他指令
-    for (auto otherInst: otherInsts) {
-        newInsts.push_back(otherInst);
-    }
-
-    // 替换原指令序列
-    insts = newInsts;
-
-    //=============指令重排序逻辑结尾===================
+    // 保持变量声明的原始位置，符合C语言语义
+    // 不进行强制重排序，这样可以正确处理块级作用域的变量声明
+    //
+    // 注释：之前的重排序逻辑会将所有alloca指令移动到函数开头，
+    // 这破坏了C语言的作用域规则，特别是对于在if/while等块中声明的变量。
+    // 现在我们保持变量声明的原始位置，确保语义正确性。
 
     // 添加函数出口Label指令
     irCode.addInst(exitLabelInst);
@@ -2341,6 +2209,30 @@ bool IRGenerator::ir_mod(ast_node * node)
 
     if (!left || !right)
         return false;
+
+    // 常量折叠检查：如果两个操作数都是常量，直接计算结果
+    ConstInt * leftConstInt = dynamic_cast<ConstInt *>(left->val);
+    ConstInt * rightConstInt = dynamic_cast<ConstInt *>(right->val);
+
+    if (leftConstInt && rightConstInt) {
+        // 常量折叠：两个操作数都是整数常量
+        printf("Debug: Performing constant folding for modulo\n");
+
+        // 检查除零错误
+        if (rightConstInt->getVal() == 0) {
+            printf("Error: Modulo by zero in constant folding\n");
+            return false;
+        }
+
+        int32_t leftVal = leftConstInt->getVal();
+        int32_t rightVal = rightConstInt->getVal();
+        int32_t result = leftVal % rightVal;
+
+        ConstInt * resultConst = module->newConstInt(result);
+        node->val = resultConst;
+        printf("Debug: Constant folding result: %d %% %d = %d\n", leftVal, rightVal, result);
+        return true;
+    }
 
     // 合并左右孩子的IR指令
     node->blockInsts.addInst(left->blockInsts);
