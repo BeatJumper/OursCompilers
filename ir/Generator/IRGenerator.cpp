@@ -2961,12 +2961,30 @@ bool IRGenerator::ir_global_const_declare(ast_node * node,
                                           ast_node * nameNode,
                                           ast_node * initExprNode)
 {
-    // 只支持简单的整数字面量作为全局常量初值
-    if (initExprNode->node_type != ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
-        printf("Error: Global constant must be initialized with integer literal.\n");
+    // 检查初始化表达式类型
+    if (initExprNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+        // 处理简单的整数字面量
+        return ir_global_const_scalar_declare(node, typeNode, nameNode, initExprNode);
+    } else if (initExprNode->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
+        // 处理数组初始化
+        return ir_global_const_array_declare(node, typeNode, nameNode, initExprNode);
+    } else {
+        printf("Error: Global constant must be initialized with integer literal or array initializer.\n");
         return false;
     }
+}
 
+/// @brief 全局常量标量声明节点翻译成线性中间IR
+/// @param node AST节点
+/// @param typeNode 类型节点
+/// @param nameNode 常量名节点
+/// @param initExprNode 初值表达式节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_global_const_scalar_declare(ast_node * node,
+                                                 ast_node * typeNode,
+                                                 ast_node * nameNode,
+                                                 ast_node * initExprNode)
+{
     // 解析常量值
     std::string numStr = initExprNode->name;
     int32_t constValue = 0;
@@ -2997,11 +3015,7 @@ bool IRGenerator::ir_global_const_declare(ast_node * node,
         return false;
     }
 
-    // 简化处理：全局常量直接使用常量值，不创建变量
-    // 将常量添加到符号表中
-    // 修复：使用 newGlobalConstant 而不是 newVarValue
-    // 修复：直接使用 newVarValue 来创建全局常量
-    // 当 currentFunc 为 nullptr 时，会自动创建全局变量
+    // 创建全局常量变量
     Value * globalConst = module->newVarValue(typeNode->type, nameNode->name);
     if (!globalConst) {
         printf("Error: Failed to create global constant '%s'.\n", nameNode->name.c_str());
@@ -3020,6 +3034,77 @@ bool IRGenerator::ir_global_const_declare(ast_node * node,
     // 设置节点值
     nameNode->val = globalConst;
     node->val = globalConst;
+
+    return true;
+}
+
+/// @brief 全局常量数组声明节点翻译成线性中间IR
+/// @param node AST节点
+/// @param typeNode 类型节点
+/// @param nameNode 常量名节点
+/// @param initExprNode 初值表达式节点
+/// @return 翻译是否成功，true：成功，false：失败
+bool IRGenerator::ir_global_const_array_declare(ast_node * node,
+                                                ast_node * typeNode,
+                                                ast_node * nameNode,
+                                                ast_node * initExprNode)
+{
+    // 确保类型是数组类型
+    if (!typeNode->type->isArrayType()) {
+        printf("Error: Expected array type for array initialization.\n");
+        return false;
+    }
+
+    ArrayType * arrayType = static_cast<ArrayType *>(typeNode->type);
+
+    // 直接使用 newVarValue 创建全局常量数组，不通过 ir_array_init
+    Value * globalVar = module->newVarValue(arrayType, nameNode->name);
+    if (!globalVar) {
+        printf("Error: Failed to create global constant '%s'.\n", nameNode->name.c_str());
+        return false;
+    }
+
+    // 转换为 GlobalVariable 并设置属性
+    GlobalVariable * globalArray = static_cast<GlobalVariable *>(globalVar);
+    globalArray->setConstant(true);
+    globalArray->setBSSSection(false); // 有初值，不在BSS段
+    globalArray->setAlignment(16);     // 设置16字节对齐
+
+    // 处理初始化值列表
+    std::vector<Value *> initValues;
+    for (auto son: initExprNode->sons) {
+        if (!ir_visit_ast_node(son)) {
+            printf("Error: Failed to process initialization element.\n");
+            return false;
+        }
+        node->blockInsts.addInst(son->blockInsts);
+
+        Value * initVal = son->val;
+        // 对于常量值，直接使用
+        if (dynamic_cast<ConstInt *>(initVal) || dynamic_cast<ConstFloat *>(initVal)) {
+            initValues.push_back(initVal);
+        } else {
+            printf("Error: Global constant array can only be initialized with constant values.\n");
+            return false;
+        }
+    }
+
+    // 设置初始化值列表
+    globalArray->setInitValueList(initValues);
+
+    // 设置节点值
+    nameNode->val = globalArray;
+    node->val = globalArray;
+
+    // 收集生成的IR指令
+    node->blockInsts.addInst(initExprNode->blockInsts);
+
+    printf("Debug: Successfully created global constant array '%s' with type %s\n",
+           nameNode->name.c_str(),
+           arrayType->toString().c_str());
+    printf("Debug: Registered alias '%s' pointing to global array '%s'\n",
+           nameNode->name.c_str(),
+           globalArray->getIRName().c_str());
 
     return true;
 }

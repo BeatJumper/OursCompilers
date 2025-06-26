@@ -891,10 +891,68 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                 iloc.inst("sub", result_reg_name, base_reg_name, "#" + std::to_string(-base_offset));
             }
         } else {
-            // 基址在寄存器中，直接复制
-            int32_t base_reg = basePtr->getRegId();
-            if (base_reg != -1 && base_reg != result_reg) {
-                iloc.inst("mov", PlatformArm64::regName[result_reg], PlatformArm64::regName[base_reg]);
+            // 检查是否是全局变量
+            if (auto globalVar = dynamic_cast<GlobalVariable *>(basePtr)) {
+                // 处理全局变量的GEP指令
+                printf("Debug: getelementptr for global variable %s\n", globalVar->getName().c_str());
+
+                // 获取索引值来计算偏移量
+                if (inst->getOperandsNum() >= 3) {
+                    Value * index1 = inst->getOperand(1); // 第一个索引（通常是0）
+                    Value * index2 = inst->getOperand(2); // 第二个索引（数组元素索引）
+
+                    ConstInt * constIdx1 = dynamic_cast<ConstInt *>(index1);
+                    ConstInt * constIdx2 = dynamic_cast<ConstInt *>(index2);
+
+                    if (constIdx1 && constIdx2) {
+                        int64_t idx1 = constIdx1->getVal();
+                        int64_t idx2 = constIdx2->getVal();
+
+                        // 对于一维数组 a[5]，偏移量 = idx2 * sizeof(element)
+                        // 假设是int数组，每个元素4字节
+                        int64_t element_offset = idx2 * 4;
+
+                        printf("Debug: Global array access: idx1=%ld, idx2=%ld, element_offset=%ld\n",
+                               idx1,
+                               idx2,
+                               element_offset);
+
+                        // 生成地址计算指令
+                        std::string result_reg_name = PlatformArm64::regName[result_reg];
+                        if (result_reg_name[0] == 'w') {
+                            result_reg_name[0] = 'x';
+                        }
+
+                        // 加载全局变量的基地址
+                        // adrp x_reg, symbol
+                        iloc.inst("adrp", result_reg_name, globalVar->getName());
+                        // add x_reg, x_reg, :lo12:symbol
+                        iloc.inst("add", result_reg_name, result_reg_name, ":lo12:" + globalVar->getName());
+
+                        // 如果有偏移量，添加偏移
+                        if (element_offset > 0) {
+                            iloc.inst("add", result_reg_name, result_reg_name, "#" + std::to_string(element_offset));
+                        }
+
+                        return;
+                    }
+                }
+
+                // 如果没有索引或索引不是常量，只加载基地址
+                std::string result_reg_name = PlatformArm64::regName[result_reg];
+                if (result_reg_name[0] == 'w') {
+                    result_reg_name[0] = 'x';
+                }
+                // adrp x_reg, symbol
+                iloc.inst("adrp", result_reg_name, globalVar->getName());
+                // add x_reg, x_reg, :lo12:symbol
+                iloc.inst("add", result_reg_name, result_reg_name, ":lo12:" + globalVar->getName());
+            } else {
+                // 基址在寄存器中，直接复制
+                int32_t base_reg = basePtr->getRegId();
+                if (base_reg != -1 && base_reg != result_reg) {
+                    iloc.inst("mov", PlatformArm64::regName[result_reg], PlatformArm64::regName[base_reg]);
+                }
             }
         }
     }

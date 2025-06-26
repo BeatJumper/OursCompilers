@@ -312,6 +312,24 @@ private:
     /// @return 翻译是否成功，true：成功，false：失败
     bool ir_global_const_declare(ast_node * node, ast_node * typeNode, ast_node * nameNode, ast_node * initExprNode);
 
+    /// @brief 全局常量标量声明
+    /// @param node AST节点
+    /// @param typeNode 类型节点
+    /// @param nameNode 名称节点
+    /// @param initExprNode 初始化表达式节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool
+    ir_global_const_scalar_declare(ast_node * node, ast_node * typeNode, ast_node * nameNode, ast_node * initExprNode);
+
+    /// @brief 全局常量数组声明
+    /// @param node AST节点
+    /// @param typeNode 类型节点
+    /// @param nameNode 名称节点
+    /// @param initExprNode 初始化表达式节点
+    /// @return 翻译是否成功，true：成功，false：失败
+    bool
+    ir_global_const_array_declare(ast_node * node, ast_node * typeNode, ast_node * nameNode, ast_node * initExprNode);
+
     /// @brief 局部常量声明
     /// @param node AST节点
     /// @param typeNode 类型节点

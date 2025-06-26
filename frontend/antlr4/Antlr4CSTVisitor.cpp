@@ -966,15 +966,21 @@ std::any MiniCCSTVisitor::visitConstDecl(MiniCParser::ConstDeclContext * ctx)
     ast_node * stmt_node = create_contain_node(ast_operator_type::AST_OP_CONST_DECL_STMT);
 
     // 获取基本类型
-    type_attr typeAttr = std::any_cast<type_attr>(visitBasicType(ctx->basicType()));
+    type_attr baseTypeAttr = std::any_cast<type_attr>(visitBasicType(ctx->basicType()));
 
     // 处理所有常量定义
     for (auto constDefCtx: ctx->constDef()) {
-        // 获取常量定义节点
-        ast_node * constDefNode = std::any_cast<ast_node *>(visitConstDef(constDefCtx));
+        // 获取常量定义节点和维度信息
+        auto constDefResult = std::any_cast<std::pair<ast_node *, type_attr>>(visitConstDef(constDefCtx));
+        ast_node * constDefNode = constDefResult.first;
+        type_attr constTypeAttr = constDefResult.second;
+
+        // 合并基本类型和数组维度信息
+        constTypeAttr.type = baseTypeAttr.type;
+        constTypeAttr.lineno = baseTypeAttr.lineno;
 
         // 创建类型节点
-        ast_node * type_node = create_type_node(typeAttr);
+        ast_node * type_node = create_type_node(constTypeAttr);
 
         // 创建常量声明节点
         ast_node * decl_node = ast_node::New(ast_operator_type::AST_OP_CONST_DECL, type_node, constDefNode, nullptr);
@@ -988,10 +994,10 @@ std::any MiniCCSTVisitor::visitConstDecl(MiniCParser::ConstDeclContext * ctx)
 
 /// @brief 非终结符ConstDef的分析
 /// @param ctx CST上下文
-/// @return std::any AST的节点
+/// @return std::any AST的节点和类型信息的配对
 std::any MiniCCSTVisitor::visitConstDef(MiniCParser::ConstDefContext * ctx)
 {
-    // 识别文法产生式：constDef : T_ID T_ASSIGN constInitVal
+    // 识别文法产生式：constDef : T_ID (T_L_BRACKET constExp T_R_BRACKET)* T_ASSIGN constInitVal
 
     // 获取常量名
     auto constId = ctx->T_ID()->getText();
@@ -1000,11 +1006,26 @@ std::any MiniCCSTVisitor::visitConstDef(MiniCParser::ConstDefContext * ctx)
     // 创建常量名节点
     auto constNode = ast_node::New(constId, lineNo);
 
+    // 创建类型属性来存储数组维度信息
+    type_attr constTypeAttr{BasicType::TYPE_VOID, lineNo, false, {}};
+
     // 处理数组维度（如果存在）
     if (!ctx->constExp().empty()) {
-        // 这是数组常量，需要处理维度信息
+        constTypeAttr.is_array = true;
+
         for (auto constExpCtx: ctx->constExp()) {
             auto dimNode = std::any_cast<ast_node *>(visitConstExp(constExpCtx));
+
+            // 从常量表达式节点获取维度值
+            if (dimNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+                constTypeAttr.dimensions.push_back(dimNode->integer_val);
+            } else {
+                // 如果不是常量，暂时使用-1表示动态大小（后续可以扩展）
+                printf("Warning: Non-constant array dimension at line %ld\n", lineNo);
+                constTypeAttr.dimensions.push_back(-1);
+            }
+
+            // 将维度节点作为常量节点的子节点保存（用于后续处理）
             constNode->insert_son_node(dimNode);
         }
     }
@@ -1013,7 +1034,10 @@ std::any MiniCCSTVisitor::visitConstDef(MiniCParser::ConstDefContext * ctx)
     auto initValNode = std::any_cast<ast_node *>(visitConstInitVal(ctx->constInitVal()));
 
     // 创建赋值节点
-    return ast_node::New(ast_operator_type::AST_OP_ASSIGN, constNode, initValNode, nullptr);
+    ast_node * assignNode = ast_node::New(ast_operator_type::AST_OP_ASSIGN, constNode, initValNode, nullptr);
+
+    // 返回节点和类型信息的配对
+    return std::make_pair(assignNode, constTypeAttr);
 }
 
 /// @brief 非终结符ConstInitVal的分析

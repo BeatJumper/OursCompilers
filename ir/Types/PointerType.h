@@ -125,6 +125,15 @@ public:
         return pointeeType->toString() + "*";
     }
 
+    ///
+    /// @brief 获得指针类型所占内存空间大小
+    /// @return int32_t 指针大小（通常是8字节）
+    ///
+    [[nodiscard]] int32_t getSize() const override
+    {
+        return 8; // 64位系统中指针大小为8字节
+    }
+
 private:
     ///
     /// @brief 指针直接指向的类型，在指针操作中只解引用一次

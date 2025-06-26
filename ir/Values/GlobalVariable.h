@@ -72,12 +72,18 @@ public:
     ///
     void toDeclareString(std::string & str)
     {
-        str += "@" + getName() + " = private unnamed_addr ";
+        str += "@" + getName() + " = ";
 
-        if (isConstant) {
-            str += "constant ";
+        // 对于全局常量数组，使用 dso_local
+        if (isConstant && getType()->isArrayType()) {
+            str += "dso_local constant ";
         } else {
-            str += "global ";
+            str += "private unnamed_addr ";
+            if (isConstant) {
+                str += "constant ";
+            } else {
+                str += "global ";
+            }
         }
 
         str += getType()->toString();
