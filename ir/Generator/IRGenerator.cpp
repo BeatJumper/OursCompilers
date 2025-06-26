@@ -1740,6 +1740,11 @@ bool IRGenerator::ir_return(ast_node * node)
     GotoInstruction * gotoExit = new GotoInstruction(currentFunc, exitLabel);
     node->blockInsts.addInst(gotoExit);
 
+    // 在 return 语句之后添加一个新的标签，确保后续代码在不同的基本块中
+    // 这样可以避免在同一个基本块中出现不可达代码
+    LabelInstruction * unreachableLabel = new LabelInstruction(currentFunc);
+    node->blockInsts.addInst(unreachableLabel);
+
     // 设置节点值为返回值（可能为nullptr）
     node->val = returnValue;
 
