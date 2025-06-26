@@ -208,14 +208,11 @@ bool IRGenerator::ir_compile_unit(ast_node * node)
 /// @return 翻译是否成功，true：成功，false：失败
 bool IRGenerator::ir_function_define(ast_node * node)
 {
-    bool result;
-
     printf("==== ENTER ir_function_define ====\n");
 
-    // 创建一个函数，用于当前函数处理
+    // 检查是否有嵌套函数定义（不允许）
     if (module->getCurrentFunction()) {
-        // 函数中嵌套定义函数，这是不允许的，错误退出
-        // TODO 自行追加语义错误处理
+        printf("Error: Nested function definition is not allowed.\n");
         return false;
     }
 
@@ -229,100 +226,79 @@ bool IRGenerator::ir_function_define(ast_node * node)
     ast_node * param_node = node->sons[2];
     ast_node * block_node = node->sons[3];
 
-    // 创建一个新的函数定义，函数的返回类型设置为type_node里的type
+    // 创建新函数
     Function * newFunc = module->newFunction(name_node->name, type_node->type);
     if (!newFunc) {
         printf("Error: Function %s already exists.\n", name_node->name.c_str());
         return false;
     }
 
+    // 设置当前函数并进入新作用域
     module->setCurrentFunction(newFunc);
     module->enterScope();
     InterCode & irCode = newFunc->getInterCode();
 
-    // 入口label和entry, entry不要了
+    // 创建函数入口标签
     LabelInstruction * entryLabelInst = new LabelInstruction(newFunc);
     irCode.addInst(entryLabelInst);
-    // irCode.addInst(new EntryInstruction(newFunc));
 
-    // 出口label
+    // 创建函数出口标签（稍后添加）
     LabelInstruction * exitLabelInst = new LabelInstruction(newFunc);
     newFunc->setExitLabel(exitLabelInst);
 
-    // 处理形参
-    result = ir_function_formal_params(param_node);
-    if (!result) {
+    // 处理函数形参
+    if (!ir_function_formal_params(param_node)) {
         printf("Error: Failed to process function parameters.\n");
         return false;
     }
-    node->blockInsts.addInst(param_node->blockInsts);
+    irCode.addInst(param_node->blockInsts);
 
-    // 新建一个Value，用于保存函数的返回值，如果没有返回值可不用申请
+    // 为非void函数创建返回值变量
     LocalVariable * retValue = nullptr;
-    AllocaInstruction * allocaRet = nullptr;
-    StoreInstruction * storeRet = nullptr;
     if (!type_node->type->isVoidType()) {
-        // 为所有非void函数创建返回值变量
         retValue = static_cast<LocalVariable *>(module->newVarValue(type_node->type, "__ret"));
-        allocaRet = new AllocaInstruction(newFunc, retValue, type_node->type, 4);
+        AllocaInstruction * allocaRet = new AllocaInstruction(newFunc, retValue, type_node->type, 4);
         irCode.addInst(allocaRet);
 
-        // 只有main函数初始化为0，其他函数不初始化
+        // 只有main函数初始化返回值为0
         if (name_node->name == "main") {
-            // 根据返回类型创建相应的常量0
             Value * zeroConst = nullptr;
             if (type_node->type->isFloatType()) {
                 zeroConst = module->newConstFloat(0.0f);
             } else {
                 zeroConst = module->newConstInt(0);
             }
-            // 创建一个store指令，将0存储到retValue
-            storeRet = new StoreInstruction(newFunc, zeroConst, retValue, 4);
+            StoreInstruction * storeRet = new StoreInstruction(newFunc, zeroConst, retValue, 4);
             irCode.addInst(storeRet);
         }
     }
     newFunc->setReturnValue(retValue);
 
-    // 处理block
+    // 处理函数体（不需要新的作用域，因为函数本身就是一个作用域）
     block_node->needScope = false;
-    result = ir_block(block_node);
-    if (!result) {
+    if (!ir_block(block_node)) {
+        printf("Error: Failed to process function body.\n");
         return false;
     }
-    // IR指令追加到当前的节点中
-    node->blockInsts.addInst(block_node->blockInsts);
 
-    // 此时，所有指令都加入到当前函数中，也就是node->blockInsts
+    // 将函数体的指令直接添加到函数的IR中
+    irCode.addInst(block_node->blockInsts);
 
-    // node节点的指令移动到函数的IR指令列表中
-    irCode.addInst(node->blockInsts);
-
-    // 保持变量声明的原始位置，符合C语言语义
-    // 不进行强制重排序，这样可以正确处理块级作用域的变量声明
-    //
-    // 注释：之前的重排序逻辑会将所有alloca指令移动到函数开头，
-    // 这破坏了C语言的作用域规则，特别是对于在if/while等块中声明的变量。
-    // 现在我们保持变量声明的原始位置，确保语义正确性。
-
-    // 添加函数出口Label指令
+    // 添加函数出口标签
     irCode.addInst(exitLabelInst);
 
-    // 函数出口指令 - 根据函数类型决定如何生成
+    // 添加函数返回指令
     if (!type_node->type->isVoidType() && retValue) {
-        // 非void函数需要从返回值变量加载值再返回
-
-        // 创建load指令，从返回值变量加载值
+        // 非void函数：加载返回值并返回
         LoadInstruction * loadRet = new LoadInstruction(newFunc, retValue, retValue, 4);
         irCode.addInst(loadRet);
-
-        // 创建返回指令，返回加载的值
         irCode.addInst(new ExitInstruction(newFunc, loadRet));
     } else {
-        // void函数
+        // void函数：直接返回
         irCode.addInst(new ExitInstruction(newFunc, nullptr));
     }
 
-    // 恢复成外部函数
+    // 恢复外部状态
     module->setCurrentFunction(nullptr);
     module->leaveScope();
 
