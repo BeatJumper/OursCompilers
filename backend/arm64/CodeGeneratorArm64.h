@@ -13,8 +13,8 @@
 /// <tr><td>2024-11-21 <td>1.0     <td>zenglj  <td>新做
 /// </table>
 ///
+#pragma once
 #include "CodeGeneratorAsm.h"
-#include "SimpleRegisterAllocator.h"
 
 class CodeGeneratorArm64 : public CodeGeneratorAsm {
 
@@ -57,6 +57,14 @@ protected:
     /// @param func 要处理的函数
     void adjustFormalParamInsts(Function * func);
 
+    /// @brief 寄存器分配后对乘法和除法操作数里的常量添加赋值
+    /// @param func 要处理的函数
+    void adjustBinaryInsts(Function * func);
+
+    /// @brief 寄存器分配前对常数进行扫描，对一些常数提前追加MOV指令
+    /// @param func 要处理的函数
+    void adjustMovInsts(Function * func);
+
     ///
     /// @brief 获取IR变量相关信息字符串
     /// @param str
@@ -64,8 +72,4 @@ protected:
     void getIRValueStr(Value * val, std::string & str);
 
 private:
-    ///
-    /// @brief 简单的朴素寄存器分配方法
-    ///
-    SimpleRegisterAllocator simpleRegisterAllocator;
 };

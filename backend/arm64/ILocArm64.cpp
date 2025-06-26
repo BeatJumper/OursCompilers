@@ -361,7 +361,7 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
 
     if (Instanceof(constVal, ConstInt *, src_var)) {
         // 整型常量
-        // ldr x8,#100
+        // mov w8,#100
         load_imm(rs_reg_no, constVal->getVal());
     } else if (src_var->getRegId() != -1) {
 
@@ -436,18 +436,18 @@ void ILocArm64::store_var(int src_reg_no, Value * dest_var, int tmp_reg_no)
 {
     // 被保存目标变量肯定不是常量
 
-    if (dest_var->getLoadRegId() != -1) {
+    if (dest_var->getRegId() != -1) {
 
         // 寄存器变量
 
         // -1表示非寄存器，其他表示寄存器的索引值
-        int dest_reg_id = dest_var->getLoadRegId();
+        int dest_reg_id = dest_var->getRegId();
 
         // 寄存器不一样才需要mov操作
         if (src_reg_no != dest_reg_id) {
-
+            printf("赋值，寄存器到寄存器\n");
             // mov x2,x8 | 这里有优化空间——消除x8
-            emit("mov", PlatformArm64::regName[src_reg_no], PlatformArm64::regName[dest_reg_id]);
+            emit("mov", PlatformArm64::regName[dest_reg_id], PlatformArm64::regName[src_reg_no]);
         }
 
     } else if (Instanceof(globalVar, GlobalVariable *, dest_var)) {

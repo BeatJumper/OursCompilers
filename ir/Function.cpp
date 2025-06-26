@@ -372,6 +372,16 @@ void Function::addBasicBlock(InterCode * BasicBlock)
     this->BasicBlocks.push_back(BasicBlock);
 }
 
+std::vector<InterCode *> & Function::getBasicBlocks()
+{
+    return BasicBlocks;
+}
+
+void Function::clearBasicBlocks()
+{
+    BasicBlocks.clear();
+}
+
 ///
 /// @brief 获取下一个栈偏移量
 ///

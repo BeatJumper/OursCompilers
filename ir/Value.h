@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <string>
 
+#include <cassert>
 #include "Use.h"
 #include "Type.h"
 
@@ -48,10 +49,7 @@ protected:
     ///
     std::vector<Use *> uses;
 
-    ///
-    /// @brief 分配的寄存器编号
-    ///
-    int32_t loadRegId = -1;
+    int32_t regId = -1;
 
 public:
     /// @brief 构造函数
@@ -107,7 +105,7 @@ public:
     /// @brief 获得分配的寄存器编号或ID
     /// @return int32_t 寄存器编号
     ///
-    virtual int32_t getRegId();
+    int32_t getRegId();
 
     ///
     /// @brief @brief 如是内存变量型Value，则获取基址寄存器和偏移
@@ -118,30 +116,11 @@ public:
     ///
     virtual bool getMemoryAddr(int32_t * regId = nullptr, int64_t * offset = nullptr);
 
-    ///
-    /// @brief 对该Value进行Load用的寄存器编号
-    /// @return int32_t 寄存器编号
-    ///
-    int32_t getLoadRegId() const
-    {
-        return loadRegId;
-    }
+    /// @brief 对该Value分配Reg或者Load用的Reg
+    /// @param regId
+    void setRegId(int32_t regId);
 
-    ///
-    /// @brief 对该Value进行Load用的寄存器编号
-    /// @return int32_t 寄存器编号
-    ///
-    void setLoadRegId(int32_t regId)
-    {
-        loadRegId = regId;
-    }
-
-    ///
-    /// @brief 判断是否已经分配寄存器
-    /// @return int32_t 寄存器编号
-    ///
-    bool isAllocated() const
-    {
-        return loadRegId != -1;
-    }
+    /// @brief 获取一个变量是否被设置为溢出的
+    /// @return 是否溢出到栈
+    bool get_isleaked();
 };

@@ -17,12 +17,14 @@
 
 #include <map>
 #include <vector>
+#include "BitMap.h"
+#include "Value.h"
+#include "PlatformArm64.h"
 
 #include "Function.h"
 #include "ILocArm64.h"
 #include "Instruction.h"
 #include "PlatformArm64.h"
-#include "SimpleRegisterAllocator.h"
 #include "RegVariable.h"
 
 using namespace std;
@@ -163,11 +165,6 @@ protected:
     map<IRInstOperator, translate_handler> translator_handlers;
 
     ///
-    /// @brief 简单的朴素寄存器分配方法
-    ///
-    SimpleRegisterAllocator & simpleRegisterAllocator;
-
-    ///
     /// @brief 函数实参累计
     ///
     int32_t argCount = 0;
@@ -185,10 +182,7 @@ public:
     /// @param _irCode IR指令
     /// @param _func 函数
     /// @param _iloc 后端指令
-    InstSelectorArm64(std::vector<Instruction *> & _irCode,
-                      ILocArm64 & _iloc,
-                      Function * _func,
-                      SimpleRegisterAllocator & allocator);
+    InstSelectorArm64(std::vector<Instruction *> & _irCode, ILocArm64 & _iloc, Function * _func);
 
     ///
     /// @brief 析构函数

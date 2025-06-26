@@ -13,6 +13,7 @@
 /// <tr><td>2024-11-21 <td>1.0     <td>zenglj  <td>新做
 /// </table>
 ///
+#pragma once
 #include <cstdio>
 #include <cstring>
 

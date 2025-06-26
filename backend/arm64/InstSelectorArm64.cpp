@@ -41,11 +41,8 @@
 /// @param _irCode 指令
 /// @param _iloc ILoc
 /// @param _func 函数
-InstSelectorArm64::InstSelectorArm64(vector<Instruction *> & _irCode,
-                                     ILocArm64 & _iloc,
-                                     Function * _func,
-                                     SimpleRegisterAllocator & allocator)
-    : ir(_irCode), iloc(_iloc), func(_func), simpleRegisterAllocator(allocator)
+InstSelectorArm64::InstSelectorArm64(vector<Instruction *> & _irCode, ILocArm64 & _iloc, Function * _func)
+    : ir(_irCode), iloc(_iloc), func(_func)
 {
     translator_handlers[IRInstOperator::IRINST_OP_LABEL] = &InstSelectorArm64::translate_label;
     translator_handlers[IRInstOperator::IRINST_OP_GOTO] = &InstSelectorArm64::translate_goto;
@@ -178,7 +175,7 @@ void InstSelectorArm64::translate_assign(Instruction * inst)
     Value * result = inst->getOperand(0);
     Value * arg1 = inst->getOperand(1);
 
-    int32_t arg1_regId = arg1->getLoadRegId();
+    int32_t arg1_regId = arg1->getRegId();
     int32_t result_regId = result->getRegId();
 
     if (Instanceof(constVal, ConstInt *, arg1)) {
@@ -193,24 +190,12 @@ void InstSelectorArm64::translate_assign(Instruction * inst)
         // 寄存器 => 内存
         // 寄存器 => 寄存器
 
-        // x8 -> xs 可能用到x9
-        iloc.store_var(result_regId, arg1, ARM64_TMP_REG_NO);
+        // 修复：正确的参数顺序应该是 (源寄存器, 目标变量, 临时寄存器)
+        iloc.store_var(arg1_regId, result, ARM64_TMP_REG_NO);
     } else if (result_regId != -1) {
         // 内存变量 => 寄存器
 
         iloc.load_var(result_regId, arg1);
-    } else {
-        // 内存变量 => 内存变量
-
-        int32_t temp_regno = simpleRegisterAllocator.Allocate();
-
-        // arg1 -> x8
-        iloc.load_var(temp_regno, arg1);
-
-        // r8 -> rs 可能用到x9
-        iloc.store_var(temp_regno, result, ARM64_TMP_REG_NO);
-
-        simpleRegisterAllocator.free(temp_regno);
     }
 }
 
@@ -226,51 +211,28 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
     Value * arg1 = inst->getOperand(0);
     Value * arg2 = inst->getOperand(1);
 
-    int32_t arg1_reg_no = arg1->getLoadRegId();
-    int32_t arg2_reg_no = arg2->getLoadRegId();
-    int32_t result_reg_no = inst->getLoadRegId();
-    int32_t load_result_reg_no, load_arg1_reg_no, load_arg2_reg_no;
+    int32_t arg1_reg_no = arg1->getRegId();
+    int32_t arg2_reg_no = arg2->getRegId();
+    int32_t result_reg_no = result->getRegId();
+
+    string s1 = PlatformArm64::regName[arg1_reg_no];
+    string s2 = PlatformArm64::regName[arg2_reg_no];
 
     // 看arg1是否是寄存器，若是则寄存器寻址，否则要load变量到寄存器中
-    if (arg1_reg_no == -1) {
-        // 分配一个寄存器x8
-        load_arg1_reg_no = simpleRegisterAllocator.Allocate(arg1);
-
-        // arg1 -> x8
-        // TODO 这里可能由于偏移不满足指令的要求，需要额外分配寄存器
-        iloc.load_var(load_arg1_reg_no, arg1);
-    } else {
-        load_arg1_reg_no = arg1_reg_no;
+    if (Instanceof(constVal, ConstInt *, arg1)) {
+        if (inst->getOp() == IRInstOperator::IRINST_OP_ADD_I || inst->getOp() == IRInstOperator::IRINST_OP_SUB_I) {
+            s1 = to_string(constVal->getVal());
+        }
     }
 
     // 看arg2是否是寄存器，若是则寄存器寻址，否则要load变量到寄存器中
-    if (arg2_reg_no == -1) {
-        // 分配一个寄存器r9
-        load_arg2_reg_no = simpleRegisterAllocator.Allocate(arg2);
-
-        // arg2 -> r9
-        iloc.load_var(load_arg2_reg_no, arg2);
-    } else {
-        load_arg2_reg_no = arg2_reg_no;
+    if (Instanceof(constVal, ConstInt *, arg2)) {
+        if (inst->getOp() == IRInstOperator::IRINST_OP_ADD_I || inst->getOp() == IRInstOperator::IRINST_OP_SUB_I) {
+            s2 = to_string(constVal->getVal());
+        }
     }
 
-    // 看结果变量是否是寄存器，若不是则需要分配一个新的寄存器来保存运算的结果
-    if (result_reg_no == -1) {
-        // 分配一个寄存器x10，用于暂存结果
-        load_result_reg_no = simpleRegisterAllocator.Allocate(result);
-    } else {
-        load_result_reg_no = result_reg_no;
-    }
-
-    iloc.inst(operator_name,
-              PlatformArm64::regName[load_result_reg_no],
-              PlatformArm64::regName[load_arg1_reg_no],
-              PlatformArm64::regName[load_arg2_reg_no]);
-
-    // 释放寄存器
-    // simpleRegisterAllocator.free(arg1);
-    // simpleRegisterAllocator.free(arg2);
-    // simpleRegisterAllocator.free(result);
+    iloc.inst(operator_name, PlatformArm64::regName[result_reg_no], s1, s2);
 }
 
 /// @brief 加法指令翻译成ARM64汇编
@@ -311,9 +273,9 @@ void InstSelectorArm64::translate_mod_i(Instruction * inst)
     Value * arg1 = inst->getOperand(0);
     Value * arg2 = inst->getOperand(1);
 
-    int32_t arg1_reg_no = arg1->getLoadRegId();
-    int32_t arg2_reg_no = arg2->getLoadRegId();
-    int32_t result_reg_no = result->getLoadRegId();
+    int32_t arg1_reg_no = arg1->getRegId();
+    int32_t arg2_reg_no = arg2->getRegId();
+    int32_t result_reg_no = result->getRegId();
 
     iloc.inst("sdiv",
               PlatformArm64::regName[result_reg_no],
@@ -367,7 +329,7 @@ void InstSelectorArm64::translate_arg(Instruction * inst)
     Value * src = inst->getOperand(0);
 
     // 当前统计的ARG指令个数
-    int32_t regId = src->getLoadRegId();
+    int32_t regId = src->getRegId();
 
     if (realArgCount < 8) {
         // 前八个参数通过寄存器传递
@@ -414,13 +376,14 @@ void InstSelectorArm64::translate_br(Instruction * inst)
     LabelInstruction * iffalse = dynamic_cast<LabelInstruction *>(inst->getOperand(2));
 
     // 获取条件操作数分配的寄存器号
-    int32_t cond_reg_no = cond->getLoadRegId();
+    int32_t cond_reg_no = cond->getRegId();
 
     if (cond_reg_no == -1) {
         // 如果不是寄存器变量，分配一个寄存器
-        int32_t load_cond_reg_no = simpleRegisterAllocator.Allocate(cond);
-        iloc.load_var(load_cond_reg_no, cond);
-        cond_reg_no = load_cond_reg_no;
+        // TODO 应该没啥用，暂时不用管
+        // int32_t load_cond_reg_no = simpleRegisterAllocator.Allocate(cond);
+        // iloc.load_var(load_cond_reg_no, cond);
+        // cond_reg_no = load_cond_reg_no;
     }
 
     // 生成符合标准的标签格式
@@ -454,7 +417,7 @@ void InstSelectorArm64::translate_alloca(Instruction * inst)
     }
 
     // 如果需要，可以生成加载变量地址的指令
-    if (result->getLoadRegId() != -1) {
+    if (result->getRegId() != -1) {
         // 如果结果需要加载到寄存器
         iloc.lea_var(result->getRegId(), result);
     }
@@ -478,32 +441,33 @@ void InstSelectorArm64::translate_cmp(Instruction * inst)
     Value * arg2 = inst->getOperand(1);
 
     // 获取操作数的寄存器编号
-    int32_t arg1_reg_no = arg1->getLoadRegId();
-    int32_t arg2_reg_no = arg2->getLoadRegId();
-    int32_t load_arg1_reg_no, load_arg2_reg_no;
+    int32_t arg1_reg_no = arg1->getRegId();
+    int32_t arg2_reg_no = arg2->getRegId();
 
     // 看arg1是否是寄存器，若是则寄存器寻址，否则要load变量到寄存器中
     if (arg1_reg_no == -1) {
         // 分配一个寄存器
-        load_arg1_reg_no = simpleRegisterAllocator.Allocate(arg1);
+        // TODO 可能需要在寄存器分配前检查cmp指令是否有常量，并插入常量的赋值语句
+        // load_arg1_reg_no = simpleRegisterAllocator.Allocate(arg1);
         // 加载arg1到寄存器
-        iloc.load_var(load_arg1_reg_no, arg1);
+        // iloc.load_var(load_arg1_reg_no, arg1);
     } else {
-        load_arg1_reg_no = arg1_reg_no;
+        // load_arg1_reg_no = arg1_reg_no;
     }
 
     // 看arg2是否是寄存器，若是则寄存器寻址，否则要load变量到寄存器中
     if (arg2_reg_no == -1) {
         // 分配一个寄存器
-        load_arg2_reg_no = simpleRegisterAllocator.Allocate(arg2);
+        // TODO 可能需要在寄存器分配前检查cmp指令是否有常量，并插入常量的赋值语句
+        // load_arg2_reg_no = simpleRegisterAllocator.Allocate(arg2);
         // 加载arg2到寄存器
-        iloc.load_var(load_arg2_reg_no, arg2);
+        // iloc.load_var(load_arg2_reg_no, arg2);
     } else {
-        load_arg2_reg_no = arg2_reg_no;
+        // load_arg2_reg_no = arg2_reg_no;
     }
 
     // 生成比较指令
-    iloc.inst("cmp", PlatformArm64::regName[load_arg1_reg_no], PlatformArm64::regName[load_arg2_reg_no]);
+    iloc.inst("cmp", PlatformArm64::regName[arg1_reg_no], PlatformArm64::regName[arg2_reg_no]);
 
     // 释放寄存器
     // simpleRegisterAllocator.free(arg1);
@@ -517,16 +481,17 @@ void InstSelectorArm64::translate_load(Instruction * inst)
     Value * result = inst;
     Value * arg1 = inst->getOperand(0);
 
-    int32_t result_regId = result->getLoadRegId();
+    int32_t result_regId = result->getRegId();
 
     if (result_regId != -1) {
         // 内存变量 => 寄存器
         iloc.load_var(result_regId, arg1);
     } else {
         // 若结果变量不是寄存器，分配一个新的寄存器来保存加载的结果
-        int32_t temp_regno = simpleRegisterAllocator.Allocate(result);
-        iloc.load_var(temp_regno, arg1);
-        result->setLoadRegId(temp_regno);
+        // TODO 可能需要在寄存器分配前检查load指令结果变量是否为寄存器，若不是则插入赋值语句
+        // int32_t temp_regno = simpleRegisterAllocator.Allocate(result);
+        // iloc.load_var(temp_regno, arg1);
+        // result->setLoadRegId(temp_regno);
         // 后续可以考虑将结果保存到合适的位置，这里暂时不做处理
         // simpleRegisterAllocator.free(temp_regno);
     }
@@ -539,7 +504,7 @@ void InstSelectorArm64::translate_store(Instruction * inst)
     Value * arg1 = inst->getOperand(0);
     Value * arg2 = inst->getOperand(1);
 
-    int32_t arg1_regId = arg1->getLoadRegId();
+    int32_t arg1_regId = arg1->getRegId();
 
     if (arg1_regId != -1) {
         // 寄存器 => 内存
@@ -556,10 +521,11 @@ void InstSelectorArm64::translate_store(Instruction * inst)
                 std::string s = "[" + PlatformArm64::regName[dest_baseRegId] + ",#" + std::to_string(dest_offset) + "]";
                 iloc.inst("str", "wzr", s);
             } else {
-                int32_t temp_regno = simpleRegisterAllocator.Allocate(arg1);
-                iloc.load_var(temp_regno, arg1);
-                iloc.store_var(temp_regno, arg2, ARM64_TMP_REG_NO);
-                simpleRegisterAllocator.free(temp_regno);
+                // TODO 可能需要在寄存器分配前检查store指令源操作数是否为寄存器，若不是则插入赋值语句
+                // int32_t temp_regno = simpleRegisterAllocator.Allocate(arg1);
+                // iloc.load_var(temp_regno, arg1);
+                // iloc.store_var(temp_regno, arg2, ARM64_TMP_REG_NO);
+                // simpleRegisterAllocator.free(temp_regno);
             }
         }
 
@@ -588,7 +554,7 @@ void InstSelectorArm64::translate_ret(Instruction * inst)
 
     // 如果存在返回值，确保其位于x0寄存器
     if (returnValue != nullptr) {
-        int32_t resultRegId = returnValue->getLoadRegId();
+        int32_t resultRegId = returnValue->getRegId();
 
         // 如果返回值未在x0中，进行寄存器移动
         if (resultRegId != 0) {

@@ -1,6 +1,5 @@
 /// @file CodeGeneratorArm32.cpp
 /// @brief ARM64的后端处理实现
-
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -12,7 +11,6 @@
 #include "PlatformArm64.h"
 #include "CodeGeneratorArm64.h"
 #include "InstSelectorArm64.h"
-#include "SimpleRegisterAllocator.h"
 #include "ILocArm64.h"
 #include "RegVariable.h"
 #include "FuncCallInstruction.h"
@@ -21,6 +19,8 @@
 #include "Instruction.h"
 #include "ConstFloat.h"
 #include "BinaryInstruction.h"
+#include "StoreInstruction.h"
+#include "InterferenceGraph.h"
 
 /// @brief 构造函数
 /// @param tab 符号表
@@ -169,7 +169,7 @@ void CodeGeneratorArm64::genCodeSection(Function * func)
     ILocArm64 iloc(module);
 
     // 指令选择生成汇编指令
-    InstSelectorArm64 instSelector(IrInsts, iloc, func, simpleRegisterAllocator);
+    InstSelectorArm64 instSelector(IrInsts, iloc, func);
     instSelector.setShowLinearIR(this->showLinearIR);
     iloc.allocStack(func, ARM64_TMP_REG_NO);
     instSelector.run();
@@ -224,18 +224,21 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     }
 
     // 函数开始,先释放所有寄存器,强制占用w0-w7寄存器，用于函数调用传递参数
-    for (int i = 0; i < 29; i++) {
+    /*for (int i = 0; i < 29; i++) {
         simpleRegisterAllocator.free(i);
     }
     for (int i = 0; i < 8; i++) {
         simpleRegisterAllocator.Allocate(i);
-    }
+    }*/
 
     std::vector<int32_t> & protectedRegNo = func->getProtectedReg();
 
     protectedRegNo.push_back(ARM64_FP_REG_NO);
     protectedRegNo.push_back(ARM64_LX_REG_NO);
     printf("寄存器分配中段\n");
+
+    // 给STORE用到的立即数添加MOV指令
+    adjustMovInsts(func);
 
     // 调整函数调用指令，主要是前8个寄存器传值，后面用栈传递
     // 为了更好的进行寄存器分配，可以进行对函数调用的指令进行预处理
@@ -244,79 +247,87 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     adjustFuncCallInsts(func);
     printf("调整函数调用指令\n");
 
+    adjustBinaryInsts(func);
+
+    // 加完新指令后也该重新调整IR编号
+    func->renameIR();
+
+    // 主要染色过程（不断尝试染色直至成功）
+    while (true) {
+        // 为局部变量和临时变量在栈内分配空间，指定偏移，进行栈空间的分配
+        stackAlloc(func);
+        printf("为局部变量和临时变量在栈内分配空间\n");
+
+        // 创建干涉图
+        InterferenceGraph * graph_ig = new InterferenceGraph(func);
+
+        // 尝试进行染色
+        printf("干涉图已产生\n");
+        // 染色是否成功
+        bool suc = InterferenceGraph::color_graph(graph_ig, PlatformArm64::maxUsableRegNum);
+
+        printf("完成染色\n");
+        if (suc) {
+            // assert(graph_ig->node_set.size());
+            for (node_IG * node: graph_ig->node_set) {
+                // assert(node->color != -1);
+                // std::cout << InterferenceGraph::ColorToRegId(node->color) << std::endl;
+                node->val->setRegId(InterferenceGraph::ColorToRegId(node->color));
+                // std::cout << node->val->getRegId() << std::endl;
+            }
+            break;
+        } else {
+            // TODO 完成变量溢出的工作
+            assert(false);
+        }
+    }
+
     // 函数形参要求前8个寄存器分配，后面的参数采用栈传递，实现实参的值传递给形参
     // 这一步是必须的
     adjustFormalParamInsts(func);
     printf("函数形参\n");
-
-    // 当前函数的指令列表,为每个临时变量分配寄存器
-    auto & insts = func->getInterCode().getInsts();
-    for (int i = 0; i < insts.size(); i++) {
-        if (insts[i]->hasResultValue() && insts[i]->getOp() != IRInstOperator::IRINST_OP_ALLOCA) {
-            int32_t regno = simpleRegisterAllocator.Allocate(insts[i]);
-            insts[i]->setLoadRegId(regno);
-        }
-    }
-
-    // 为局部变量和溢出变量在栈内分配空间，指定偏移，进行栈空间的分配
-    stackAlloc(func);
-    printf("为局部变量和临时变量在栈内分配空间\n");
     // GenBasicBlocks(func);
     // printf("基本块划分成功\n");
 
-#if 0
-    // 临时输出调整后的IR指令，用于查看当前的寄存器分配、栈内变量分配、实参入栈等信息的正确性
-    std::string irCodeStr;
-    func->toString(irCodeStr);
-    std::cout << irCodeStr << std::endl;
-#endif
+    /*#if 0
+        // 临时输出调整后的IR指令，用于查看当前的寄存器分配、栈内变量分配、实参入栈等信息的正确性
+        std::string irCodeStr;
+        func->toString(irCodeStr);
+        std::cout << irCodeStr << std::endl;
+    #endif*/
 }
 
-/// @brief 划分基本块
-/// @param func 函数指针
-/*void CodeGeneratorArm64::GenBasicBlocks(Function * func)
+/// @brief 寄存器分配前对常数进行扫描，对一些常数提前追加MOV指令
+/// @param func
+void CodeGeneratorArm64::adjustMovInsts(Function * func)
 {
-    // 首先获取函数的所有指令
-    std::vector<Instruction *> insts = func->getInterCode().getInsts();
+    auto & insts = func->getInterCode().getInsts();
+    for (int i = 0; i < insts.size();) {
 
-    InterCode * BasicBlock = new InterCode();
-    Instruction * lastInst = nullptr;
-    // 遍历func所有指令
-    for (auto inst: insts) {
-        // 找出所有首指令
-        // 函数入口指令
-        if (inst->getOp() == IRInstOperator::IRINST_OP_ENTRY) {
-            BasicBlock->addInst(inst);
-        }
-        // 无条件分支指令
-        else if (inst->getOp() == IRInstOperator::IRINST_OP_GOTO) {
-            BasicBlock->addInst(inst);
-            func->addBasicBlock(BasicBlock);
-            BasicBlock->deleteInst();
-        }
-        // 紧跟在一个条件或无条件转移指令之后的指令
-        else if (lastInst != nullptr && lastInst->getOp() == IRInstOperator::IRINST_OP_GOTO) {
-            // 如果当前基本块不为空，添加到函数中
-            if (!BasicBlock->getInsts().empty()) {
-                func->addBasicBlock(BasicBlock);
+        //目前第i条指令
+        Instruction * inst = insts[i];
+        //检测是否是Store指令
+        if (Instanceof(strinst, StoreInstruction *, inst)) {
+            //要存入的数
+            Value * val = inst->getOperand(0);
+            //检测要存入的数是否是constant
+            if (Instanceof(const_val, Constant *, val)) {
+                // constant要mov到的新寄存器变量
+                Value * newval = new Value(val->getType());
+                // 为constant创建mov指令
+                MoveInstruction * movinst = new MoveInstruction(func, newval, val);
+                //指令的对应constant操作数修改为新创建的寄存器变量
+                insts[i]->getOperands()[0] = new Use(newval, inst);
+
+                //插入到当前位置
+                insts.insert(insts.begin() + i, (Instruction *) movinst);
+                //插入后当前位置变为新插入的指令，故i额外+1
+                i++;
             }
-            BasicBlock->deleteInst();
-            BasicBlock->addInst(inst);
-        } else {
-            BasicBlock->addInst(inst);
         }
-        // 记录前一条指令
-        lastInst = inst;
+        i++;
     }
-    // 添加最后一个基本块
-    if (!BasicBlock->getInsts().empty()) {
-        func->addBasicBlock(BasicBlock);
-    }
-
-    // 释放暂存基本块的内存
-    BasicBlock->deleteInst();
-    free(BasicBlock);
-}*/
+}
 
 /// @brief 寄存器分配前对函数内的指令进行调整，以便方便寄存器分配
 /// @param func 要处理的函数
@@ -335,7 +346,7 @@ void CodeGeneratorArm64::adjustFormalParamInsts(Function * func)
 
         // 前八个设置分配寄存器
 
-        params[k]->setLoadRegId(k);
+        params[k]->setRegId(k);
     }
 
     // 根据ARM版C语言的调用约定，除前8个外的实参进行值传递，逆序入栈
@@ -401,14 +412,22 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 // 把实参的值通过move指令传递给寄存器
 
                 auto arg = callInst->getOperand(k);
-                Instruction * assignInst = new MoveInstruction(func, PlatformArm64::intRegVal[k], arg);
 
-                callInst->setOperand(k, PlatformArm64::intRegVal[k]);
+                // 创建一个新的临时变量来表示寄存器参数，并设置其寄存器ID
+                Value * regParam = new Value(arg->getType());
+                regParam->setRegId(k);
 
-                // 函数调用指令前插入后，pIter仍指向函数调用指令
-                pIter = insts.insert(pIter, assignInst);
-                printf("插入第%d个参数的赋值指令\n", k);
-                pIter++;
+                // 检查源操作数是否已经在目标寄存器中，避免生成自赋值指令
+                if (arg->getRegId() != k) {
+                    Instruction * assignInst = new MoveInstruction(func, regParam, arg);
+
+                    // 函数调用指令前插入后，pIter仍指向函数调用指令
+                    pIter = insts.insert(pIter, assignInst);
+                    printf("插入第%d个参数的赋值指令\n", k);
+                    pIter++;
+                }
+
+                callInst->setOperand(k, regParam);
             }
 
 #if 0
@@ -433,33 +452,55 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                     ;
                 } else {
                     // 其它情况，需要产生赋值指令
+                    // 创建一个表示 x0 寄存器的临时变量
+                    Value * retRegVar = new Value(callInst->getType());
+                    retRegVar->setRegId(0);
+
                     // 新建一个赋值操作
-                    Instruction * assignInst = new MoveInstruction(func, callInst, PlatformArm64::intRegVal[0]);
+                    Instruction * assignInst = new MoveInstruction(func, callInst, retRegVar);
                     //  函数调用指令的下一个指令的前面插入指令，因为有Exit指令，+1肯定有效
                     pIter = insts.insert(pIter + 1, assignInst);
                     printf("插入一条赋值指令\n");
                 }
             }
         }
+    }
+}
+
+/// @brief 寄存器分配后对乘法和除法操作数里的常量添加赋值
+/// @param func 要处理的函数
+void CodeGeneratorArm64::adjustBinaryInsts(Function * func)
+{
+    // 当前函数的指令列表
+    auto & insts = func->getInterCode().getInsts();
+
+    // 函数返回值用x0寄存器，若函数调用有返回值，则赋值x0到对应寄存器
+    // 通过栈传递的实参，采用SP + 偏移的方式殉职，偏移肯定非负。
+    for (auto pIter = insts.begin(); pIter != insts.end(); pIter++) {
         if (Instanceof(binaryInst, BinaryInstruction *, *pIter)) {
-            printf("检测到两元指令\n");
-            Value * arg1 = binaryInst->getOperand(0);
-            Value * arg2 = binaryInst->getOperand(1);
-            if (Instanceof(constVal, ConstInt *, arg1)) {
-                printf("检测到操作数1为常量\n");
-                Instruction * assignInst =
-                    new MoveInstruction(func, PlatformArm64::intRegVal[arg1->getLoadRegId()], arg1);
-                pIter = insts.insert(pIter, assignInst);
-                printf("插入一条赋值指令\n");
-                pIter++;
-            }
-            if (Instanceof(constVal, ConstInt *, arg2)) {
-                printf("检测到操作数2为常量，寄存器：%d\n", arg1->getLoadRegId());
-                Instruction * assignInst =
-                    new MoveInstruction(func, PlatformArm64::intRegVal[arg2->getLoadRegId()], arg2);
-                pIter = insts.insert(pIter, assignInst);
-                printf("插入一条赋值指令\n");
-                pIter++;
+            if (binaryInst->getOp() == IRInstOperator::IRINST_OP_MUL_I ||
+                binaryInst->getOp() == IRInstOperator::IRINST_OP_DIV_I) {
+                printf("检测到两元乘法除法指令\n");
+                Value * arg1 = binaryInst->getOperand(0);
+                Value * arg2 = binaryInst->getOperand(1);
+                if (Instanceof(constVal, ConstInt *, arg1)) {
+                    printf("检测到操作数1为常量\n");
+                    Value * newval = new Value(arg1->getType());
+                    Instruction * assignInst = new MoveInstruction(func, newval, arg1);
+                    binaryInst->getOperands()[0] = new Use(newval, binaryInst);
+                    pIter = insts.insert(pIter, assignInst);
+                    printf("插入一条赋值指令\n");
+                    pIter++;
+                }
+                if (Instanceof(constVal, ConstInt *, arg2)) {
+                    printf("检测到操作数2为常量，寄存器：%d\n", arg1->getRegId());
+                    Value * newval = new Value(arg2->getType());
+                    Instruction * assignInst = new MoveInstruction(func, newval, arg2);
+                    binaryInst->getOperands()[1] = new Use(newval, binaryInst);
+                    pIter = insts.insert(pIter, assignInst);
+                    printf("插入一条赋值指令\n");
+                    pIter++;
+                }
             }
         }
     }

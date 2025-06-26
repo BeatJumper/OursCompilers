@@ -16,6 +16,8 @@
 ///
 
 #include <algorithm>
+#include <cassert>
+#include <iostream>
 
 #include "Value.h"
 #include "Use.h"
@@ -108,7 +110,9 @@ int32_t Value::getScopeLevel()
 ///
 int32_t Value::getRegId()
 {
-    return -1;
+    // assert(false);
+    std::cout << "getRegId() = " << regId << std::endl;
+    return regId;
 }
 
 ///
@@ -120,7 +124,11 @@ int32_t Value::getRegId()
 ///
 bool Value::getMemoryAddr(int32_t * regId, int64_t * offset)
 {
-    (void) regId;
-    (void) offset;
     return false;
+}
+
+void Value::setRegId(int32_t _regId)
+{
+    regId = _regId;
+    std::cout << "setRegId " << regId << std::endl;
 }

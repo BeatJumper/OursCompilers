@@ -99,8 +99,12 @@ set(BACKEND_SRCS
 	backend/arm64/PlatformArm64.h
 	backend/arm64/CodeGeneratorArm64.cpp
 	backend/arm64/CodeGeneratorArm64.h
-	backend/arm64/SimpleRegisterAllocator.cpp
-	backend/arm64/SimpleRegisterAllocator.h
+	backend/arm64/CFG.cpp
+	backend/arm64/CFG.h
+	backend/arm64/Liveness.cpp
+	backend/arm64/Liveness.h
+	backend/arm64/InterferenceGraph.cpp
+	backend/arm64/InterferenceGraph.h
 )
 
 # 中间IR(ir)源代码集合
