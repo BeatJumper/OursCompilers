@@ -21,10 +21,35 @@
 #include "ArrayType.h"
 #include "IntegerType.h"
 
-/// @brief 构造函数
+/// @brief 构造函数（单索引版本）
 /// @param _func 所属函数
 /// @param _basePtr 基础指针
 /// @param _index 索引值
+/// @param _inbounds 是否inbounds
+GetelementptrInstruction::GetelementptrInstruction(Function * _func, Value * _basePtr, Value * _index, bool _inbounds)
+    : Instruction(_func, IRInstOperator::IRINST_OP_GEP, nullptr), basePtr(_basePtr), firstIndex(_index),
+      secondIndex(nullptr), inbounds(_inbounds)
+{
+    addOperand(_basePtr);
+    addOperand(_index);
+
+    // 设置返回类型为元素指针类型
+    Type * baseType = _basePtr->getType();
+
+    if (baseType->isPointerType()) {
+        const PointerType * ptrType = static_cast<const PointerType *>(baseType);
+        const Type * pointeeType = ptrType->getPointeeType();
+        this->type = new PointerType(pointeeType);
+    } else {
+        this->type = baseType; // 保持原类型
+    }
+}
+
+/// @brief 构造函数（双索引版本）
+/// @param _func 所属函数
+/// @param _basePtr 基础指针
+/// @param _firstIndex 第一个索引
+/// @param _secondIndex 第二个索引
 /// @param _inbounds 是否inbounds
 GetelementptrInstruction::GetelementptrInstruction(Function * _func,
                                                    Value * _basePtr,
@@ -75,12 +100,18 @@ void GetelementptrInstruction::toString(std::string & str)
     Type * baseType = basePtr->getType();
     if (baseType->isArrayType()) {
         str += baseType->toString() + ", " + baseType->toString() + "* " + basePtr->getIRName();
-        str += ", i64 " + firstIndex->getIRName() + ", i64 " + secondIndex->getIRName();
+        str += ", i64 " + firstIndex->getIRName();
+        if (secondIndex) {
+            str += ", i64 " + secondIndex->getIRName();
+        }
     } else if (baseType->isPointerType()) {
         // 处理指针类型
         const PointerType * ptrType = static_cast<const PointerType *>(baseType);
         const Type * pointeeType = ptrType->getPointeeType();
         str += pointeeType->toString() + ", " + baseType->toString() + " " + basePtr->getIRName();
-        str += ", i64 " + firstIndex->getIRName() + ", i64 " + secondIndex->getIRName();
+        str += ", i64 " + firstIndex->getIRName();
+        if (secondIndex) {
+            str += ", i64 " + secondIndex->getIRName();
+        }
     }
 }

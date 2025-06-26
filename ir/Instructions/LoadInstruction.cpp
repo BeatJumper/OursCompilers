@@ -3,9 +3,9 @@
 #include "IntegerType.h"
 
 LoadInstruction::LoadInstruction(Function * _func, Value * _result, Value * _ptr, int _align)
-    : Instruction(_func, IRInstOperator::IRINST_OP_LOAD, _result->getType()), align(_align)
+    : Instruction(_func, IRInstOperator::IRINST_OP_LOAD, nullptr), align(_align)
 {
-    addOperand(_result); // 只添加要加载的地址作为操作数
+    addOperand(_ptr); // 添加要加载的地址作为操作数
 
     // 设置正确的结果类型：如果是指针类型，则结果是指针指向的类型
     if (_ptr->getType()->isPointerType()) {

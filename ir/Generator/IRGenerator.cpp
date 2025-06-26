@@ -349,7 +349,9 @@ bool IRGenerator::ir_function_formal_params(ast_node * node)
         currentFunc->getParams().push_back(param);
 
         // 创建一个局部变量表示在函数体内使用的参数
-        Value * paramVar = module->newVarValue(typeNode->type, nameNode->name);
+        // 对于函数参数，局部变量的类型应该是指向参数类型的指针
+        Type * localVarType = new PointerType(typeNode->type);
+        Value * paramVar = module->newVarValue(localVarType, nameNode->name);
 
         if (!paramVar) {
             printf("Error: Failed to create local variable for parameter '%s'.\n", nameNode->name.c_str());
@@ -359,8 +361,8 @@ bool IRGenerator::ir_function_formal_params(ast_node * node)
         // 转换为 LocalVariable 类型
         LocalVariable * localParamVar = static_cast<LocalVariable *>(paramVar);
 
-        // 创建 alloca 指令，添加4字节对齐
-        AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, paramVar, typeNode->type, 4);
+        // 创建 alloca 指令，分配指针类型的空间，使用8字节对齐
+        AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, paramVar, localVarType, 8);
         currentFunc->getInterCode().addInst(allocaInst);
 
         // 创建 store 指令，将形参的值存储到局部变量，添加4字节对齐
@@ -374,7 +376,8 @@ bool IRGenerator::ir_function_formal_params(ast_node * node)
 
     // 再store所有形参
     for (auto & pair: paramPairs) {
-        StoreInstruction * storeInst = new StoreInstruction(currentFunc, pair.first, pair.second, 4);
+        // 使用8字节对齐，因为存储的是指针
+        StoreInstruction * storeInst = new StoreInstruction(currentFunc, pair.first, pair.second, 8);
         currentFunc->getInterCode().addInst(storeInst);
     }
 
@@ -1554,24 +1557,9 @@ bool IRGenerator::ir_return(ast_node * node)
     // 处理函数返回值变量（如果有）
     LocalVariable * retVar = currentFunc->getReturnValue();
     if (retVar && returnValue) {
-        // 检查是否需要存储返回值（避免重复存储默认值）
-        bool needStore = true;
-        if (ConstInt * constInt = dynamic_cast<ConstInt *>(returnValue)) {
-            if (constInt->getVal() == 0) {
-                // 跳过默认值0的存储
-                needStore = false;
-            }
-        } else if (ConstFloat * constFloat = dynamic_cast<ConstFloat *>(returnValue)) {
-            if (constFloat->getVal() == 0.0f) {
-                // 跳过默认值0.0的存储
-                needStore = false;
-            }
-        }
-
-        if (needStore) {
-            StoreInstruction * storeRet = new StoreInstruction(currentFunc, returnValue, retVar, returnType->getSize());
-            node->blockInsts.addInst(storeRet);
-        }
+        // 存储返回值到返回值变量
+        StoreInstruction * storeRet = new StoreInstruction(currentFunc, returnValue, retVar, returnType->getSize());
+        node->blockInsts.addInst(storeRet);
     }
 
     // 跳转到函数出口
@@ -1628,14 +1616,18 @@ bool IRGenerator::ir_leaf_node_uint(ast_node * node)
     try {
         // 判断数字类型并解析
         if (numStr.size() >= 2 && (numStr.substr(0, 2) == "0x" || numStr.substr(0, 2) == "0X")) {
-            // 十六进制数字
-            value = std::stoi(numStr, nullptr, 16);
+            // 十六进制数字 - 使用stoull避免溢出，然后转换为int32_t
+            uint64_t temp = std::stoull(numStr, nullptr, 16);
+            // 将无符号32位值重新解释为有符号32位值
+            value = static_cast<int32_t>(static_cast<uint32_t>(temp));
         } else if (numStr.size() >= 2 && numStr[0] == '0' && numStr[1] >= '0' && numStr[1] <= '7') {
             // 八进制数字（以0开头且第二个字符是八进制数字）
-            value = std::stoi(numStr, nullptr, 8);
+            uint64_t temp = std::stoull(numStr, nullptr, 8);
+            value = static_cast<int32_t>(static_cast<uint32_t>(temp));
         } else {
             // 十进制数字
-            value = std::stoi(numStr, nullptr, 10);
+            uint64_t temp = std::stoull(numStr, nullptr, 10);
+            value = static_cast<int32_t>(static_cast<uint32_t>(temp));
         }
     } catch (const std::exception & e) {
         printf("Error: Failed to parse integer literal '%s': %s\n", numStr.c_str(), e.what());
@@ -2117,8 +2109,8 @@ bool IRGenerator::ir_if_else(ast_node * node)
     }
     node->blockInsts.addInst(thenNode->blockInsts);
 
-    // 检查当前节点的指令序列是否已经有终结指令（如break、continue、return）
-    bool thenHasTerminator = hasTerminatorInstruction(node->blockInsts);
+    // 检查then分支本身是否已经有终结指令（如break、continue、return）
+    bool thenHasTerminator = hasTerminatorInstruction(thenNode->blockInsts);
     if (!thenHasTerminator) {
         // 只有在没有终结指令时才添加跳转到结束标签
         node->blockInsts.addInst(new GotoInstruction(currentFunc, endLabel));
@@ -2134,8 +2126,8 @@ bool IRGenerator::ir_if_else(ast_node * node)
         }
         node->blockInsts.addInst(elseNode->blockInsts);
 
-        // 检查else分支是否已经有终结指令
-        bool elseHasTerminator = hasTerminatorInstruction(node->blockInsts);
+        // 检查else分支本身是否已经有终结指令
+        bool elseHasTerminator = hasTerminatorInstruction(elseNode->blockInsts);
         if (!elseHasTerminator) {
             // 只有在没有终结指令时才添加跳转到结束标签
             node->blockInsts.addInst(new GotoInstruction(currentFunc, endLabel));
@@ -2769,11 +2761,17 @@ bool IRGenerator::ir_global_const_declare(ast_node * node,
 
     try {
         if (numStr.size() >= 2 && (numStr.substr(0, 2) == "0x" || numStr.substr(0, 2) == "0X")) {
-            constValue = std::stoi(numStr, nullptr, 16);
+            // 十六进制数字 - 使用stoull避免溢出，然后转换为int32_t
+            uint64_t temp = std::stoull(numStr, nullptr, 16);
+            constValue = static_cast<int32_t>(static_cast<uint32_t>(temp));
         } else if (numStr.size() >= 2 && numStr[0] == '0' && numStr[1] >= '0' && numStr[1] <= '7') {
-            constValue = std::stoi(numStr, nullptr, 8);
+            // 八进制数字
+            uint64_t temp = std::stoull(numStr, nullptr, 8);
+            constValue = static_cast<int32_t>(static_cast<uint32_t>(temp));
         } else {
-            constValue = std::stoi(numStr, nullptr, 10);
+            // 十进制数字
+            uint64_t temp = std::stoull(numStr, nullptr, 10);
+            constValue = static_cast<int32_t>(static_cast<uint32_t>(temp));
         }
     } catch (const std::exception & e) {
         printf("Error: Failed to parse constant literal '%s': %s\n", numStr.c_str(), e.what());
@@ -2890,6 +2888,18 @@ bool IRGenerator::ir_array_access(ast_node * node)
             printf("Error: Array variable %s not found.\n", arrayNode->name.c_str());
             return false;
         }
+
+        // 检查是否是函数参数（指针类型），如果是则需要先加载
+        // 对于函数参数，变量类型是指向指针的指针（如i32**），需要加载得到真正的数组指针
+        if (arrayVar->getType()->isPointerType()) {
+            const PointerType * ptrType = static_cast<const PointerType *>(arrayVar->getType());
+            // 如果指向的是指针类型（即函数参数），需要加载
+            if (ptrType->getPointeeType()->isPointerType()) {
+                LoadInstruction * loadPtr = new LoadInstruction(module->getCurrentFunction(), arrayVar, arrayVar, 8);
+                node->blockInsts.addInst(loadPtr);
+                arrayVar = loadPtr;
+            }
+        }
     } else if (arrayNode->node_type == ast_operator_type::AST_OP_ARRAY_ACCESS) {
         // 嵌套数组访问：如 matrix[0][1] 中的 matrix[0] 部分
         if (!ir_visit_ast_node(arrayNode)) {
@@ -2946,12 +2956,22 @@ bool IRGenerator::ir_array_access(ast_node * node)
         }
     }
 
-    // 创建常量0用于第一个索引
-    ConstInt * zeroConst = module->newConstInt(0);
-
     // 生成getelementptr指令
-    GetelementptrInstruction * gepInst =
-        new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, zeroConst, indexValue);
+    GetelementptrInstruction * gepInst = nullptr;
+
+    // 检查arrayVar的类型来决定使用哪种getelementptr格式
+    if (arrayVar->getType()->isArrayType()) {
+        // 对于数组类型，使用两个索引：[0][index]
+        ConstInt * zeroConst = module->newConstInt(0);
+        gepInst = new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, zeroConst, indexValue);
+    } else if (arrayVar->getType()->isPointerType()) {
+        // 对于指针类型（函数参数），使用单个索引：[index]
+        gepInst = new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, indexValue);
+    } else {
+        printf("Error: Invalid array base type for getelementptr.\n");
+        return false;
+    }
+
     node->blockInsts.addInst(gepInst);
 
     // 数组访问的结果是地址，不是值
