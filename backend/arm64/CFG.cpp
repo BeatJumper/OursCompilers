@@ -90,10 +90,9 @@ Node_Dataflow::Node_Dataflow(Instruction * _inst) : inst(_inst)
      */
     // printf("产生数据流节点\n");
     if (Instanceof(inst, AllocaInstruction *, _inst)) {
-        // Alloca指令产生一个指向分配内存的指针，这个指针应该参与寄存器分配
-        if (inst->hasResultValue()) {
-            def_set.insert(inst);
-        }
+        // Alloca指令分配栈空间，其结果是栈地址，不应该参与寄存器分配
+        // alloca指令的结果应该直接映射到栈地址，不需要寄存器
+        // 因此不将alloca指令加入def_set，避免参与寄存器分配
     } else if (Instanceof(inst, StoreInstruction *, _inst)) {
         use_set.insert(inst->getOperand(0));
     } else if (Instanceof(inst, LoadInstruction *, _inst)) {

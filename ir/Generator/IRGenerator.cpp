@@ -358,8 +358,8 @@ bool IRGenerator::ir_function_formal_params(ast_node * node)
         currentFunc->getParams().push_back(param);
 
         // 创建一个局部变量表示在函数体内使用的参数
-        // 对于函数参数，局部变量的类型应该是指向参数类型的指针
-        Type * localVarType = new PointerType(typeNode->type);
+        // 函数参数的局部变量类型应该与参数类型相同，不是指针类型
+        Type * localVarType = typeNode->type;
         Value * paramVar = module->newVarValue(localVarType, nameNode->name);
 
         if (!paramVar) {
@@ -370,11 +370,10 @@ bool IRGenerator::ir_function_formal_params(ast_node * node)
         // 转换为 LocalVariable 类型
         LocalVariable * localParamVar = static_cast<LocalVariable *>(paramVar);
 
-        // 创建 alloca 指令，分配指针类型的空间，使用8字节对齐
-        AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, paramVar, localVarType, 8);
+        // 创建 alloca 指令，分配参数类型的空间，使用4字节对齐（int类型）
+        uint32_t alignSize = localVarType->getSize();
+        AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, paramVar, localVarType, alignSize);
         currentFunc->getInterCode().addInst(allocaInst);
-
-        // 创建 store 指令，将形参的值存储到局部变量，添加4字节对齐
 
         // 设置形参节点的值为创建的局部变量（函数体内使用这个变量）
         nameNode->val = paramVar;
@@ -385,8 +384,9 @@ bool IRGenerator::ir_function_formal_params(ast_node * node)
 
     // 再store所有形参
     for (auto & pair: paramPairs) {
-        // 使用8字节对齐，因为存储的是指针
-        StoreInstruction * storeInst = new StoreInstruction(currentFunc, pair.first, pair.second, 8);
+        // 使用与参数类型匹配的对齐
+        uint32_t alignSize = pair.second->getType()->getSize();
+        StoreInstruction * storeInst = new StoreInstruction(currentFunc, pair.first, pair.second, alignSize);
         currentFunc->getInterCode().addInst(storeInst);
     }
 

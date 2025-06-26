@@ -548,14 +548,14 @@ void InstSelectorArm64::translate_alloca(Instruction * inst)
         minic_log(LOG_ERROR, "Alloca variable not allocated on stack: %s", result->getName().c_str());
     }
 
-    // 如果需要，可以生成加载变量地址的指令
+    // alloca指令不应该生成地址加载指令
+    // alloca的作用是分配栈空间，其结果是一个内存地址，不需要加载到寄存器
+    // 如果alloca指令被错误地分配了寄存器ID，我们应该忽略它
     if (result->getRegId() != -1) {
-        // 如果结果需要加载到寄存器
-        printf("Debug: alloca指令 %s 生成地址加载指令, regId=%d, offset=%ld\n",
+        printf("Warning: alloca指令 %s 被错误地分配了寄存器ID=%d，忽略地址加载\n",
                result->getIRName().c_str(),
-               result->getRegId(),
-               offset);
-        iloc.lea_var(result->getRegId(), result);
+               result->getRegId());
+        // 不生成地址加载指令，因为alloca的结果应该是栈地址，不是寄存器值
     }
 
     // 调试输出：标记alloca指令已处理
