@@ -145,6 +145,8 @@ set(IR_SRCS
 	ir/Instructions/GetelementptrInstruction.h
 	ir/Instructions/MemcpyInstruction.cpp
 	ir/Instructions/MemcpyInstruction.h
+	ir/Instructions/MemsetInstruction.cpp
+	ir/Instructions/MemsetInstruction.h
 	ir/Instructions/SextInstruction.cpp
 	ir/Instructions/SextInstruction.h
 	ir/Instructions/SitofpInstruction.cpp

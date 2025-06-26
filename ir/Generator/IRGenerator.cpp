@@ -44,6 +44,7 @@
 #include "GetelementptrInstruction.h"
 #include "BitcastInstruction.h"
 #include "MemcpyInstruction.h"
+#include "MemsetInstruction.h"
 #include "SextInstruction.h"
 #include "SitofpInstruction.h"
 #include "FptosiInstruction.h"
@@ -1047,8 +1048,13 @@ bool IRGenerator::ir_add_processed(ast_node * node, ast_node * left, ast_node * 
 
     // 左操作数
     if (needsLoad(left->val)) {
-        // 变量需要load
-        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, 4);
+        // 变量或数组访问需要load
+        int loadSize = 4; // 默认4字节
+        if (left->val->getType()->isPointerType()) {
+            const PointerType * ptrType = static_cast<const PointerType *>(left->val->getType());
+            loadSize = ptrType->getPointeeType()->getSize();
+        }
+        LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, loadSize);
         node->blockInsts.addInst(loadLeft);
         leftValue = loadLeft;
     } else {
@@ -1057,7 +1063,14 @@ bool IRGenerator::ir_add_processed(ast_node * node, ast_node * left, ast_node * 
 
     // 右操作数
     if (needsLoad(right->val)) {
-        LoadInstruction * loadRight = new LoadInstruction(module->getCurrentFunction(), right->val, right->val, 4);
+        // 变量或数组访问需要load
+        int loadSize = 4; // 默认4字节
+        if (right->val->getType()->isPointerType()) {
+            const PointerType * ptrType = static_cast<const PointerType *>(right->val->getType());
+            loadSize = ptrType->getPointeeType()->getSize();
+        }
+        LoadInstruction * loadRight =
+            new LoadInstruction(module->getCurrentFunction(), right->val, right->val, loadSize);
         node->blockInsts.addInst(loadRight);
         rightValue = loadRight;
     } else {
@@ -3147,12 +3160,32 @@ bool IRGenerator::ir_array_access(ast_node * node)
 
     // 检查arrayVar的类型来决定使用哪种getelementptr格式
     if (arrayVar->getType()->isArrayType()) {
-        // 对于数组类型，使用两个索引：[0][index]
-        ConstInt * zeroConst = module->newConstInt(0);
-        gepInst = new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, zeroConst, indexValue);
+        // 对于多维数组类型，需要检查是否是最后一维访问
+        const ArrayType * arrayType = static_cast<const ArrayType *>(arrayVar->getType());
+        const std::vector<int> & dimensions = arrayType->getDimensions();
+
+        if (dimensions.size() > 1) {
+            // 多维数组：第一次访问返回子数组的指针
+            ConstInt * zeroConst = module->newConstInt(0);
+            gepInst = new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, zeroConst, indexValue);
+        } else {
+            // 一维数组：直接访问元素
+            ConstInt * zeroConst = module->newConstInt(0);
+            gepInst = new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, zeroConst, indexValue);
+        }
     } else if (arrayVar->getType()->isPointerType()) {
-        // 对于指针类型（函数参数），使用单个索引：[index]
-        gepInst = new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, indexValue);
+        // 对于指针类型（可能是多维数组的中间访问结果）
+        const PointerType * ptrType = static_cast<const PointerType *>(arrayVar->getType());
+        const Type * pointeeType = ptrType->getPointeeType();
+
+        if (pointeeType->isArrayType()) {
+            // 指向数组的指针：需要两个索引 [0][index]
+            ConstInt * zeroConst = module->newConstInt(0);
+            gepInst = new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, zeroConst, indexValue);
+        } else {
+            // 指向元素的指针：使用单个索引 [index]
+            gepInst = new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, indexValue);
+        }
     } else {
         printf("Error: Invalid array base type for getelementptr.\n");
         return false;
@@ -3177,9 +3210,10 @@ bool IRGenerator::ir_array_init(ast_node * node)
     std::vector<Value *> initValues;
     Type * elementType = node->type; // 基础元素类型
 
-    printf("ir_array_init: Processing %zu elements, elementType = %s\n",
+    printf("=== ir_array_init: Processing %zu elements, elementType = %s, varName = %s ===\n",
            node->sons.size(),
-           elementType ? elementType->toString().c_str() : "null");
+           elementType ? elementType->toString().c_str() : "null",
+           node->name.c_str());
 
     // 确定内层元素的类型
     Type * innerElementType = elementType;
@@ -3219,12 +3253,114 @@ bool IRGenerator::ir_array_init(ast_node * node)
         }
     }
 
-    printf("ir_array_init: Initializing array with %zu elements.\n", initValues.size());
+    printf("=== ir_array_init: Collected %zu init values for array %s ===\n", initValues.size(), node->name.c_str());
+
+    // 打印前几个初始化值的类型
+    for (size_t i = 0; i < std::min(initValues.size(), size_t(8)); ++i) {
+        if (auto constInt = dynamic_cast<ConstInt *>(initValues[i])) {
+            printf("  initValues[%zu] = ConstInt(%d)\n", i, constInt->getVal());
+        } else if (auto globalVar = dynamic_cast<GlobalVariable *>(initValues[i])) {
+            printf("  initValues[%zu] = GlobalVariable(%s)\n", i, globalVar->getIRName().c_str());
+        } else {
+            printf("  initValues[%zu] = Other type\n", i);
+        }
+    }
 
     // 确定数组类型
     ArrayType * arrayType = nullptr;
+    bool isFlatInitialization = false;
+    bool isMixedInitialization = false;
 
-    if (!initValues.empty() && dynamic_cast<GlobalVariable *>(initValues[0])) {
+    // 首先检查当前节点是否已经有正确的数组类型信息（由父节点设置）
+    if (node->type && node->type->isArrayType()) {
+        // 使用当前节点的数组类型（已由handleStaticInitialization设置）
+        arrayType = static_cast<ArrayType *>(node->type);
+        printf("Debug: Using node-provided array type: %s\n", arrayType->toString().c_str());
+
+        // 对于2D数组，计算真正的总元素个数
+        int expectedElements = arrayType->getTotalElements();
+        int realTotalElements = expectedElements;
+
+        // 如果是多维数组，需要计算所有维度的总元素个数
+        if (arrayType->getElementType()->isArrayType()) {
+            const ArrayType * innerArrayType = static_cast<const ArrayType *>(arrayType->getElementType());
+            realTotalElements = expectedElements * innerArrayType->getTotalElements();
+        }
+
+        printf("Debug: Array expects %d elements (outer), %d total elements, got %zu init values\n",
+               expectedElements,
+               realTotalElements,
+               initValues.size());
+
+        // 检查是否是扁平化初始化（所有值都是基础常量且数量等于真正的总元素数）
+        if (arrayType->getElementType()->isArrayType()) {
+            bool allBasicConstants = true;
+            for (Value * val: initValues) {
+                if (!dynamic_cast<ConstInt *>(val) && !dynamic_cast<ConstFloat *>(val)) {
+                    allBasicConstants = false;
+                    break;
+                }
+            }
+            if (allBasicConstants && initValues.size() == realTotalElements) {
+                isFlatInitialization = true;
+                printf("Debug: Detected flat initialization with %zu elements\n", initValues.size());
+            }
+        }
+
+        // 检查是否是混合初始化（包含基础常量和GlobalVariable的混合）
+        if (arrayType->getElementType()->isArrayType() && initValues.size() > expectedElements &&
+            initValues.size() <= realTotalElements) {
+            bool hasBasicConstants = false;
+            bool hasGlobalVars = false;
+            for (Value * val: initValues) {
+                if (dynamic_cast<ConstInt *>(val) || dynamic_cast<ConstFloat *>(val)) {
+                    hasBasicConstants = true;
+                } else if (dynamic_cast<GlobalVariable *>(val)) {
+                    hasGlobalVars = true;
+                }
+            }
+            if (hasBasicConstants && hasGlobalVars) {
+                isMixedInitialization = true;
+                printf("Debug: Detected mixed initialization with %zu elements\n", initValues.size());
+            }
+        }
+
+        if (!isFlatInitialization && !isMixedInitialization && initValues.size() != expectedElements) {
+            printf("Warning: Initializer has %zu elements, but array expects %d elements\n",
+                   initValues.size(),
+                   expectedElements);
+
+            // 如果初始化值不足，用零填充
+            while (initValues.size() < expectedElements) {
+                initValues.push_back(module->newConstInt(0));
+            }
+            // 如果初始化值过多，截断（但不截断扁平化和混合初始化）
+            if (initValues.size() > expectedElements) {
+                initValues.resize(expectedElements);
+            }
+        }
+    } else if (node->parent && node->parent->type && node->parent->type->isArrayType()) {
+        // 备用方案：检查父节点是否提供了目标数组类型信息
+        arrayType = static_cast<ArrayType *>(node->parent->type);
+        printf("Debug: Using parent-provided array type: %s\n", arrayType->toString().c_str());
+
+        // 验证初始化值数量是否匹配
+        int expectedElements = arrayType->getTotalElements();
+        if (initValues.size() != expectedElements) {
+            printf("Warning: Initializer has %zu elements, but array expects %d elements\n",
+                   initValues.size(),
+                   expectedElements);
+
+            // 如果初始化值不足，用零填充
+            while (initValues.size() < expectedElements) {
+                initValues.push_back(module->newConstInt(0));
+            }
+            // 如果初始化值过多，截断
+            if (initValues.size() > expectedElements) {
+                initValues.resize(expectedElements);
+            }
+        }
+    } else if (!initValues.empty() && dynamic_cast<GlobalVariable *>(initValues[0])) {
         // 多维数组：子元素是全局常量数组
         Type * innerType = initValues[0]->getType();
         std::vector<int> dimensions = {static_cast<int>(initValues.size())};
@@ -3247,10 +3383,144 @@ bool IRGenerator::ir_array_init(ast_node * node)
 
     if (isTopLevel) {
         // 顶层数组：创建真正的全局常量数组
-        GlobalVariable * constArray = module->newGlobalConstArray(arrayType);
-        constArray->setInitValueList(initValues);
+        std::string globalArrayName;
+        if (!node->name.empty()) {
+            // 使用变量名创建正确的全局数组名称
+            globalArrayName = "__const.main." + node->name;
+        }
+        printf("Debug: Creating top-level array with name '%s', type %s\n",
+               globalArrayName.c_str(),
+               arrayType->toString().c_str());
+        GlobalVariable * constArray = module->newGlobalConstArray(arrayType, globalArrayName);
+
+        // 对于空初始化列表，需要填充零值
+        if (initValues.empty() && arrayType) {
+            int totalElements = arrayType->getTotalElements();
+            for (int i = 0; i < totalElements; ++i) {
+                initValues.push_back(module->newConstInt(0));
+            }
+            printf("Debug: Filled empty initializer with %d zero values\n", totalElements);
+        }
+
+        // 对于2D数组，需要重新组织扁平化的初始化值
+        std::vector<Value *> finalInitValues;
+        printf("Debug: Array element type is array: %s\n",
+               arrayType->getElementType()->isArrayType() ? "true" : "false");
+        if (arrayType->getElementType()->isArrayType()) {
+            // 这是多维数组，需要重新组织初始化值
+            const ArrayType * innerArrayType = static_cast<const ArrayType *>(arrayType->getElementType());
+            const std::vector<int> & outerDims = arrayType->getDimensions();
+            const std::vector<int> & innerDims = innerArrayType->getDimensions();
+
+            if (outerDims.size() == 1 && innerDims.size() == 1) {
+                int rows = outerDims[0];
+                int cols = innerDims[0];
+
+                printf("Debug: Checking for flat init values for [%d x %d] array, got %zu values\n",
+                       rows,
+                       cols,
+                       initValues.size());
+
+                // 检查是否需要重新组织（扁平化或混合初始化）
+                if (isFlatInitialization) {
+                    printf("Debug: Reorganizing flat init values into nested structure\n");
+                    // 重新组织为嵌套结构
+                    for (int i = 0; i < rows; ++i) {
+                        std::vector<Value *> rowValues;
+                        for (int j = 0; j < cols; ++j) {
+                            int flatIndex = (i * cols) + j;
+                            if (flatIndex < static_cast<int>(initValues.size())) {
+                                rowValues.push_back(initValues[flatIndex]);
+                            }
+                        }
+
+                        // 创建内层数组的全局变量
+                        GlobalVariable * rowArray =
+                            new GlobalVariable(const_cast<ArrayType *>(innerArrayType), "temp_row");
+                        rowArray->setInitValueList(rowValues);
+                        finalInitValues.push_back(rowArray);
+                        printf("Debug: Created row %d with %zu elements\n", i, rowValues.size());
+                    }
+                    printf("Debug: Reorganized %zu flat values into %zu rows\n",
+                           initValues.size(),
+                           finalInitValues.size());
+                } else if (isMixedInitialization || (initValues.size() > static_cast<size_t>(rows) &&
+                                                     initValues.size() <= static_cast<size_t>(rows * cols))) {
+                    // 混合初始化：部分扁平化，需要重新组织
+                    printf("Debug: Reorganizing mixed initialization with %zu values\n", initValues.size());
+
+                    size_t valueIndex = 0;
+                    for (int i = 0; i < rows && valueIndex < initValues.size(); ++i) {
+                        std::vector<Value *> rowValues;
+
+                        // 检查当前位置的值类型
+                        if (valueIndex < initValues.size()) {
+                            Value * currentValue = initValues[valueIndex];
+
+                            if (dynamic_cast<GlobalVariable *>(currentValue)) {
+                                // 这是一个嵌套数组，直接使用
+                                finalInitValues.push_back(currentValue);
+                                valueIndex++;
+                                printf("Debug: Used existing nested array for row %d\n", i);
+                            } else {
+                                // 这是基础常量，需要收集足够的值来组成一行
+                                for (int j = 0; j < cols && valueIndex < initValues.size(); ++j) {
+                                    Value * val = initValues[valueIndex];
+                                    if (dynamic_cast<ConstInt *>(val) || dynamic_cast<ConstFloat *>(val)) {
+                                        rowValues.push_back(val);
+                                        valueIndex++;
+                                    } else {
+                                        // 遇到非基础常量，停止收集
+                                        break;
+                                    }
+                                }
+
+                                // 如果收集到的值不足一行，用零填充
+                                while (rowValues.size() < cols) {
+                                    rowValues.push_back(module->newConstInt(0));
+                                }
+
+                                // 创建内层数组
+                                GlobalVariable * rowArray =
+                                    new GlobalVariable(const_cast<ArrayType *>(innerArrayType), "temp_row");
+                                rowArray->setInitValueList(rowValues);
+                                finalInitValues.push_back(rowArray);
+                                printf("Debug: Created mixed row %d with %zu elements\n", i, rowValues.size());
+                            }
+                        }
+                    }
+
+                    // 如果行数不足，用零填充的行补充
+                    while (finalInitValues.size() < rows) {
+                        std::vector<Value *> zeroRow;
+                        for (int j = 0; j < cols; ++j) {
+                            zeroRow.push_back(module->newConstInt(0));
+                        }
+                        GlobalVariable * rowArray =
+                            new GlobalVariable(const_cast<ArrayType *>(innerArrayType), "temp_row");
+                        rowArray->setInitValueList(zeroRow);
+                        finalInitValues.push_back(rowArray);
+                        printf("Debug: Added zero-filled row %zu\n", finalInitValues.size() - 1);
+                    }
+
+                    printf("Debug: Reorganized mixed initialization into %zu rows\n", finalInitValues.size());
+                } else {
+                    // 不需要重新组织，直接使用原始值
+                    printf("Debug: Using original values without reorganization\n");
+                    finalInitValues = initValues;
+                }
+            } else {
+                finalInitValues = initValues;
+            }
+        } else {
+            finalInitValues = initValues;
+        }
+
+        constArray->setInitValueList(finalInitValues);
         node->val = constArray;
-        printf("Debug: Created top-level global array: %s\n", constArray->getIRName().c_str());
+        printf("Debug: Created top-level global array: %s with type %s\n",
+               constArray->getIRName().c_str(),
+               arrayType->toString().c_str());
     } else {
         // 嵌套数组：创建临时的虚拟全局变量，不加入到模块中
         GlobalVariable * tempArray = new GlobalVariable(arrayType, "temp");
@@ -3259,6 +3529,235 @@ bool IRGenerator::ir_array_init(ast_node * node)
         printf("Debug: Created temporary nested array for inlining\n");
     }
 
+    return true;
+}
+
+/// @brief 检测数组初始化是否包含动态值
+/// @param initNode 数组初始化节点
+/// @return true：包含动态值，false：纯静态值
+bool IRGenerator::hasRuntimeValues(ast_node * initNode)
+{
+    if (!initNode) {
+        return false;
+    }
+
+    // 递归检查所有子节点
+    for (ast_node * child: initNode->sons) {
+        switch (child->node_type) {
+            case ast_operator_type::AST_OP_LEAF_LITERAL_UINT:
+            case ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT:
+                // 字面量常量，静态值
+                continue;
+
+            case ast_operator_type::AST_OP_ARRAY_INIT:
+                // 嵌套数组初始化，递归检查
+                if (hasRuntimeValues(child)) {
+                    return true;
+                }
+                continue;
+
+            case ast_operator_type::AST_OP_ARRAY_ACCESS:
+            case ast_operator_type::AST_OP_LEAF_VAR_ID:
+                // 数组访问或变量引用，动态值
+                printf("Debug: Found runtime value: %s\n",
+                       child->node_type == ast_operator_type::AST_OP_ARRAY_ACCESS ? "array access" : "variable");
+                return true;
+
+            case ast_operator_type::AST_OP_ADD:
+            case ast_operator_type::AST_OP_SUB:
+            case ast_operator_type::AST_OP_MUL:
+            case ast_operator_type::AST_OP_DIV:
+            case ast_operator_type::AST_OP_MOD:
+                // 算术表达式，需要递归检查操作数
+                if (hasRuntimeValues(child)) {
+                    return true;
+                }
+                continue;
+
+            default:
+                // 其他类型的节点，保守地认为是动态值
+                printf("Debug: Unknown node type %d, treating as runtime value\n", (int) child->node_type);
+                return true;
+        }
+    }
+
+    return false;
+}
+
+/// @brief 处理零初始化数组
+/// @param node AST节点
+/// @param arrayVar 数组变量
+/// @param arrayType 数组类型
+/// @return 翻译是否成功
+bool IRGenerator::handleZeroInitialization(ast_node * node, Value * arrayVar, ArrayType * arrayType)
+{
+    Function * currentFunc = module->getCurrentFunction();
+
+    // 1. 将数组转换为 i8*
+    BitcastInstruction * destCast = new BitcastInstruction(currentFunc, arrayVar, module->getI8PtrType());
+    node->blockInsts.addInst(destCast);
+
+    // 2. 计算数组大小
+    int totalSize = arrayType->getSize();
+    ConstInt * sizeConst = module->newConstInt(totalSize);
+
+    // 3. 生成 memset 指令清零
+    MemsetInstruction * memsetInst =
+        new MemsetInstruction(currentFunc, destCast, module->newConstInt(0), sizeConst, false);
+    node->blockInsts.addInst(memsetInst);
+
+    printf("Debug: Generated memset for zero initialization, size = %d\n", totalSize);
+    return true;
+}
+
+/// @brief 处理静态初始化数组
+/// @param node AST节点
+/// @param arrayVar 数组变量
+/// @param arrayType 数组类型
+/// @param initExprNode 初始化表达式节点
+/// @param varName 变量名
+/// @return 翻译是否成功
+bool IRGenerator::handleStaticInitialization(ast_node * node,
+                                             Value * arrayVar,
+                                             ArrayType * arrayType,
+                                             ast_node * initExprNode,
+                                             const std::string & varName)
+{
+    Function * currentFunc = module->getCurrentFunction();
+
+    // 1. 处理初始化表达式，生成全局常量数组
+    initExprNode->type = arrayType;
+    // 将变量名临时存储在AST节点中，供ir_array_init使用
+    initExprNode->name = varName;
+    if (!ir_visit_ast_node(initExprNode)) {
+        printf("Error: Failed to process static initialization expression\n");
+        return false;
+    }
+    node->blockInsts.addInst(initExprNode->blockInsts);
+
+    GlobalVariable * constArray = static_cast<GlobalVariable *>(initExprNode->val);
+    if (!constArray) {
+        printf("Error: Failed to get constant array from static initialization\n");
+        return false;
+    }
+
+    // 2. 全局数组的名称已经在创建时设置为正确的格式
+
+    // 3. 将局部数组转换为 i8*
+    BitcastInstruction * destCast = new BitcastInstruction(currentFunc, arrayVar, module->getI8PtrType());
+    node->blockInsts.addInst(destCast);
+
+    // 4. 将常量数组转换为 i8*
+    BitcastInstruction * srcCast = new BitcastInstruction(currentFunc, constArray, module->getI8PtrType());
+    node->blockInsts.addInst(srcCast);
+
+    // 5. 计算拷贝大小
+    int totalSize = arrayType->getSize();
+    ConstInt * sizeConst = module->newConstInt(totalSize);
+
+    // 6. 生成 memcpy 指令
+    MemcpyInstruction * memcpyInst = new MemcpyInstruction(currentFunc, destCast, srcCast, sizeConst, false);
+    node->blockInsts.addInst(memcpyInst);
+
+    printf("Debug: Generated memcpy for static initialization, size = %d\n", totalSize);
+    return true;
+}
+
+/// @brief 处理动态初始化数组
+/// @param node AST节点
+/// @param arrayVar 数组变量
+/// @param arrayType 数组类型
+/// @param initExprNode 初始化表达式节点
+/// @return 翻译是否成功
+bool IRGenerator::handleDynamicInitialization(ast_node * node,
+                                              Value * arrayVar,
+                                              ArrayType * arrayType,
+                                              ast_node * initExprNode)
+{
+    Function * currentFunc = module->getCurrentFunction();
+
+    printf("Debug: Processing dynamic initialization with %zu elements\n", initExprNode->sons.size());
+
+    // 获取数组的维度信息
+    const std::vector<int> & outerDimensions = arrayType->getDimensions();
+    if (outerDimensions.size() != 1) {
+        printf("Error: Expected outer array dimension size 1, got %zu\n", outerDimensions.size());
+        return false;
+    }
+
+    // 检查内层是否也是数组类型
+    Type * innerType = arrayType->getElementType();
+    if (!innerType->isArrayType()) {
+        printf("Error: Expected inner array type for 2D array\n");
+        return false;
+    }
+
+    const ArrayType * innerArrayType = static_cast<const ArrayType *>(innerType);
+    const std::vector<int> & innerDimensions = innerArrayType->getDimensions();
+    if (innerDimensions.size() != 1) {
+        printf("Error: Expected inner array dimension size 1, got %zu\n", innerDimensions.size());
+        return false;
+    }
+
+    int rows = outerDimensions[0];
+    int cols = innerDimensions[0];
+    printf("Debug: Array dimensions: [%d x %d]\n", rows, cols);
+
+    // 处理每个初始化元素
+    for (size_t i = 0; i < initExprNode->sons.size() && i < rows; ++i) {
+        ast_node * rowInitNode = initExprNode->sons[i];
+
+        if (rowInitNode->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
+            // 处理嵌套的数组初始化 {{...}, {...}}
+            printf("Debug: Processing row %zu with nested array init\n", i);
+
+            for (size_t j = 0; j < rowInitNode->sons.size() && j < cols; ++j) {
+                ast_node * elementNode = rowInitNode->sons[j];
+
+                // 生成目标地址：arrayVar[i][j]
+                ConstInt * rowIndex = module->newConstInt(i);
+                ConstInt * colIndex = module->newConstInt(j);
+                ConstInt * zeroConst = module->newConstInt(0);
+
+                // 首先获取行地址：arrayVar[0][i]
+                GetelementptrInstruction * rowGepInst =
+                    new GetelementptrInstruction(currentFunc, arrayVar, zeroConst, rowIndex);
+                node->blockInsts.addInst(rowGepInst);
+
+                // 然后获取列地址：row[0][j]
+                GetelementptrInstruction * colGepInst =
+                    new GetelementptrInstruction(currentFunc, rowGepInst, zeroConst, colIndex);
+                node->blockInsts.addInst(colGepInst);
+
+                // 处理元素值
+                if (!ir_visit_ast_node(elementNode)) {
+                    printf("Error: Failed to process element [%zu][%zu]\n", i, j);
+                    return false;
+                }
+                node->blockInsts.addInst(elementNode->blockInsts);
+
+                Value * elementValue = elementNode->val;
+
+                // 如果是数组访问或变量，需要load
+                if (needsLoad(elementValue)) {
+                    LoadInstruction * loadInst = new LoadInstruction(currentFunc, elementValue, elementValue, 4);
+                    node->blockInsts.addInst(loadInst);
+                    elementValue = loadInst;
+                }
+
+                // 存储到目标位置
+                StoreInstruction * storeInst = new StoreInstruction(currentFunc, elementValue, colGepInst, 4);
+                node->blockInsts.addInst(storeInst);
+
+                printf("Debug: Stored element [%zu][%zu]\n", i, j);
+            }
+        } else {
+            printf("Error: Expected nested array initialization for row %zu\n", i);
+            return false;
+        }
+    }
+
+    printf("Debug: Dynamic initialization completed\n");
     return true;
 }
 
@@ -3275,54 +3774,14 @@ bool IRGenerator::ir_array_variable_declare_with_init(ast_node * node,
 {
     Function * currentFunc = module->getCurrentFunction();
     ArrayType * arrayType = nullptr;
-    GlobalVariable * constArray = nullptr;
 
-    // 检查是否已经是数组类型
-    printf("Debug: typeNode->type->isArrayType() = %s\n", typeNode->type->isArrayType() ? "true" : "false");
-    printf("Debug: initExprNode = %p\n", initExprNode);
-
+    // 确定数组类型
     if (typeNode->type->isArrayType()) {
-        printf("Debug: Using existing array type\n");
         arrayType = static_cast<ArrayType *>(typeNode->type);
-
-        // 如果有初始化表达式，仍然需要处理
-        if (initExprNode) {
-            // 获取数组元素类型
-            Type * elementType = arrayType->getElementType();
-            initExprNode->type = elementType;
-
-            // 处理数组初始化列表，调用注册的 ir_array_init 函数
-            printf("Debug: About to process initExprNode, type = %d\n", (int) initExprNode->node_type);
-            if (!ir_visit_ast_node(initExprNode)) {
-                printf("Error: ir_visit_ast_node failed for initExprNode\n");
-                return false;
-            }
-            printf("Debug: After processing initExprNode, val = %p\n", initExprNode->val);
-            node->blockInsts.addInst(initExprNode->blockInsts);
-        }
+        printf("Debug: Using existing array type: %s\n", arrayType->toString().c_str());
     } else {
-        // 如果有初始化表达式，从初始化列表推导数组大小
-        if (initExprNode) {
-            // ✅ 设置元素类型，供 ir_array_init 使用
-            initExprNode->type = typeNode->type;
-
-            // 处理数组初始化列表，调用注册的 ir_array_init 函数
-            printf("Debug: About to process initExprNode, type = %d\n", (int) initExprNode->node_type);
-            if (!ir_visit_ast_node(initExprNode)) {
-                printf("Error: ir_visit_ast_node failed for initExprNode\n");
-                return false;
-            }
-            printf("Debug: After processing initExprNode, val = %p\n", initExprNode->val);
-            node->blockInsts.addInst(initExprNode->blockInsts);
-
-            // 从初始化列表获取数组大小
-            int arraySize = initExprNode->sons.size();
-            std::vector<int> dimensions = {arraySize};
-            arrayType = new ArrayType(typeNode->type, dimensions);
-        } else {
-            printf("Error: Array type expected but not found.\n");
-            return false;
-        }
+        printf("Error: Expected array type but got %s\n", typeNode->type->toString().c_str());
+        return false;
     }
 
     // 创建局部数组变量
@@ -3336,43 +3795,39 @@ bool IRGenerator::ir_array_variable_declare_with_init(ast_node * node,
     AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, arrayVar, arrayType, 16);
     node->blockInsts.addInst(allocaInst);
 
-    // 如果有初始化表达式，处理初始化
+    // 处理初始化
     if (initExprNode) {
-        // 获取常量数组（由 ir_array_init 创建）
-        printf("Debug: initExprNode->val = %p\n", initExprNode->val);
-        if (initExprNode->val) {
-            printf("Debug: initExprNode->val type = %s\n", initExprNode->val->getType()->toString().c_str());
+        // 检查初始化类型
+        if (initExprNode->node_type == ast_operator_type::AST_OP_ARRAY_INIT && initExprNode->sons.empty()) {
+            // 1. 零初始化：空初始化列表 {}
+            printf("Debug: Processing zero initialization for array %s\n", varNode->name.c_str());
+            if (!handleZeroInitialization(node, arrayVar, arrayType)) {
+                return false;
+            }
+        } else if (hasRuntimeValues(initExprNode)) {
+            // 2. 动态初始化：包含运行时值
+            printf("Debug: Processing dynamic initialization for array %s\n", varNode->name.c_str());
+            if (!handleDynamicInitialization(node, arrayVar, arrayType, initExprNode)) {
+                return false;
+            }
+        } else {
+            // 3. 静态初始化：纯常量值
+            printf("Debug: Processing static initialization for array %s\n", varNode->name.c_str());
+            if (!handleStaticInitialization(node, arrayVar, arrayType, initExprNode, varNode->name)) {
+                return false;
+            }
         }
-        constArray = static_cast<GlobalVariable *>(initExprNode->val);
-        if (!constArray) {
-            printf("Error: Failed to get constant array from initialization.\n");
+    } else {
+        // 没有初始化表达式，使用零初始化
+        printf("Debug: No initializer, using zero initialization for array %s\n", varNode->name.c_str());
+        if (!handleZeroInitialization(node, arrayVar, arrayType)) {
             return false;
         }
-
-        // 生成 memcpy 指令将常量数组复制到局部数组
-
-        // 1. 将局部数组转换为 i8*
-        BitcastInstruction * destCast = new BitcastInstruction(currentFunc, arrayVar, module->getI8PtrType());
-        node->blockInsts.addInst(destCast);
-
-        // 2. 将常量数组转换为 i8*
-        BitcastInstruction * srcCast = new BitcastInstruction(currentFunc, constArray, module->getI8PtrType());
-        node->blockInsts.addInst(srcCast);
-
-        // 3. 计算拷贝大小
-        Type * elementType = arrayType->getElementType();
-        int totalElements = arrayType->getTotalElements();
-        int elemSize = elementType->getSize();
-        ConstInt * sizeConst = module->newConstInt(totalElements * elemSize);
-
-        // 4. 生成 memcpy 指令
-        MemcpyInstruction * memcpyInst = new MemcpyInstruction(currentFunc, destCast, srcCast, sizeConst, false);
-        node->blockInsts.addInst(memcpyInst);
     }
-    // 如果没有初始化表达式，数组将保持未初始化状态（这是正常的）
 
-    // 设置变量节点的值
+    // 设置节点的值
     varNode->val = arrayVar;
+    node->val = arrayVar;
 
     return true;
 }

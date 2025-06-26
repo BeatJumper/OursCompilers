@@ -68,8 +68,17 @@ GetelementptrInstruction::GetelementptrInstruction(Function * _func,
 
     if (baseType->isArrayType()) {
         const ArrayType * arrayType = static_cast<const ArrayType *>(baseType);
-        Type * elementType = arrayType->getElementType();
-        this->type = new PointerType(elementType);
+        const std::vector<int> & dimensions = arrayType->getDimensions();
+
+        if (dimensions.size() > 1) {
+            // 多维数组：返回指向子数组的指针
+            std::vector<int> subDimensions(dimensions.begin() + 1, dimensions.end());
+            Type * subArrayType = new ArrayType(arrayType->getElementType(), subDimensions);
+            this->type = new PointerType(subArrayType);
+        } else {
+            // 一维数组：返回指向元素的指针
+            this->type = new PointerType(arrayType->getElementType());
+        }
     } else if (baseType->isPointerType()) {
         // 处理指针类型（如多维数组访问的第二层）
         const PointerType * ptrType = static_cast<const PointerType *>(baseType);
@@ -77,10 +86,9 @@ GetelementptrInstruction::GetelementptrInstruction(Function * _func,
 
         if (pointeeType->isArrayType()) {
             const ArrayType * arrayType = static_cast<const ArrayType *>(pointeeType);
-            Type * elementType = arrayType->getElementType();
-            this->type = new PointerType(elementType);
+            this->type = new PointerType(arrayType->getElementType());
         } else {
-            this->type = baseType; // 保持原类型
+            this->type = new PointerType(pointeeType);
         }
     } else {
         this->type = baseType; // 保持原类型

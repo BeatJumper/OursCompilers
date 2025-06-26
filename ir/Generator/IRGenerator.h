@@ -352,6 +352,39 @@ private:
                                              ast_node * typeNode,
                                              ast_node * varNode,
                                              ast_node * initExprNode);
+
+    /// @brief 检测数组初始化是否包含动态值
+    /// @param initNode 数组初始化节点
+    /// @return true：包含动态值，false：纯静态值
+    bool hasRuntimeValues(ast_node * initNode);
+
+    /// @brief 处理零初始化数组
+    /// @param node AST节点
+    /// @param arrayVar 数组变量
+    /// @param arrayType 数组类型
+    /// @return 翻译是否成功
+    bool handleZeroInitialization(ast_node * node, Value * arrayVar, ArrayType * arrayType);
+
+    /// @brief 处理静态初始化数组
+    /// @param node AST节点
+    /// @param arrayVar 数组变量
+    /// @param arrayType 数组类型
+    /// @param initExprNode 初始化表达式节点
+    /// @param varName 变量名
+    /// @return 翻译是否成功
+    bool handleStaticInitialization(ast_node * node,
+                                    Value * arrayVar,
+                                    ArrayType * arrayType,
+                                    ast_node * initExprNode,
+                                    const std::string & varName);
+
+    /// @brief 处理动态初始化数组
+    /// @param node AST节点
+    /// @param arrayVar 数组变量
+    /// @param arrayType 数组类型
+    /// @param initExprNode 初始化表达式节点
+    /// @return 翻译是否成功
+    bool handleDynamicInitialization(ast_node * node, Value * arrayVar, ArrayType * arrayType, ast_node * initExprNode);
     /// @brief 浮点数加法AST节点翻译成线性中间IR
     /// @param node AST节点
     /// @return 翻译是否成功，true：成功，false：失败

@@ -236,9 +236,9 @@ public:
 
     /// @brief 创建全局常量数组
     /// @param arrayType 数组类型
-    /// @param initValues 初始化值列表
+    /// @param name 数组名称（可选）
     /// @return 全局常量数组
-    GlobalVariable * newGlobalConstArray(ArrayType * arrayType);
+    GlobalVariable * newGlobalConstArray(ArrayType * arrayType, const std::string & name = "");
 
 private:
     /// @brief 常量整数向量表，用于释放资源

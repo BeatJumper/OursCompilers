@@ -507,12 +507,17 @@ Type * Module::getI8PtrType()
 /// @param arrayType 数组类型
 /// @param initValues 初始化值列表
 /// @return 全局常量数组
-GlobalVariable * Module::newGlobalConstArray(ArrayType * arrayType)
+GlobalVariable * Module::newGlobalConstArray(ArrayType * arrayType, const std::string & name)
 {
-    static int constArrayCounter = 0;
-    std::string name = "__const.main.arr." + std::to_string(constArrayCounter++);
+    std::string arrayName;
+    if (name.empty()) {
+        static int constArrayCounter = 0;
+        arrayName = "__const.main.arr." + std::to_string(constArrayCounter++);
+    } else {
+        arrayName = name;
+    }
 
-    GlobalVariable * constArray = new GlobalVariable(arrayType, name);
+    GlobalVariable * constArray = new GlobalVariable(arrayType, arrayName);
     constArray->setConstant(true);
     constArray->setAlignment(16);
 

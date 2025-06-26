@@ -135,6 +135,9 @@ enum class IRInstOperator : std::int8_t {
     /// @brief memcpy指令
     IRINST_OP_MEMCPY,
 
+    /// @brief memset指令
+    IRINST_OP_MEMSET,
+
     /// @brief sitofp指令（有符号整数转浮点数）
     IRINST_OP_SITOFP,
 
