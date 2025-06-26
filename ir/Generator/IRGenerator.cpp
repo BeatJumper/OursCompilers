@@ -49,6 +49,7 @@
 #include "FptosiInstruction.h"
 #include "PointerType.h"
 #include "ConstFloat.h"
+#include "DeadCodeElimination.h"
 
 /// @brief 构造函数
 /// @param _root AST的根
@@ -295,6 +296,13 @@ bool IRGenerator::ir_function_define(ast_node * node)
     } else {
         // void函数：直接返回
         irCode.addInst(new ExitInstruction(newFunc, nullptr));
+    }
+
+    // 死代码消除优化
+    DeadCodeElimination dce;
+    bool optimized = dce.eliminateDeadCode(newFunc);
+    if (optimized) {
+        printf("Dead code elimination applied to function %s\n", name_node->name.c_str());
     }
 
     // 恢复外部状态
@@ -1054,6 +1062,11 @@ bool IRGenerator::ir_add_processed(ast_node * node, ast_node * left, ast_node * 
         rightValue = loadRight;
     } else {
         rightValue = right->val;
+    }
+
+    // 处理类型转换
+    if (!handleArithmeticTypeConversion(node, leftValue, rightValue)) {
+        return false;
     }
 
     // 生成加法指令
@@ -2294,28 +2307,205 @@ bool IRGenerator::ir_negative(ast_node * node)
         operandValue = operand->val;
     }
 
-    // 生成负号指令：0 - operand
-    ConstInt * zeroConst = module->newConstInt(0);
-    BinaryInstruction * negInst = new BinaryInstruction(module->getCurrentFunction(),
-                                                        IRInstOperator::IRINST_OP_SUB_I,
-                                                        zeroConst,
-                                                        operandValue,
-                                                        IntegerType::getTypeInt());
-    node->blockInsts.addInst(negInst);
-    node->val = negInst;
+    // 检查操作数类型
+    Type * operandType = operandValue->getType();
+
+    if (operandType->isInt1Byte()) {
+        // 对于i1类型（布尔类型），需要先转换为int32类型，然后求负
+        // 创建一个int32类型的局部变量
+        LocalVariable * tempVar =
+            static_cast<LocalVariable *>(module->newVarValue(IntegerType::getTypeInt(), "__temp_bool_to_int"));
+        AllocaInstruction * allocaInst =
+            new AllocaInstruction(module->getCurrentFunction(), tempVar, IntegerType::getTypeInt(), 4);
+        node->blockInsts.addInst(allocaInst);
+
+        // 创建标签
+        LabelInstruction * trueLabel = new LabelInstruction(module->getCurrentFunction());
+        LabelInstruction * falseLabel = new LabelInstruction(module->getCurrentFunction());
+        LabelInstruction * endLabel = new LabelInstruction(module->getCurrentFunction());
+
+        // 根据i1值进行分支
+        BranchInstruction * branchInst =
+            new BranchInstruction(module->getCurrentFunction(), operandValue, trueLabel, falseLabel);
+        node->blockInsts.addInst(branchInst);
+
+        // true分支：存储1
+        node->blockInsts.addInst(trueLabel);
+        ConstInt * oneConst = module->newConstInt(1);
+        StoreInstruction * storeOne = new StoreInstruction(module->getCurrentFunction(), oneConst, tempVar, 4);
+        node->blockInsts.addInst(storeOne);
+        GotoInstruction * gotoEnd1 = new GotoInstruction(module->getCurrentFunction(), endLabel);
+        node->blockInsts.addInst(gotoEnd1);
+
+        // false分支：存储0
+        node->blockInsts.addInst(falseLabel);
+        ConstInt * zeroConst = module->newConstInt(0);
+        StoreInstruction * storeZero = new StoreInstruction(module->getCurrentFunction(), zeroConst, tempVar, 4);
+        node->blockInsts.addInst(storeZero);
+        GotoInstruction * gotoEnd2 = new GotoInstruction(module->getCurrentFunction(), endLabel);
+        node->blockInsts.addInst(gotoEnd2);
+
+        // 结束标签
+        node->blockInsts.addInst(endLabel);
+
+        // 加载转换后的int32值
+        LoadInstruction * loadInt = new LoadInstruction(module->getCurrentFunction(), tempVar, tempVar, 4);
+        node->blockInsts.addInst(loadInt);
+
+        // 生成负号指令：0 - loadInt
+        ConstInt * zeroForNeg = module->newConstInt(0);
+        BinaryInstruction * negInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                            IRInstOperator::IRINST_OP_SUB_I,
+                                                            zeroForNeg,
+                                                            loadInt,
+                                                            IntegerType::getTypeInt());
+        node->blockInsts.addInst(negInst);
+        node->val = negInst;
+    } else {
+        // 对于int32类型，直接生成负号指令：0 - operand
+        ConstInt * zeroConst = module->newConstInt(0);
+        BinaryInstruction * negInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                            IRInstOperator::IRINST_OP_SUB_I,
+                                                            zeroConst,
+                                                            operandValue,
+                                                            IntegerType::getTypeInt());
+        node->blockInsts.addInst(negInst);
+        node->val = negInst;
+    }
 
     return true;
 }
 
-/// @brief 逻辑非运算符AST节点翻译成线性中间IR（兼容旧接口）
+/// @brief 处理算术运算中的类型转换（i1到i32的零扩展）
+/// @param node AST节点
+/// @param leftValue 左操作数值（可能被修改）
+/// @param rightValue 右操作数值（可能被修改）
+/// @return 是否成功处理类型转换
+bool IRGenerator::handleArithmeticTypeConversion(ast_node * node, Value *& leftValue, Value *& rightValue)
+{
+    Type * leftType = leftValue->getType();
+    Type * rightType = rightValue->getType();
+
+    // 处理i1类型与i32类型的混合运算
+    if (leftType->isInt1Byte() && rightType->isInt32Type()) {
+        // 将左操作数从i1零扩展为i32
+        ZextInstruction * zextLeft =
+            new ZextInstruction(module->getCurrentFunction(), leftValue, IntegerType::getTypeInt());
+        node->blockInsts.addInst(zextLeft);
+        leftValue = zextLeft;
+    } else if (leftType->isInt32Type() && rightType->isInt1Byte()) {
+        // 将右操作数从i1零扩展为i32
+        ZextInstruction * zextRight =
+            new ZextInstruction(module->getCurrentFunction(), rightValue, IntegerType::getTypeInt());
+        node->blockInsts.addInst(zextRight);
+        rightValue = zextRight;
+    } else if (leftType->isInt1Byte() && rightType->isInt1Byte()) {
+        // 两个操作数都是i1类型，都扩展为i32
+        ZextInstruction * zextLeft =
+            new ZextInstruction(module->getCurrentFunction(), leftValue, IntegerType::getTypeInt());
+        node->blockInsts.addInst(zextLeft);
+        leftValue = zextLeft;
+
+        ZextInstruction * zextRight =
+            new ZextInstruction(module->getCurrentFunction(), rightValue, IntegerType::getTypeInt());
+        node->blockInsts.addInst(zextRight);
+        rightValue = zextRight;
+    }
+
+    return true;
+}
+
+/// @brief 翻转比较操作符
+/// @param op 原始比较操作符
+/// @return 翻转后的比较操作符
+IRInstOperator flipComparisonOperator(IRInstOperator op)
+{
+    switch (op) {
+        case IRInstOperator::IRINST_OP_EQ:
+            return IRInstOperator::IRINST_OP_NE;
+        case IRInstOperator::IRINST_OP_NE:
+            return IRInstOperator::IRINST_OP_EQ;
+        case IRInstOperator::IRINST_OP_LT:
+            return IRInstOperator::IRINST_OP_GE;
+        case IRInstOperator::IRINST_OP_LE:
+            return IRInstOperator::IRINST_OP_GT;
+        case IRInstOperator::IRINST_OP_GT:
+            return IRInstOperator::IRINST_OP_LE;
+        case IRInstOperator::IRINST_OP_GE:
+            return IRInstOperator::IRINST_OP_LT;
+        default:
+            // 对于其他操作符，返回原操作符（不应该发生）
+            return op;
+    }
+}
+
+/// @brief 逻辑非运算符AST节点翻译成线性中间IR
 /// @param node AST节点
 /// @return 翻译是否成功，true：成功，false：失败
 bool IRGenerator::ir_not(ast_node * node)
 {
-    // 这个方法不应该被直接调用，因为逻辑表达式需要外部提供真假出口
-    // 如果被调用，说明逻辑表达式被错误地用作普通表达式
-    printf("Error: Logical NOT expression cannot be used as regular expression.\n");
-    return false;
+    ast_node * operandNode = node->sons[0];
+
+    // 递归处理操作数
+    ast_node * operand = ir_visit_ast_node(operandNode);
+    if (!operand) {
+        return false;
+    }
+
+    // 合并操作数的指令
+    node->blockInsts.addInst(operand->blockInsts);
+
+    Value * operandValue = nullptr;
+
+    // 检查操作数是否需要加载
+    if (needsLoad(operand->val)) {
+        LoadInstruction * loadInst = new LoadInstruction(module->getCurrentFunction(), operand->val, operand->val, 4);
+        node->blockInsts.addInst(loadInst);
+        operandValue = loadInst;
+    } else {
+        operandValue = operand->val;
+    }
+
+    // 根据操作数的类型决定如何处理逻辑非
+    Type * operandType = operandValue->getType();
+
+    if (operandType->isInt32Type()) {
+        // 对于int32类型，创建比较指令：result = (operand == 0)
+        ConstInt * zeroConst = module->newConstInt(0);
+        RelInstruction * cmpInst = new RelInstruction(module->getCurrentFunction(),
+                                                      IRInstOperator::IRINST_OP_EQ,
+                                                      operandValue,
+                                                      zeroConst,
+                                                      IntegerType::getTypeBool());
+        node->blockInsts.addInst(cmpInst);
+        node->val = cmpInst;
+    } else if (operandType->isInt1Byte()) {
+        // 对于i1类型（布尔类型），翻转比较结果
+        // 检查操作数是否是比较指令，如果是则翻转比较操作符
+        if (RelInstruction * relInst = dynamic_cast<RelInstruction *>(operandValue)) {
+            // 翻转比较操作符
+            IRInstOperator flippedOp = flipComparisonOperator(relInst->getOp());
+            RelInstruction * flippedInst = new RelInstruction(module->getCurrentFunction(),
+                                                              flippedOp,
+                                                              relInst->getOperand(0),
+                                                              relInst->getOperand(1),
+                                                              IntegerType::getTypeBool());
+            node->blockInsts.addInst(flippedInst);
+            node->val = flippedInst;
+        } else {
+            // 对于其他i1类型值，使用XOR与1进行翻转
+            ConstInt * oneConst = module->newConstInt(1);
+            XorInstruction * xorInst =
+                new XorInstruction(module->getCurrentFunction(), operandValue, oneConst, IntegerType::getTypeBool());
+            node->blockInsts.addInst(xorInst);
+            node->val = xorInst;
+        }
+    } else {
+        printf("Error: Logical NOT operator can only be applied to integer or boolean types.\n");
+        return false;
+    }
+
+    return true;
 }
 
 /// @brief 逻辑与运算符AST节点翻译成线性中间IR（兼容旧接口）
@@ -2659,9 +2849,9 @@ bool IRGenerator::ir_condition_expr(ast_node * node, LabelInstruction * trueLabe
     }
 }
 
-/// @brief 检查指令序列是否包含终结指令（如break、continue、return）
+/// @brief 检查指令序列的最后一条指令是否是终结指令（如break、continue、return）
 /// @param blockInsts 指令序列
-/// @return true：包含终结指令，false：不包含
+/// @return true：最后一条指令是终结指令，false：不是
 bool IRGenerator::hasTerminatorInstruction(const InterCode & blockInsts)
 {
     const auto & insts = blockInsts.getCode();
@@ -2669,17 +2859,13 @@ bool IRGenerator::hasTerminatorInstruction(const InterCode & blockInsts)
         return false;
     }
 
-    // 检查指令序列中是否包含任何终结指令
-    for (Instruction * inst: insts) {
-        IRInstOperator op = inst->getOp();
-        if (op == IRInstOperator::IRINST_OP_GOTO ||   // break, continue
-            op == IRInstOperator::IRINST_OP_RET ||    // return
-            op == IRInstOperator::IRINST_OP_BRANCH) { // 条件跳转
-            return true;
-        }
-    }
+    // 检查最后一条指令是否是终结指令
+    Instruction * lastInst = insts.back();
+    IRInstOperator op = lastInst->getOp();
 
-    return false;
+    return (op == IRInstOperator::IRINST_OP_GOTO ||  // break, continue, 无条件跳转
+            op == IRInstOperator::IRINST_OP_RET ||   // return
+            op == IRInstOperator::IRINST_OP_BRANCH); // 条件跳转
 }
 
 /// @brief 常量声明语句节点翻译成线性中间IR
@@ -3215,6 +3401,11 @@ bool IRGenerator::ir_sub_processed(ast_node * node, ast_node * left, ast_node * 
         rightValue = right->val;
     }
 
+    // 处理类型转换
+    if (!handleArithmeticTypeConversion(node, leftValue, rightValue)) {
+        return false;
+    }
+
     // 生成减法指令
     BinaryInstruction * subInst = new BinaryInstruction(module->getCurrentFunction(),
                                                         IRInstOperator::IRINST_OP_SUB_I,
@@ -3299,6 +3490,11 @@ bool IRGenerator::ir_mul_processed(ast_node * node, ast_node * left, ast_node * 
         rightValue = right->val;
     }
 
+    // 处理类型转换
+    if (!handleArithmeticTypeConversion(node, leftValue, rightValue)) {
+        return false;
+    }
+
     // 生成乘法指令
     BinaryInstruction * mulInst = new BinaryInstruction(module->getCurrentFunction(),
                                                         IRInstOperator::IRINST_OP_MUL_I,
@@ -3381,6 +3577,11 @@ bool IRGenerator::ir_div_processed(ast_node * node, ast_node * left, ast_node * 
         rightValue = loadRight;
     } else {
         rightValue = right->val;
+    }
+
+    // 处理类型转换
+    if (!handleArithmeticTypeConversion(node, leftValue, rightValue)) {
+        return false;
     }
 
     // 生成除法指令

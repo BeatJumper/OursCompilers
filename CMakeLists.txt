@@ -184,6 +184,8 @@ set(IR_SRCS
 	ir/User.cpp
 	ir/Value.cpp
 	ir/Value.h
+	ir/DeadCodeElimination.cpp
+	ir/DeadCodeElimination.h
 )
 
 # 符号表等共通化代码集合

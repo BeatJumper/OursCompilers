@@ -3,6 +3,12 @@
 
 bool update_live(Node_Dataflow * node, Node_Dataflow * succ1, Node_Dataflow * succ2)
 {
+    // 检查空指针
+    if (!node) {
+        std::cerr << "Error: node is null in update_live" << std::endl;
+        return false;
+    }
+
     // assert(node != succ1);
     std::string s;
     node->inst->toString(s);
@@ -91,6 +97,15 @@ void LiveVariableAnalysis(ControlFlowGraph * _graph)
                                        // 第二个后继（可能是nullptr)
                                        next_nodes[1] ? next_nodes[1]->dataflow_list[0] : nullptr);
             for (int i = 0; i <= dataflow_list.size() - 2; i++) {
+                // 检查空指针
+                if (!dataflow_list[i]) {
+                    std::cerr << "Error: dataflow_list[" << i << "] is null" << std::endl;
+                    continue;
+                }
+                if (!dataflow_list[i + 1]) {
+                    std::cerr << "Error: dataflow_list[" << (i + 1) << "] is null" << std::endl;
+                    continue;
+                }
 
                 // 对于基本块内的前 n-1 个指令，只会有1个后继指令
                 need_update |= update_live(dataflow_list[i], dataflow_list[i + 1]);

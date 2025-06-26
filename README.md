@@ -152,7 +152,10 @@ cd ..
 cd ..
 cd ..
 ```
-
+```
+cd build
+cpack --config CPackSourceConfig.cmake
+```
 不知道这个是干啥的。
 
 ```shell

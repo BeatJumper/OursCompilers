@@ -184,6 +184,13 @@ protected:
     /// @brief AST节点运算符与动作函数关联的映射表
     std::unordered_map<ast_operator_type, ast2ir_handler_t> ast2ir_handlers;
 
+    /// @brief 处理算术运算中的类型转换（i1到i32的零扩展）
+    /// @param node AST节点
+    /// @param leftValue 左操作数值（可能被修改）
+    /// @param rightValue 右操作数值（可能被修改）
+    /// @return 是否成功处理类型转换
+    bool handleArithmeticTypeConversion(ast_node * node, Value *& leftValue, Value *& rightValue);
+
 private:
     /// @brief 抽象语法树的根
     ast_node * root;
