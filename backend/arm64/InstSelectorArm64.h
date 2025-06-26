@@ -154,6 +154,24 @@ protected:
     void translate_fptosi(Instruction * inst);
 
     ///
+    /// @brief getelementptr指令翻译成ARM64汇编
+    /// @param inst IR指令
+    ///
+    void translate_gep(Instruction * inst);
+
+    ///
+    /// @brief bitcast指令翻译成ARM64汇编
+    /// @param inst IR指令
+    ///
+    void translate_bitcast(Instruction * inst);
+
+    ///
+    /// @brief memcpy指令翻译成ARM64汇编
+    /// @param inst IR指令
+    ///
+    void translate_memcpy(Instruction * inst);
+
+    ///
     /// @brief 输出IR指令
     ///
     void outputIRInstruction(Instruction * inst);

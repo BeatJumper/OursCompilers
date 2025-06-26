@@ -244,11 +244,6 @@ protected:
     Function * func = nullptr;
 
     ///
-    /// @brief 寄存器编号，-1表示没有分配寄存器，大于等于0代表是寄存器型Value
-    ///
-    int32_t regId = -1;
-
-    ///
     /// @brief 变量在栈内的偏移量，对于全局变量默认为0，临时变量没有意义
     ///
     int32_t offset = 0;
@@ -262,9 +257,4 @@ protected:
     /// @brief 栈内寻找时基址寄存器名字
     ///
     std::string baseRegName;
-
-    ///
-    /// @brief 变量加载到寄存器中时对应的寄存器编号
-    ///
-    int32_t loadRegNo = -1;
 };

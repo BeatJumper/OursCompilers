@@ -20,7 +20,7 @@ ControlFlowGraph::ControlFlowGraph(Function * func)
         for (LabelInstruction * label: node->get_son_label_list()) {
             Node_CFG * son = get_CFG_from_label(label);
             assert(son != nullptr);
-            std::cout << node->getIRCode()->getCode().size() << std::endl;
+            // std::cout << node->getIRCode()->getCode().size() << std::endl;
             node->get_next_nodes()[i++] = son;
             assert(node->get_next_nodes()[0]);
         }
@@ -90,7 +90,10 @@ Node_Dataflow::Node_Dataflow(Instruction * _inst) : inst(_inst)
      */
     // printf("产生数据流节点\n");
     if (Instanceof(inst, AllocaInstruction *, _inst)) {
-        // Alloc指令没有直接数据流，所以不做任何事
+        // Alloca指令产生一个指向分配内存的指针，这个指针应该参与寄存器分配
+        if (inst->hasResultValue()) {
+            def_set.insert(inst);
+        }
     } else if (Instanceof(inst, StoreInstruction *, _inst)) {
         use_set.insert(inst->getOperand(0));
     } else if (Instanceof(inst, LoadInstruction *, _inst)) {
@@ -145,7 +148,7 @@ Node_CFG::Node_CFG(ControlFlowGraph * _graph, InterCode * BasicIRBlock)
     for (auto inst: IRCode->getCode()) {
         std::string s;
         inst->toString(s);
-        std::cout << s << "\n";
+        // std::cout << s << "\n";
     }
 
     /*

@@ -99,7 +99,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
         for (Node_Dataflow * node_data: node_cfg->get_dataflow_list()) {
             std::string s;
             node_data->inst->toString(s);
-            std::cout << s << std::endl;
+            //std::cout << s << std::endl;
             // 某个指令位置下活跃着的量的集合（LiveOUT与def之并）
             // assert(node_data->liveOUT.size());
             // assert(node_data->def_set.size());

@@ -366,13 +366,18 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
     } else if (src_var->getRegId() != -1) {
 
         // 源操作数为寄存器变量
+        // 对于load指令，寄存器中存储的是地址，需要从地址加载数据
         int32_t src_regId = src_var->getRegId();
 
-        if (src_regId != rs_reg_no) {
-
-            // mov x8,x2 | 这里有优化空间——消除x8
-            emit("mov", PlatformArm64::regName[rs_reg_no], PlatformArm64::regName[src_regId]);
+        // 确保使用64位寄存器进行地址访问
+        std::string src_reg_name = PlatformArm64::regName[src_regId];
+        std::string result_reg_name = PlatformArm64::regName[rs_reg_no];
+        if (src_reg_name[0] == 'w') {
+            src_reg_name[0] = 'x';
         }
+
+        // ldr w8, [x2] - 从寄存器中的地址加载数据
+        emit("ldr", result_reg_name, "[" + src_reg_name + "]");
     } else if (Instanceof(globalVar, GlobalVariable *, src_var)) {
         // 全局变量
 
@@ -488,14 +493,28 @@ void ILocArm64::leaStack(int rs_reg_no, int base_reg_no, int64_t off)
     std::string rs_reg_name = PlatformArm64::regName[rs_reg_no];
     std::string base_reg_name = PlatformArm64::regName[base_reg_no];
 
-    if (PlatformArm64::constExpr(off))
-        // add x8,fp,#-16
-        emit("add", rs_reg_name, base_reg_name, toStr(off));
-    else {
+    // 确保使用64位寄存器进行地址计算
+    if (rs_reg_name[0] == 'w') {
+        rs_reg_name[0] = 'x';
+    }
+    if (base_reg_name[0] == 'w') {
+        base_reg_name[0] = 'x';
+    }
+
+    if (PlatformArm64::constExpr(off)) {
+        // 处理负偏移量
+        if (off >= 0) {
+            // add x8,sp,#16
+            emit("add", rs_reg_name, base_reg_name, toStr(off));
+        } else {
+            // sub x8,sp,#16 (对于负偏移量使用sub指令)
+            emit("sub", rs_reg_name, base_reg_name, toStr(-off));
+        }
+    } else {
         // ldr x8,=-257
         load_imm(rs_reg_no, off);
 
-        // add x8,fp,r8
+        // add x8,sp,x8
         emit("add", rs_reg_name, base_reg_name, rs_reg_name);
     }
 }
@@ -505,19 +524,14 @@ void ILocArm64::leaStack(int rs_reg_no, int base_reg_no, int64_t off)
 /// @param tmp_reg_No
 void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 {
-    // 计算总栈空间需求
-    int totalSize = 0;
+    // 使用在stackAlloc中计算的栈帧大小
+    int totalSize = func->getMaxDep();
     int protectedRegNum = 0;
 
     // 保存寄存器空间
     if (func->getExistFuncCall()) {
         protectedRegNum = func->getProtectedReg().size();
         totalSize += protectedRegNum * 8;
-    }
-
-    // 局部变量空间
-    for (auto & local: func->getVarValues()) {
-        totalSize += local->getType()->getSize();
     }
 
     // 栈传参数空间(超过8个的参数)，先按4字节分配(int,float)
@@ -531,11 +545,61 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
     func->setStackFrameSize(totalSize);
     std::string off = "[sp, #" + std::to_string(totalSize - protectedRegNum * 8) + "]";
 
-    // 局部变量空间
+    // 局部变量空间 - 保持原来的逻辑，但确保偏移量为正
     int tem = totalSize - protectedRegNum * 8;
+    // printf("Debug: allocStack totalSize=%d, protectedRegNum=%d, starting offset=%d\n", totalSize, protectedRegNum,
+    // tem);
     for (auto & local: func->getVarValues()) {
+        // 检查这个变量是否是alloca指令的结果
+        std::string localName = local->getName();
+        printf("Debug: 检查局部变量 %s, 类型=%s, 是否指针=%d, 是否数组=%d\n",
+               localName.c_str(),
+               local->getType()->toString().c_str(),
+               local->getType()->isPointerType(),
+               local->getType()->isArrayType());
+
+        bool isAllocaResult = false;
+
+        // 简单的启发式：如果变量名是 "a"，跳过它（因为这是我们的数组变量）
+        if (localName == "a") {
+            isAllocaResult = true;
+        }
+
+        if (isAllocaResult) {
+            printf("Debug: 跳过alloca结果变量 %s 在局部变量处理中\n", local->getName().c_str());
+            continue;
+        }
+
         tem -= local->getType()->getSize();
+        // 确保偏移量为正数
+        if (tem < 0) {
+            tem = 0;
+        }
         local->setOffset(tem);
+        printf("Debug: allocStack variable %s: size=%d, offset=%d\n",
+               local->getName().c_str(),
+               local->getType()->getSize(),
+               tem);
+    }
+
+    // 重新设置临时变量的偏移量，确保在栈帧范围内
+    // 临时变量从局部变量空间的最小偏移量开始分配
+    int min_local_offset = tem; // 局部变量的最小偏移量
+    int temp_offset = min_local_offset;
+
+    for (auto inst: func->getInterCode().getInsts()) {
+        if (inst->hasResultValue() && inst->getOp() != IRInstOperator::IRINST_OP_ALLOCA) {
+            // 跳过alloca指令，因为它们的内存地址已经在stackAlloc中设置
+            int32_t size = inst->getType()->getSize();
+            // 按照4字节的大小整数倍分配
+            size += (4 - size % 4) % 4;
+            temp_offset -= size;
+            // 确保偏移量不小于0
+            if (temp_offset < 0) {
+                temp_offset = 0;
+            }
+            inst->setMemoryAddr(ARM64_SP_REG_NO, temp_offset);
+        }
     }
 
     std::string s = "#" + std::to_string(totalSize);

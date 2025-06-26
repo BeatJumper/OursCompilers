@@ -71,5 +71,9 @@ protected:
     ///
     void getIRValueStr(Value * val, std::string & str);
 
+    /// @brief 递归展开并输出初始化值列表
+    /// @param initValues 初始化值列表
+    void expandAndOutputInitValues(const std::vector<Value *> & initValues);
+
 private:
 };

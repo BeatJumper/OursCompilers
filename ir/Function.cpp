@@ -294,13 +294,14 @@ void Function::renameIR()
     }
 
     int32_t nameIndex = 0;
-    printf("==== Starting renameIR for function %s ====\n", this->name.c_str());
+    // printf("==== Starting renameIR for function %s ====\n", this->name.c_str());
 
     // 形式参数重命名
     for (auto & param: this->params) {
         std::string oldName = param->getIRName();
         param->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(nameIndex));
-        printf("Renamed param: %s -> %s\n", oldName.empty() ? "(empty)" : oldName.c_str(), param->getIRName().c_str());
+        // printf("Renamed param: %s -> %s\n", oldName.empty() ? "(empty)" : oldName.c_str(),
+        // param->getIRName().c_str());
         nameIndex++;
     }
 
@@ -308,10 +309,10 @@ void Function::renameIR()
     for (auto & var: this->varsVector) {
         std::string oldName = var->getIRName();
         var->setIRName(IR_LOCAL_VARNAME_PREFIX + std::to_string(nameIndex));
-        printf("Renamed local var %s: %s -> %s\n",
+        /*printf("Renamed local var %s: %s -> %s\n",
                var->getName().c_str(),
                oldName.empty() ? "(empty)" : oldName.c_str(),
-               var->getIRName().c_str());
+               var->getIRName().c_str());*/
         nameIndex++;
     }
     // 遍历指令重命名
@@ -320,9 +321,9 @@ void Function::renameIR()
             // label参与编号
             std::string oldName = inst->getIRName();
             inst->setIRName(IR_LABEL_PREFIX + std::to_string(nameIndex));
-            printf("Renamed label: %s -> %s\n",
+            /*printf("Renamed label: %s -> %s\n",
                    oldName.empty() ? "(empty)" : oldName.c_str(),
-                   inst->getIRName().c_str());
+                   inst->getIRName().c_str());*/
             nameIndex++;
         } else if (inst->hasResultValue()) {
             // 跳过alloca指令，不分配新编号
@@ -336,7 +337,7 @@ void Function::renameIR()
             nameIndex++;
         }
     }
-    printf("==== Finished renameIR, final nameIndex = %d ====\n", nameIndex);
+    // printf("==== Finished renameIR, final nameIndex = %d ====\n", nameIndex);
 }
 
 ///

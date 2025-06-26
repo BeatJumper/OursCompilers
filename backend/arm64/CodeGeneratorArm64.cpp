@@ -59,8 +59,8 @@ void CodeGeneratorArm64::genDataSection()
 
     // 全局变量分两种情况：初始化的全局变量和未初始化的全局变量
     for (auto var: module->getGlobalVariables()) {
-        if (var->isInBSSSection()) {
-            // 在BSS段的全局变量
+        if (var->isInBSSSection() && var->getInitValueList().empty()) {
+            // 在BSS段的全局变量（没有初始化值）
             fprintf(fp, ".type %s, @object\n", var->getName().c_str());
             if (!bssStarted) {
                 fprintf(fp, ".bss\n");
@@ -70,7 +70,17 @@ void CodeGeneratorArm64::genDataSection()
             fprintf(fp, ".global %s\n", var->getName().c_str());
             fprintf(fp, ".align %d\n", var->getAlignment());
             fprintf(fp, "%s:\n", var->getName().c_str());
-            fprintf(fp, ".word 0\n");
+
+            // 对于数组类型，需要分配足够的空间
+            if (var->getType()->isArrayType()) {
+                int totalSize = var->getType()->getSize();
+                int wordCount = (totalSize + 3) / 4; // 向上取整到字边界
+                for (int i = 0; i < wordCount; i++) {
+                    fprintf(fp, ".word 0\n");
+                }
+            } else {
+                fprintf(fp, ".word 0\n");
+            }
             fprintf(fp, ".size %s, %d\n", var->getName().c_str(), var->getType()->getSize());
             //, var->getType()->getSize(), var->getAlignment()
         } else {
@@ -93,24 +103,16 @@ void CodeGeneratorArm64::genDataSection()
                 float tempFloat = constFloat->getVal();
                 std::memcpy(&floatBits, &tempFloat, sizeof(float));
                 fprintf(fp, ".word %u\n", floatBits);
-            } /*else if (auto constArray = dynamic_cast<ConstArray *>(var)) {
-                // 处理数组类型全局变量
-                for (auto element: constArray->getElements()) {
-                    if (auto constIntElement = dynamic_cast<ConstInt *>(element)) {
-                        fprintf(fp, ".word %d\n", constIntElement->getVal());
-                    } else if (auto constFloatElement = dynamic_cast<ConstFloat *>(element)) {
-                        uint32_t floatBits;
-                        float tempFloatElement = constFloatElement->getVal();
-                        std::memcpy(&floatBits, &tempFloatElement, sizeof(float));
-                        fprintf(fp, ".word %u\n", floatBits);
-                    } else if (auto strElement = dynamic_cast<ConstString *>(element)) {
-                        fprintf(fp, ".asciz \"%s\"\n", strElement->getVal().c_str());
-                    }
-                }
-            } else if (auto constStr = dynamic_cast<ConstString *>(var)) {
-                // 处理字符串常量
-                fprintf(fp, ".asciz \"%s\"\n", constStr->getVal().c_str());
-            }*/
+            } else if (var->getType()->isArrayType() && !var->getInitValueList().empty()) {
+                // 处理数组类型全局变量的初始化值列表
+                auto & initValues = var->getInitValueList();
+                expandAndOutputInitValues(initValues);
+                fprintf(fp, ".size %s, %d\n", var->getName().c_str(), var->getType()->getSize());
+            } else {
+                // 默认情况：输出单个0
+                fprintf(fp, ".word 0\n");
+                fprintf(fp, ".size %s, %d\n", var->getName().c_str(), var->getType()->getSize());
+            }
         }
     }
 }
@@ -312,17 +314,23 @@ void CodeGeneratorArm64::adjustMovInsts(Function * func)
             Value * val = inst->getOperand(0);
             //检测要存入的数是否是constant
             if (Instanceof(const_val, Constant *, val)) {
-                // constant要mov到的新寄存器变量
-                Value * newval = new Value(val->getType());
-                // 为constant创建mov指令
-                MoveInstruction * movinst = new MoveInstruction(func, newval, val);
-                //指令的对应constant操作数修改为新创建的寄存器变量
-                insts[i]->getOperands()[0] = new Use(newval, inst);
+                // 对于常量0，不需要创建MoveInstruction，ARM64有专门的零寄存器
+                ConstInt * constInt = dynamic_cast<ConstInt *>(const_val);
+                if (constInt && constInt->getVal() == 0) {
+                    // 常量0保持原样，在指令翻译时使用零寄存器
+                } else {
+                    // 其他常量需要mov到寄存器
+                    Value * newval = new Value(val->getType());
+                    // 为constant创建mov指令
+                    MoveInstruction * movinst = new MoveInstruction(func, newval, val);
+                    //指令的对应constant操作数修改为新创建的寄存器变量
+                    insts[i]->getOperands()[0] = new Use(newval, inst);
 
-                //插入到当前位置
-                insts.insert(insts.begin() + i, (Instruction *) movinst);
-                //插入后当前位置变为新插入的指令，故i额外+1
-                i++;
+                    //插入到当前位置
+                    insts.insert(insts.begin() + i, (Instruction *) movinst);
+                    //插入后当前位置变为新插入的指令，故i额外+1
+                    i++;
+                }
             }
         }
         i++;
@@ -542,50 +550,46 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
         sp_esp += local->getType()->getSize();
     }
 
-    /*printf("开始处理Alloca\n");
-    // 遍历指令中的alloca结果
+    printf("开始处理Alloca\n");
+    // 遍历指令中的alloca指令，为它们分配的数组分配栈空间
     for (auto inst: func->getInterCode().getInsts()) {
         if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
-            // 确保alloca的结果变量被分配空间
-            Value * result = inst->getOperand(0);
-            LocalVariable * localResult = dynamic_cast<LocalVariable *>(result);
+            // alloca指令需要为它要分配的数组分配栈空间
+            // alloca指令的结果是指向这个数组的指针
 
-            if (!localResult->getMemoryAddr()) {
-                // 获取分配大小（默认为指针大小）
-                int64_t size = localResult->getType()->getSize();
+            // 简单的大小估算：根据指令类型
+            Type * allocatedType = inst->getType();
+            int64_t size = 8; // 默认大小
+
+            if (allocatedType) {
+                size = allocatedType->getSize();
                 if (size == 0) {
-                    size = 8; // 默认指针大小
+                    size = 8;
                 }
-
-                // 8字节对齐
-                size = (size + 7) & ~7;
-
-                // 分配栈空间
-                sp_esp -= size; // 栈向下增长
-                localResult->setMemoryAddr(ARM64_FP_REG_NO, sp_esp);
             }
-        }
 
-        // ... 其他类型指令处理 ...
-        if (inst->getOp() == IRInstOperator::IRINST_OP_FUNC_CALL) {
-            // 有值
-            int32_t size = inst->getType()->getSize();
+            // 对于数组类型的alloca，分配更大的空间
+            // 这里使用一个简单的启发式：如果大小小于16，设为16
+            if (size < 16) {
+                size = 16;
+            }
 
-            // 64位ARM平台按照8字节的大小整数倍分配局部变量
-            size += (8 - size % 8) % 8;
+            // 16字节对齐（ARM64要求）
+            size = (size + 15) & ~15;
 
-            // 临时变量偏移设置
-            inst->setMemoryAddr(ARM64_FP_REG_NO, sp_esp);
-
-            // 累计当前作用域大小
+            // 为alloca指令设置内存地址，这个地址指向分配的数组空间的起始位置
+            // 注意：这里设置的是alloca指令本身的内存地址，
+            // 在指令翻译时，lea_var会使用这个地址
+            inst->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
+            printf("Alloca分配数组: 大小=%ld, 起始偏移=%ld, 设置地址=%ld\n", size, sp_esp, sp_esp);
             sp_esp += size;
         }
-    }*/
+    }
 
     // 遍历指令中临时变量
     for (auto inst: func->getInterCode().getInsts()) {
 
-        if (inst->hasResultValue()) {
+        if (inst->hasResultValue() && inst->getOp() != IRInstOperator::IRINST_OP_ALLOCA) {
             // 有值
             int32_t size = inst->getType()->getSize();
 
@@ -602,4 +606,31 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
 
     // 设置函数的最大栈帧深度，在加上实参内存传值的空间
     func->setMaxDep(sp_esp);
+}
+
+/// @brief 递归展开并输出初始化值列表
+/// @param initValues 初始化值列表
+void CodeGeneratorArm64::expandAndOutputInitValues(const std::vector<Value *> & initValues)
+{
+    for (auto element: initValues) {
+        if (auto constIntElement = dynamic_cast<ConstInt *>(element)) {
+            fprintf(fp, ".word %d\n", constIntElement->getVal());
+        } else if (auto constFloatElement = dynamic_cast<ConstFloat *>(element)) {
+            uint32_t floatBits;
+            float tempFloatElement = constFloatElement->getVal();
+            std::memcpy(&floatBits, &tempFloatElement, sizeof(float));
+            fprintf(fp, ".word %u\n", floatBits);
+        } else if (auto globalVarElement = dynamic_cast<GlobalVariable *>(element)) {
+            // 递归处理嵌套的全局变量（嵌套数组）
+            if (!globalVarElement->getInitValueList().empty()) {
+                expandAndOutputInitValues(globalVarElement->getInitValueList());
+            } else {
+                // 如果嵌套的全局变量没有初始化值列表，输出0
+                fprintf(fp, ".word 0\n");
+            }
+        } else {
+            // 默认输出0
+            fprintf(fp, ".word 0\n");
+        }
+    }
 }

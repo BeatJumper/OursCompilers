@@ -6,11 +6,11 @@ bool update_live(Node_Dataflow * node, Node_Dataflow * succ1, Node_Dataflow * su
     // assert(node != succ1);
     std::string s;
     node->inst->toString(s);
-    std::cout << "node:" << s << std::endl;
-    //  printset(node->liveOUT);
-    // printset(node->def_set);
-    // printset(node->use_set);
-    //  代入数据流方程
+    // std::cout << "node:" << s << std::endl;
+    //   printset(node->liveOUT);
+    //  printset(node->def_set);
+    //  printset(node->use_set);
+    //   代入数据流方程
     node->liveIN = set_difference(node->liveOUT, node->def_set);
     merge_set(node->liveIN, node->use_set);
     bool ret = false;

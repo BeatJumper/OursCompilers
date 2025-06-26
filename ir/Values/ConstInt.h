@@ -110,27 +110,6 @@ public:
         return is64Bit;
     }
 
-    ///
-    /// @brief 获取64位值
-    /// @return int64_t
-    ///
-    int64_t getLongVal()
-    {
-        if (is64Bit) {
-            return longVal;
-        }
-        return static_cast<int64_t>(intVal);
-    }
-
-    ///
-    /// @brief 判断是否是64位常量
-    /// @return bool
-    ///
-    bool is64BitConstant() const
-    {
-        return is64Bit;
-    }
-
 private:
     ///
     /// @brief 32位整数值
