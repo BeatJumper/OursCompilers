@@ -479,7 +479,8 @@ void CodeGeneratorArm64::adjustBinaryInsts(Function * func)
     for (auto pIter = insts.begin(); pIter != insts.end(); pIter++) {
         if (Instanceof(binaryInst, BinaryInstruction *, *pIter)) {
             if (binaryInst->getOp() == IRInstOperator::IRINST_OP_MUL_I ||
-                binaryInst->getOp() == IRInstOperator::IRINST_OP_DIV_I) {
+                binaryInst->getOp() == IRInstOperator::IRINST_OP_DIV_I ||
+                binaryInst->getOp() == IRInstOperator::IRINST_OP_MOD_I) {
                 printf("检测到两元乘法除法指令\n");
                 Value * arg1 = binaryInst->getOperand(0);
                 Value * arg2 = binaryInst->getOperand(1);
@@ -493,7 +494,7 @@ void CodeGeneratorArm64::adjustBinaryInsts(Function * func)
                     pIter++;
                 }
                 if (Instanceof(constVal, ConstInt *, arg2)) {
-                    printf("检测到操作数2为常量，寄存器：%d\n", arg1->getRegId());
+                    printf("检测到操作数2为常量\n");
                     Value * newval = new Value(arg2->getType());
                     Instruction * assignInst = new MoveInstruction(func, newval, arg2);
                     binaryInst->getOperands()[1] = new Use(newval, binaryInst);

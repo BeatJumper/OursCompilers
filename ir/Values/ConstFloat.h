@@ -1,48 +1,73 @@
 ///
 /// @file ConstFloat.h
-/// @brief Float类型的常量
+/// @brief 浮点型常量类，描述32位float常量
+///
+/// @author kangyk (2921006018@qq.com)
+/// @version 1.0
+/// @date 2025-05-25
+///
+/// @copyright Copyright (c) 2024
+///
+/// @par 修改日志:
+/// <table>
+/// <tr><th>Date       <th>Version <th>Author  <th>Description
+/// <tr><td>2025-05-25 <td>1.0     <td>kangyk  <td>新建
+/// </table>
 ///
 
 #pragma once
 
 #include "Constant.h"
-#include "IRConstant.h"
 #include "FloatType.h"
 
 ///
-/// @brief 整型常量类
+/// @brief 浮点型常量类
 ///
-class ConstFloat : public Constant {
+class ConstFloat final : public Constant {
 
 public:
     ///
-    /// @brief 指定值的常量
-    /// \param val
+    /// @brief 构造函数（指定浮点数值）
+    /// @param val 浮点数值
+    ///
     explicit ConstFloat(float val) : Constant(FloatType::getTypeFloat())
     {
-        name = std::to_string(val);
-        FloatVal = val;
+        name = formatFloat(val);
+        floatVal = val;
     }
 
-    /// @brief 获取名字
-    /// @return 变量名
+    ///
+    /// @brief 获取IR标识名称
+    /// @return std::string
+    ///
     [[nodiscard]] std::string getIRName() const override
     {
         return name;
     }
 
     ///
-    /// @brief 获取值
-    /// @return int32_t
+    /// @brief 获取浮点数值
+    /// @return float
     ///
-    float getVal()
+    [[nodiscard]] float getVal() const
     {
-        return FloatVal;
+        return floatVal;
     }
 
 private:
     ///
-    /// @brief 整数值
+    /// @brief 格式化浮点数输出（LLVM IR格式）
+    /// @param val 浮点数值
+    /// @return std::string
     ///
-    float FloatVal;
+    static std::string formatFloat(float val)
+    {
+        char buffer[32];
+        // 使用科学计数法格式，这是LLVM IR要求的格式
+        snprintf(buffer, sizeof(buffer), "%.6e", val);
+        return buffer;
+    }
+
+    float floatVal;   ///< 存储的浮点数值
+    std::string name; ///< IR显示的变量名
 };

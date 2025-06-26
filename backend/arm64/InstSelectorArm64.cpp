@@ -268,7 +268,8 @@ void InstSelectorArm64::translate_div_i(Instruction * inst)
 /// @param inst IR指令
 void InstSelectorArm64::translate_mod_i(Instruction * inst)
 {
-    // TODO整数取余
+    // 整数取余：result = arg1 % arg2
+    // 实现：result = arg1 - (arg1 / arg2) * arg2
     Value * result = inst;
     Value * arg1 = inst->getOperand(0);
     Value * arg2 = inst->getOperand(1);
@@ -277,14 +278,42 @@ void InstSelectorArm64::translate_mod_i(Instruction * inst)
     int32_t arg2_reg_no = arg2->getRegId();
     int32_t result_reg_no = result->getRegId();
 
-    iloc.inst("sdiv",
-              PlatformArm64::regName[result_reg_no],
-              PlatformArm64::regName[arg1_reg_no],
-              PlatformArm64::regName[arg2_reg_no]);
-    iloc.inst("mul",
-              PlatformArm64::regName[result_reg_no],
-              PlatformArm64::regName[result_reg_no],
-              PlatformArm64::regName[arg2_reg_no]);
+    // 检查是否需要使用临时寄存器来保存除数
+    if (arg2_reg_no == result_reg_no) {
+        // 除数和结果使用同一个寄存器，需要使用临时寄存器保存除数
+        int32_t temp_reg_no = ARM64_TMP_REG_NO;
+
+        // 保存除数到临时寄存器
+        iloc.inst("mov", PlatformArm64::regName[temp_reg_no], PlatformArm64::regName[arg2_reg_no]);
+
+        // 计算商：result = arg1 / arg2
+        iloc.inst("sdiv",
+                  PlatformArm64::regName[result_reg_no],
+                  PlatformArm64::regName[arg1_reg_no],
+                  PlatformArm64::regName[temp_reg_no]);
+
+        // 计算商*除数：result = result * 除数
+        iloc.inst("mul",
+                  PlatformArm64::regName[result_reg_no],
+                  PlatformArm64::regName[result_reg_no],
+                  PlatformArm64::regName[temp_reg_no]);
+    } else {
+        // 除数和结果使用不同寄存器，可以直接计算
+
+        // 计算商：result = arg1 / arg2
+        iloc.inst("sdiv",
+                  PlatformArm64::regName[result_reg_no],
+                  PlatformArm64::regName[arg1_reg_no],
+                  PlatformArm64::regName[arg2_reg_no]);
+
+        // 计算商*除数：result = result * arg2
+        iloc.inst("mul",
+                  PlatformArm64::regName[result_reg_no],
+                  PlatformArm64::regName[result_reg_no],
+                  PlatformArm64::regName[arg2_reg_no]);
+    }
+
+    // 计算余数：result = arg1 - result
     iloc.inst("subs",
               PlatformArm64::regName[result_reg_no],
               PlatformArm64::regName[arg1_reg_no],
