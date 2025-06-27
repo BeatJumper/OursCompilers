@@ -25,35 +25,67 @@ RelInstruction::RelInstruction(Function * _func, IRInstOperator _op, Value * _sr
 /// @param str 转换后的字符串
 void RelInstruction::toString(std::string & str)
 {
-    std::string condStr;
-
-    switch (op) {
-        case IRInstOperator::IRINST_OP_EQ:
-            condStr = "eq";
-            break;
-        case IRInstOperator::IRINST_OP_NE:
-            condStr = "ne";
-            break;
-        case IRInstOperator::IRINST_OP_LT:
-            condStr = "slt";
-            break;
-        case IRInstOperator::IRINST_OP_LE:
-            condStr = "sle";
-            break;
-        case IRInstOperator::IRINST_OP_GT:
-            condStr = "sgt";
-            break;
-        case IRInstOperator::IRINST_OP_GE:
-            condStr = "sge";
-            break;
-        default:
-            condStr = "unknown";
-            break;
-    }
-
     Value * left = getOperand(0);
     Value * right = getOperand(1);
 
-    str = getIRName() + " = icmp " + condStr + " " + left->getType()->toString() + " " + left->getIRName() + ", " +
-          right->getIRName();
+    // 检查操作数类型，决定使用icmp还是fcmp
+    bool isFloatComparison = left->getType()->isFloatType() || right->getType()->isFloatType();
+
+    std::string condStr;
+    std::string cmpInst = isFloatComparison ? "fcmp" : "icmp";
+
+    if (isFloatComparison) {
+        // 浮点数比较使用fcmp指令
+        switch (op) {
+            case IRInstOperator::IRINST_OP_EQ:
+                condStr = "oeq"; // ordered equal
+                break;
+            case IRInstOperator::IRINST_OP_NE:
+                condStr = "one"; // ordered not equal
+                break;
+            case IRInstOperator::IRINST_OP_LT:
+                condStr = "olt"; // ordered less than
+                break;
+            case IRInstOperator::IRINST_OP_LE:
+                condStr = "ole"; // ordered less than or equal
+                break;
+            case IRInstOperator::IRINST_OP_GT:
+                condStr = "ogt"; // ordered greater than
+                break;
+            case IRInstOperator::IRINST_OP_GE:
+                condStr = "oge"; // ordered greater than or equal
+                break;
+            default:
+                condStr = "oeq";
+                break;
+        }
+    } else {
+        // 整数比较使用icmp指令
+        switch (op) {
+            case IRInstOperator::IRINST_OP_EQ:
+                condStr = "eq";
+                break;
+            case IRInstOperator::IRINST_OP_NE:
+                condStr = "ne";
+                break;
+            case IRInstOperator::IRINST_OP_LT:
+                condStr = "slt"; // signed less than
+                break;
+            case IRInstOperator::IRINST_OP_LE:
+                condStr = "sle"; // signed less than or equal
+                break;
+            case IRInstOperator::IRINST_OP_GT:
+                condStr = "sgt"; // signed greater than
+                break;
+            case IRInstOperator::IRINST_OP_GE:
+                condStr = "sge"; // signed greater than or equal
+                break;
+            default:
+                condStr = "eq";
+                break;
+        }
+    }
+
+    str = getIRName() + " = " + cmpInst + " " + condStr + " " + left->getType()->toString() + " " + left->getIRName() +
+          ", " + right->getIRName();
 }

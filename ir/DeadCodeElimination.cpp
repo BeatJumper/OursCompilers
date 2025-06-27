@@ -86,7 +86,7 @@ bool DeadCodeElimination::removeRedundantJumps(std::vector<Instruction *> & inst
     bool optimized = false;
     std::vector<Instruction *> newInstructions;
 
-    for (int i = 0; i < instructions.size(); ++i) {
+    for (size_t i = 0; i < instructions.size(); ++i) {
         Instruction * inst = instructions[i];
         bool shouldKeep = true;
 
@@ -129,7 +129,7 @@ bool DeadCodeElimination::removeRedundantJumps(std::vector<Instruction *> & inst
 /// @param instructions 指令序列
 /// @param index 跳转指令的索引
 /// @return 是否是冗余跳转
-bool DeadCodeElimination::isRedundantJump(const std::vector<Instruction *> & instructions, int index)
+bool DeadCodeElimination::isRedundantJump(const std::vector<Instruction *> & instructions, size_t index)
 {
     if (index >= instructions.size() - 1) {
         return false; // 最后一条指令，不是冗余跳转
@@ -151,7 +151,7 @@ bool DeadCodeElimination::isRedundantJump(const std::vector<Instruction *> & ins
     }
 
     // 检查下一条指令是否就是目标标签
-    for (int i = index + 1; i < instructions.size(); ++i) {
+    for (size_t i = index + 1; i < instructions.size(); ++i) {
         Instruction * nextInst = instructions[i];
 
         // 如果遇到标签指令
@@ -246,7 +246,7 @@ LabelInstruction * DeadCodeElimination::getBranchTarget(Instruction * inst, bool
 /// @return 标签在序列中的索引，如果未找到则返回-1
 int DeadCodeElimination::findLabelIndex(const std::vector<Instruction *> & instructions, LabelInstruction * label)
 {
-    for (int i = 0; i < instructions.size(); ++i) {
+    for (size_t i = 0; i < instructions.size(); ++i) {
         if (instructions[i] == label) {
             return i;
         }
@@ -270,7 +270,7 @@ DeadCodeElimination::buildControlFlowGraph(const std::vector<Instruction *> & in
     blockStarts.insert(0); // 第一条指令总是基本块的开始
 
     // 找到所有标签指令和跳转目标
-    for (int i = 0; i < instructions.size(); ++i) {
+    for (size_t i = 0; i < instructions.size(); ++i) {
         Instruction * inst = instructions[i];
 
         // 标签指令是基本块的开始
@@ -286,14 +286,14 @@ DeadCodeElimination::buildControlFlowGraph(const std::vector<Instruction *> & in
 
     // 第二步：创建基本块
     std::vector<int> starts(blockStarts.begin(), blockStarts.end());
-    for (int i = 0; i < starts.size(); ++i) {
+    for (size_t i = 0; i < starts.size(); ++i) {
         BasicBlock * block = new BasicBlock();
 
-        int start = starts[i];
-        int end = (i + 1 < starts.size()) ? starts[i + 1] : instructions.size();
+        size_t start = starts[i];
+        size_t end = (i + 1 < starts.size()) ? starts[i + 1] : instructions.size();
 
         // 添加指令到基本块
-        for (int j = start; j < end; ++j) {
+        for (size_t j = start; j < end; ++j) {
             block->instructions.push_back(instructions[j]);
 
             // 如果第一条指令是标签，记录它
@@ -306,7 +306,7 @@ DeadCodeElimination::buildControlFlowGraph(const std::vector<Instruction *> & in
     }
 
     // 第三步：建立基本块之间的连接关系
-    for (int i = 0; i < blocks.size(); ++i) {
+    for (size_t i = 0; i < blocks.size(); ++i) {
         BasicBlock * block = blocks[i];
         if (block->instructions.empty()) {
             continue;

@@ -28,7 +28,7 @@ void LiveVariableAnalysis(ControlFlowGraph * _graph);
 template <typename T>
 bool merge_set(std::set<T> & a, std::set<T> & b)
 {
-    int size0 = a.size();
+    size_t size0 = a.size();
     for (T element: b) {
         a.insert(element);
     }

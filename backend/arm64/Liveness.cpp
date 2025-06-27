@@ -96,7 +96,7 @@ void LiveVariableAnalysis(ControlFlowGraph * _graph)
                                        next_nodes[0] ? next_nodes[0]->dataflow_list[0] : nullptr,
                                        // 第二个后继（可能是nullptr)
                                        next_nodes[1] ? next_nodes[1]->dataflow_list[0] : nullptr);
-            for (int i = 0; i <= dataflow_list.size() - 2; i++) {
+            for (size_t i = 0; i <= dataflow_list.size() - 2; i++) {
                 // 检查空指针
                 if (!dataflow_list[i]) {
                     std::cerr << "Error: dataflow_list[" << i << "] is null" << std::endl;

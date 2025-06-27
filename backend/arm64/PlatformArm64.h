@@ -70,8 +70,11 @@ public:
 
     // 最大向量寄存器数目
     static const int maxVecRegNum = 32;
-    // 向量寄存器的名字，x0 - x31
+    // 向量寄存器的名字，v0 - v31
     static const std::string vecRegName[maxVecRegNum];
+
+    // 单精度浮点寄存器的名字，s0 - s31
+    static const std::string floatRegName[maxVecRegNum];
 
     // 状态寄存器名字
     static const std::string statusRegName;
