@@ -7,6 +7,8 @@
 #include "StoreInstruction.h"
 #include "LoadInstruction.h"
 #include "MoveInstruction.h"
+#include "FuncCallInstruction.h"
+#include "VoidType.h"
 
 ControlFlowGraph::ControlFlowGraph(Function * func)
 {
@@ -104,6 +106,22 @@ Node_Dataflow::Node_Dataflow(Instruction * _inst) : inst(_inst)
         } else {
             use_set.insert(source);
         }
+    } else if (Instanceof(inst, FuncCallInstruction *, _inst)) {
+        // 在DEF集上，添加16个DEF，表示函数调用使得寄存器W0~W15都可能遭到修改
+        for (int index = 0; index < 16; index++) {
+            Value * val = inst->getOperand(index);
+            val->setRegId(index);
+            def_set.insert(val);
+        }
+
+        // 接下来是USE集的添加
+
+        // 前8个数的临时变量被直接用到
+        for (int index = 0; index < 8 && index < inst->getOperandsNum(); index++) {
+            use_set.insert(inst->getOperand(index));
+        }
+        // 后8个数是仅仅在内存里的，不占寄存器，所以就不进USE了。
+
     } else if (Instanceof(inst, Instruction *, _inst)) {
         // printf("其它指令\n");
         //  Instanceof(inst, Instruction *, _inst);

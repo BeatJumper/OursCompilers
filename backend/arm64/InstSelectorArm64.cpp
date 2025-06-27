@@ -38,6 +38,7 @@
 #include "MoveInstruction.h"
 #include "AllocaInstruction.h"
 #include "CFG.h"
+#include "VoidType.h"
 
 /// @brief 构造函数
 /// @param _irCode 指令
@@ -196,6 +197,14 @@ void InstSelectorArm64::translate_assign(Instruction * inst)
 {
     Value * result = inst->getOperand(0);
     Value * arg1 = inst->getOperand(1);
+
+    /*
+     * 函数调用时,为了形式化表达一个活跃区间,引入了结果值为void的MOV
+     * 指令，所以这里检测到就不翻译了。
+     */
+    if (result->getType() == VoidType::getType()) {
+        return;
+    }
 
     int32_t arg1_regId = arg1->getRegId();
     int32_t result_regId = result->getRegId();
