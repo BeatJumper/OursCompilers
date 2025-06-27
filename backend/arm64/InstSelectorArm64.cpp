@@ -38,6 +38,7 @@
 #include "FuncCallInstruction.h"
 #include "MoveInstruction.h"
 #include "AllocaInstruction.h"
+#include "LoadInstruction.h"
 
 /// @brief 构造函数
 /// @param _irCode 指令
@@ -862,6 +863,81 @@ void InstSelectorArm64::translate_store(Instruction * inst)
            arg1 ? arg1->getIRName().c_str() : "null",
            arg2 ? arg2->getIRName().c_str() : "null");
     printf("Debug: translate_store - arg1_regId=%d, arg2_regId=%d\n", arg1_regId, arg2->getRegId());
+
+    // 检查是否是数组类型的存储
+    if (arg1->getType()->isArrayType()) {
+        printf("Debug: translate_store - detected array type store, generating memcpy\n");
+
+        // 对于数组类型的存储，生成memcpy指令
+        // arg1是源数组（全局变量），arg2是目标数组（局部变量）
+
+        // 1. 获取数组大小
+        int arraySize = arg1->getType()->getSize();
+        printf("Debug: translate_store - array size = %d bytes (%d words)\n", arraySize, arraySize / 4);
+
+        // 2. 获取源地址（全局变量或从全局变量加载的值）
+        int src_reg = ARM64_TMP_REG_NO + 1; // 使用x1作为源地址寄存器
+        std::string globalVarName;
+
+        if (GlobalVariable * globalVar = dynamic_cast<GlobalVariable *>(arg1)) {
+            // 直接是全局变量
+            globalVarName = globalVar->getName();
+        } else if (LoadInstruction * loadInst = dynamic_cast<LoadInstruction *>(arg1)) {
+            // 是从全局变量加载的值，获取源全局变量
+            Value * loadSource = loadInst->getOperand(0);
+            if (GlobalVariable * globalVar = dynamic_cast<GlobalVariable *>(loadSource)) {
+                globalVarName = globalVar->getName();
+                printf("Debug: translate_store - source is load from global variable %s\n", globalVarName.c_str());
+            } else {
+                printf("Error: Array store source load is not from a global variable\n");
+                return;
+            }
+        } else {
+            printf("Error: Array store source is neither global variable nor load from global variable\n");
+            return;
+        }
+
+        // 加载全局变量地址到寄存器
+        iloc.inst("adrp", PlatformArm64::regName[src_reg + 32], globalVarName);
+        iloc.inst("add",
+                  PlatformArm64::regName[src_reg + 32],
+                  PlatformArm64::regName[src_reg + 32],
+                  ":lo12:" + globalVarName);
+
+        // 3. 获取目标地址（局部变量）
+        int dest_reg = ARM64_TMP_REG_NO; // 使用x10作为目标地址寄存器
+        int32_t dest_baseRegId = -1;
+        int64_t dest_offset = -1;
+        if (arg2->getMemoryAddr(&dest_baseRegId, &dest_offset)) {
+            // 计算目标地址：sp + offset
+            if (dest_offset == 0) {
+                iloc.inst("mov", PlatformArm64::regName[dest_reg + 32], PlatformArm64::regName[dest_baseRegId + 32]);
+            } else {
+                iloc.load_imm(dest_reg, dest_offset);
+                iloc.inst("add", PlatformArm64::regName[dest_reg + 32], "sp", PlatformArm64::regName[dest_reg + 32]);
+            }
+        } else {
+            printf("Error: Cannot get memory address for array store destination\n");
+            return;
+        }
+
+        // 4. 逐字复制数组内容
+        int words = arraySize / 4;
+        for (int i = 0; i < words; i++) {
+            int offset = i * 4;
+            // 从源地址加载
+            iloc.inst("ldr",
+                      "w" + std::to_string(ARM64_TMP_REG_NO + 2),
+                      "[" + PlatformArm64::regName[src_reg + 32] + ",#" + std::to_string(offset) + "]");
+            // 存储到目标地址
+            iloc.inst("str",
+                      "w" + std::to_string(ARM64_TMP_REG_NO + 2),
+                      "[" + PlatformArm64::regName[dest_reg + 32] + ",#" + std::to_string(offset) + "]");
+        }
+
+        printf("Debug: translate_store - completed array memcpy, copied %d words\n", words);
+        return;
+    }
 
     // 优先检查是否是常量0，即使它被分配了寄存器
     ConstInt * constVal = dynamic_cast<ConstInt *>(arg1);

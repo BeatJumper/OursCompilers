@@ -573,8 +573,32 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
 
             if (allocatedType) {
                 size = allocatedType->getSize();
+
+                // 检查是否是动态数组（大小为负数）
                 if (size <= 0) {
-                    size = 8; // 最小8字节
+                    // 尝试从变量名中获取实际大小信息
+                    Value * allocatedVar = inst->getOperand(0);
+                    if (allocatedVar) {
+                        std::string varName = allocatedVar->getName();
+                        size_t sizePos = varName.find("_ACTUAL_SIZE_");
+                        if (sizePos != std::string::npos) {
+                            // 提取实际大小
+                            std::string sizeStr = varName.substr(sizePos + 13); // "_ACTUAL_SIZE_"的长度是13
+                            try {
+                                size = std::stoll(sizeStr);
+                                printf("Debug: Found dynamic array %s with actual size: %ld bytes\n",
+                                       varName.substr(0, sizePos).c_str(),
+                                       size);
+                            } catch (const std::exception & e) {
+                                printf("Debug: Failed to parse size from variable name: %s\n", varName.c_str());
+                                size = 8; // 回退到默认大小
+                            }
+                        } else {
+                            size = 8; // 最小8字节
+                        }
+                    } else {
+                        size = 8; // 最小8字节
+                    }
                 }
             }
 
