@@ -307,15 +307,17 @@ void ILocArm64::load_base(int rs_reg_no, int base_reg_no, int64_t offset)
     std::string base = PlatformArm64::regName[base_reg_no];
     std::cout << "基址寻址中,结果寄存器" << rsReg << "\n";
 
-    if (PlatformArm64::isDisp(offset)) {
+    // 检查偏移量是否在ldr指令的有效范围内
+    // 对于32位数据：有符号偏移-256到+255，或无符号偏移0到16380（4字节对齐）
+    if ((offset >= -256 && offset <= 255) || (offset >= 0 && offset <= 16380 && (offset % 4) == 0)) {
         // 有效的偏移常量
         if (offset) {
             // [fp,#-16] [fp]
             base += "," + toStr(offset);
         }
     } else {
-
-        // ldr r8,=-4096
+        // 偏移量超出范围，使用寄存器间接寻址
+        // ldr r8,=large_offset
         load_imm(rs_reg_no, offset);
 
         // fp,r8
@@ -339,7 +341,9 @@ void ILocArm64::store_base(int src_reg_no, int base_reg_no, int64_t disp, int tm
 {
     std::string base = PlatformArm64::regName[base_reg_no];
 
-    if (PlatformArm64::isDisp(disp)) {
+    // 检查偏移量是否在str指令的有效范围内
+    // 对于32位数据：有符号偏移-256到+255，或无符号偏移0到16380（4字节对齐）
+    if ((disp >= -256 && disp <= 255) || (disp >= 0 && disp <= 16380 && (disp % 4) == 0)) {
         // 有效的偏移常量
 
         // 若disp为0，则直接采用基址，否则采用基址+偏移
@@ -348,9 +352,10 @@ void ILocArm64::store_base(int src_reg_no, int base_reg_no, int64_t disp, int tm
             base += "," + toStr(disp);
         }
     } else {
+        // 偏移量超出范围，使用寄存器间接寻址
         // 先把立即数赋值给指定的寄存器tmpReg，然后采用基址+寄存器的方式进行
 
-        // ldr x9,=-4096
+        // ldr x9,=large_offset
         load_imm(tmp_reg_no, disp);
 
         // fp,x9
@@ -533,20 +538,16 @@ void ILocArm64::leaStack(int rs_reg_no, int base_reg_no, int64_t off)
         base_reg_name[0] = 'x';
     }
 
-    if (PlatformArm64::constExpr(off)) {
-        // 处理负偏移量
-        if (off >= 0) {
-            // add x8,sp,#16
-            emit("add", rs_reg_name, base_reg_name, toStr(off));
-        } else {
-            // sub x8,sp,#16 (对于负偏移量使用sub指令)
-            emit("sub", rs_reg_name, base_reg_name, toStr(-off));
-        }
+    // 检查偏移量是否在add/sub指令的立即数范围内（0-4095）
+    if (off >= 0 && off <= 4095) {
+        // 正偏移量在有效范围内，使用add指令
+        emit("add", rs_reg_name, base_reg_name, toStr(off));
+    } else if (off < 0 && (-off) <= 4095) {
+        // 负偏移量在有效范围内，使用sub指令
+        emit("sub", rs_reg_name, base_reg_name, toStr(-off));
     } else {
-        // ldr x8,=-257
+        // 偏移量超出范围，使用临时寄存器
         load_imm(rs_reg_no, off);
-
-        // add x8,sp,x8
         emit("add", rs_reg_name, base_reg_name, rs_reg_name);
     }
 }
@@ -556,8 +557,39 @@ void ILocArm64::leaStack(int rs_reg_no, int base_reg_no, int64_t off)
 /// @param tmp_reg_No
 void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 {
-    // 使用在stackAlloc中计算的栈帧大小
-    int totalSize = func->getMaxDep();
+    // 重新计算栈帧大小，确保所有alloca指令的空间都被正确计算
+    int64_t allocaSize = 0;
+    int64_t localVarSize = 0;
+    int64_t tempVarSize = 0;
+
+    // 计算所有alloca指令的空间需求
+    for (auto inst: func->getInterCode().getInsts()) {
+        if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
+            Type * allocatedType = inst->getType();
+            int64_t size = allocatedType ? allocatedType->getSize() : 8;
+            size = (size + 7) & ~7; // 对齐到8字节
+            allocaSize += size;
+        }
+    }
+
+    // 计算局部变量的空间需求（非数组类型）
+    for (auto & local: func->getVarValues()) {
+        if (!local->getType()->isArrayType()) {
+            localVarSize += local->getType()->getSize();
+        }
+    }
+
+    // 计算临时变量的空间需求
+    for (auto inst: func->getInterCode().getInsts()) {
+        if (inst->hasResultValue() && inst->getOp() != IRInstOperator::IRINST_OP_ALLOCA && inst->getRegId() == -1) {
+            int32_t size = inst->getType()->getSize();
+            size += (4 - size % 4) % 4; // 对齐到4字节
+            tempVarSize += size;
+        }
+    }
+
+    // 计算总的栈帧大小
+    int totalSize = allocaSize + localVarSize + tempVarSize;
     int protectedRegNum = 0;
 
     // 保存寄存器空间
@@ -575,12 +607,46 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
     totalSize = (totalSize + 15) & ~15;
 
     func->setStackFrameSize(totalSize);
-    std::string off = "[sp, #" + std::to_string(totalSize - protectedRegNum * 8) + "]";
 
-    // 局部变量空间 - 保持原来的逻辑，但确保偏移量为正
-    int tem = totalSize - protectedRegNum * 8;
-    // printf("Debug: allocStack totalSize=%d, protectedRegNum=%d, starting offset=%d\n", totalSize, protectedRegNum,
-    // tem);
+    printf("Debug: 栈帧大小计算 - alloca: %ld, localVar: %ld, tempVar: %ld, total: %d\n",
+           allocaSize,
+           localVarSize,
+           tempVarSize,
+           totalSize);
+
+    // 计算保存寄存器的偏移量
+    int64_t saveOffset = totalSize - protectedRegNum * 8;
+    std::string off;
+
+    // 检查偏移量是否在stp/ldp指令的有效范围内（-512到+504，且必须8字节对齐）
+    if (saveOffset >= -512 && saveOffset <= 504 && (saveOffset % 8) == 0) {
+        // 直接使用立即数偏移
+        off = "[sp, #" + std::to_string(saveOffset) + "]";
+    } else {
+        // 偏移量超出范围，使用寄存器间接寻址
+        // 这种情况下我们需要在函数序言中处理，暂时使用占位符
+        off = "[sp, #LARGE_OFFSET]";
+    }
+
+    // 局部变量空间 - 从alloca分配的空间之后开始分配
+    // 首先找到alloca指令分配的最大偏移量
+    int64_t maxAllocaOffset = 0;
+    for (auto inst: func->getInterCode().getInsts()) {
+        if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
+            int32_t base;
+            int64_t offset;
+            if (inst->getMemoryAddr(&base, &offset)) {
+                Type * allocatedType = inst->getType();
+                int64_t size = allocatedType ? allocatedType->getSize() : 8;
+                size = (size + 7) & ~7; // 对齐到8字节
+                maxAllocaOffset = std::max(maxAllocaOffset, offset + size);
+            }
+        }
+    }
+
+    // 从alloca空间之后开始分配局部变量
+    int64_t localVarOffset = maxAllocaOffset;
+
     for (auto & local: func->getVarValues()) {
         // 检查这个变量是否是alloca指令的结果
         std::string localName = local->getName();
@@ -592,9 +658,17 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 
         bool isAllocaResult = false;
 
-        // 简单的启发式：如果变量名是 "a"，跳过它（因为这是我们的数组变量）
-        if (localName == "a") {
-            isAllocaResult = true;
+        // 检查是否已经通过alloca指令分配了内存
+        for (auto inst: func->getInterCode().getInsts()) {
+            if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
+                if (inst->getOperandsNum() > 0) {
+                    Value * allocaResult = inst->getOperand(0);
+                    if (allocaResult == local) {
+                        isAllocaResult = true;
+                        break;
+                    }
+                }
+            }
         }
 
         if (isAllocaResult) {
@@ -602,22 +676,20 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
             continue;
         }
 
-        tem -= local->getType()->getSize();
-        // 确保偏移量为正数
-        if (tem < 0) {
-            tem = 0;
-        }
-        local->setOffset(tem);
-        printf("Debug: allocStack variable %s: size=%d, offset=%d\n",
+        // 对齐到4字节边界
+        localVarOffset = (localVarOffset + 3) & ~3;
+        local->setOffset(localVarOffset);
+        printf("Debug: allocStack variable %s: size=%d, offset=%ld\n",
                local->getName().c_str(),
                local->getType()->getSize(),
-               tem);
+               localVarOffset);
+
+        localVarOffset += local->getType()->getSize();
     }
 
     // 重新设置临时变量的偏移量，确保在栈帧范围内
-    // 临时变量从局部变量空间的最小偏移量开始分配
-    int min_local_offset = tem; // 局部变量的最小偏移量
-    int temp_offset = min_local_offset;
+    // 临时变量从局部变量空间之后开始分配
+    int64_t temp_offset = localVarOffset;
 
     for (auto inst: func->getInterCode().getInsts()) {
         if (inst->hasResultValue() && inst->getOp() != IRInstOperator::IRINST_OP_ALLOCA) {
@@ -637,7 +709,7 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
             if (!inst->getMemoryAddr(&existing_base, &existing_offset)) {
                 // 只有当指令还没有内存地址时才设置
                 inst->setMemoryAddr(ARM64_SP_REG_NO, temp_offset);
-                printf("Debug: 设置临时变量 %s 内存地址: offset=%d\n", inst->getIRName().c_str(), temp_offset);
+                printf("Debug: 设置临时变量 %s 内存地址: offset=%ld\n", inst->getIRName().c_str(), temp_offset);
             } else {
                 printf("Debug: 跳过已有内存地址的指令 %s: base=%d, offset=%ld\n",
                        inst->getIRName().c_str(),
@@ -647,15 +719,44 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
         }
     }
 
-    std::string s = "#" + std::to_string(totalSize);
-    emit("sub", "sp", "sp", s);
+    // 检查栈分配大小是否超出sub指令的立即数范围（0-4095）
+    if (totalSize <= 4095) {
+        // 小栈帧，直接使用sub指令
+        std::string s = "#" + std::to_string(totalSize);
+        emit("sub", "sp", "sp", s);
+    } else {
+        // 大栈帧，使用临时寄存器
+        load_imm(ARM64_TMP_REG_NO, totalSize);
+        emit("sub", "sp", "sp", PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
+    }
 
     if (func->getExistFuncCall()) {
         // 非叶子函数：保存 FP 和 LR
-        emit("stp", "x29", "x30", off);
+        int64_t saveOffset = totalSize - protectedRegNum * 8;
+
+        if (saveOffset >= -512 && saveOffset <= 504 && (saveOffset % 8) == 0) {
+            // 偏移量在有效范围内，直接使用stp指令
+            std::string validOff = "[sp, #" + std::to_string(saveOffset) + "]";
+            emit("stp", "x29", "x30", validOff);
+        } else {
+            // 偏移量超出范围，使用间接寻址
+            // 先计算地址到临时寄存器
+            load_imm(ARM64_TMP_REG_NO, saveOffset);
+            emit("add",
+                 PlatformArm64::regName[ARM64_TMP_REG_NO + 32],
+                 "sp",
+                 PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
+            emit("stp", "x29", "x30", "[" + PlatformArm64::regName[ARM64_TMP_REG_NO + 32] + "]");
+        }
 
         // 设置新帧指针
-        emit("add", "x29", "sp", std::to_string(totalSize - protectedRegNum * 8));
+        if (saveOffset >= 0 && saveOffset <= 4095) {
+            emit("add", "x29", "sp", "#" + std::to_string(saveOffset));
+        } else {
+            // 偏移量超出范围，使用临时寄存器
+            load_imm(ARM64_TMP_REG_NO + 1, saveOffset); // 使用另一个临时寄存器避免冲突
+            emit("add", "x29", "sp", PlatformArm64::regName[ARM64_TMP_REG_NO + 1 + 32]);
+        }
     }
 }
 
@@ -698,14 +799,36 @@ void ILocArm64::emitFunctionEpilogue(Function * func)
     if (func->getExistFuncCall()) {
         protectedRegNum = func->getProtectedReg().size();
     }
-    std::string off = "[sp, #" + std::to_string(size - protectedRegNum * 8) + "]";
 
     // 恢复FP和LR
     if (func->getExistFuncCall()) {
-        emit("ldp", "x29", "x30", off);
+        int64_t saveOffset = size - protectedRegNum * 8;
+
+        if (saveOffset >= -512 && saveOffset <= 504 && (saveOffset % 8) == 0) {
+            // 偏移量在有效范围内，直接使用ldp指令
+            std::string validOff = "[sp, #" + std::to_string(saveOffset) + "]";
+            emit("ldp", "x29", "x30", validOff);
+        } else {
+            // 偏移量超出范围，使用间接寻址
+            // 先计算地址到临时寄存器
+            load_imm(ARM64_TMP_REG_NO, saveOffset);
+            emit("add",
+                 PlatformArm64::regName[ARM64_TMP_REG_NO + 32],
+                 "sp",
+                 PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
+            emit("ldp", "x29", "x30", "[" + PlatformArm64::regName[ARM64_TMP_REG_NO + 32] + "]");
+        }
     }
-    std::string s = "#" + std::to_string(size);
-    emit("add", "sp", "sp", s);
+    // 检查栈恢复大小是否超出add指令的立即数范围（0-4095）
+    if (size <= 4095) {
+        // 小栈帧，直接使用add指令
+        std::string s = "#" + std::to_string(size);
+        emit("add", "sp", "sp", s);
+    } else {
+        // 大栈帧，使用临时寄存器
+        load_imm(ARM64_TMP_REG_NO, size);
+        emit("add", "sp", "sp", PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
+    }
 
     // 返回
     emit("ret");

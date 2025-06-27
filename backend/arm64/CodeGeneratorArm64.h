@@ -75,5 +75,10 @@ protected:
     /// @param initValues 初始化值列表
     void expandAndOutputInitValues(const std::vector<Value *> & initValues);
 
+    /// @brief 计算初始化值列表的实际元素个数（递归展开）
+    /// @param initValues 初始化值列表
+    /// @return 实际元素个数
+    int countExpandedInitValues(const std::vector<Value *> & initValues);
+
 private:
 };

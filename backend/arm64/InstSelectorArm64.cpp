@@ -38,6 +38,7 @@
 #include "FuncCallInstruction.h"
 #include "MoveInstruction.h"
 #include "AllocaInstruction.h"
+#include "LoadInstruction.h"
 
 /// @brief 构造函数
 /// @param _irCode 指令
@@ -813,10 +814,15 @@ void InstSelectorArm64::translate_load(Instruction * inst)
             if (base_reg_name[0] == 'w')
                 base_reg_name[0] = 'x';
 
-            if (offset >= 0) {
+            // 检查立即数范围
+            if (offset >= 0 && offset <= 4095) {
                 iloc.inst("add", temp_reg_name, base_reg_name, "#" + std::to_string(offset));
-            } else {
+            } else if (offset < 0 && (-offset) <= 4095) {
                 iloc.inst("sub", temp_reg_name, base_reg_name, "#" + std::to_string(-offset));
+            } else {
+                // 偏移量超出范围，使用临时寄存器
+                iloc.load_imm(temp_reg, offset);
+                iloc.inst("add", temp_reg_name, base_reg_name, temp_reg_name);
             }
 
             // 从临时寄存器中的地址加载数据
@@ -858,6 +864,81 @@ void InstSelectorArm64::translate_store(Instruction * inst)
            arg2 ? arg2->getIRName().c_str() : "null");
     printf("Debug: translate_store - arg1_regId=%d, arg2_regId=%d\n", arg1_regId, arg2->getRegId());
 
+    // 检查是否是数组类型的存储
+    if (arg1->getType()->isArrayType()) {
+        printf("Debug: translate_store - detected array type store, generating memcpy\n");
+
+        // 对于数组类型的存储，生成memcpy指令
+        // arg1是源数组（全局变量），arg2是目标数组（局部变量）
+
+        // 1. 获取数组大小
+        int arraySize = arg1->getType()->getSize();
+        printf("Debug: translate_store - array size = %d bytes (%d words)\n", arraySize, arraySize / 4);
+
+        // 2. 获取源地址（全局变量或从全局变量加载的值）
+        int src_reg = ARM64_TMP_REG_NO + 1; // 使用x1作为源地址寄存器
+        std::string globalVarName;
+
+        if (GlobalVariable * globalVar = dynamic_cast<GlobalVariable *>(arg1)) {
+            // 直接是全局变量
+            globalVarName = globalVar->getName();
+        } else if (LoadInstruction * loadInst = dynamic_cast<LoadInstruction *>(arg1)) {
+            // 是从全局变量加载的值，获取源全局变量
+            Value * loadSource = loadInst->getOperand(0);
+            if (GlobalVariable * globalVar = dynamic_cast<GlobalVariable *>(loadSource)) {
+                globalVarName = globalVar->getName();
+                printf("Debug: translate_store - source is load from global variable %s\n", globalVarName.c_str());
+            } else {
+                printf("Error: Array store source load is not from a global variable\n");
+                return;
+            }
+        } else {
+            printf("Error: Array store source is neither global variable nor load from global variable\n");
+            return;
+        }
+
+        // 加载全局变量地址到寄存器
+        iloc.inst("adrp", PlatformArm64::regName[src_reg + 32], globalVarName);
+        iloc.inst("add",
+                  PlatformArm64::regName[src_reg + 32],
+                  PlatformArm64::regName[src_reg + 32],
+                  ":lo12:" + globalVarName);
+
+        // 3. 获取目标地址（局部变量）
+        int dest_reg = ARM64_TMP_REG_NO; // 使用x10作为目标地址寄存器
+        int32_t dest_baseRegId = -1;
+        int64_t dest_offset = -1;
+        if (arg2->getMemoryAddr(&dest_baseRegId, &dest_offset)) {
+            // 计算目标地址：sp + offset
+            if (dest_offset == 0) {
+                iloc.inst("mov", PlatformArm64::regName[dest_reg + 32], PlatformArm64::regName[dest_baseRegId + 32]);
+            } else {
+                iloc.load_imm(dest_reg, dest_offset);
+                iloc.inst("add", PlatformArm64::regName[dest_reg + 32], "sp", PlatformArm64::regName[dest_reg + 32]);
+            }
+        } else {
+            printf("Error: Cannot get memory address for array store destination\n");
+            return;
+        }
+
+        // 4. 逐字复制数组内容
+        int words = arraySize / 4;
+        for (int i = 0; i < words; i++) {
+            int offset = i * 4;
+            // 从源地址加载
+            iloc.inst("ldr",
+                      "w" + std::to_string(ARM64_TMP_REG_NO + 2),
+                      "[" + PlatformArm64::regName[src_reg + 32] + ",#" + std::to_string(offset) + "]");
+            // 存储到目标地址
+            iloc.inst("str",
+                      "w" + std::to_string(ARM64_TMP_REG_NO + 2),
+                      "[" + PlatformArm64::regName[dest_reg + 32] + ",#" + std::to_string(offset) + "]");
+        }
+
+        printf("Debug: translate_store - completed array memcpy, copied %d words\n", words);
+        return;
+    }
+
     // 优先检查是否是常量0，即使它被分配了寄存器
     ConstInt * constVal = dynamic_cast<ConstInt *>(arg1);
     if (constVal && constVal->getVal() == 0) {
@@ -865,8 +946,22 @@ void InstSelectorArm64::translate_store(Instruction * inst)
         int32_t dest_baseRegId = -1;
         int64_t dest_offset = -1;
         if (arg2->getMemoryAddr(&dest_baseRegId, &dest_offset)) {
-            std::string s = "[" + PlatformArm64::regName[dest_baseRegId] + ",#" + std::to_string(dest_offset) + "]";
-            iloc.inst("str", "wzr", s);
+            // 检查偏移量是否在str指令的有效范围内
+            // 对于32位数据：有符号偏移-256到+255，或无符号偏移0到16380（4字节对齐）
+            if ((dest_offset >= -256 && dest_offset <= 255) ||
+                (dest_offset >= 0 && dest_offset <= 16380 && (dest_offset % 4) == 0)) {
+                // 偏移量在有效范围内，直接使用str指令
+                std::string s = "[" + PlatformArm64::regName[dest_baseRegId] + ",#" + std::to_string(dest_offset) + "]";
+                iloc.inst("str", "wzr", s);
+            } else {
+                // 偏移量超出范围，先计算地址，然后使用间接寻址
+                iloc.load_imm(ARM64_TMP_REG_NO, dest_offset);
+                iloc.inst("add",
+                          PlatformArm64::regName[ARM64_TMP_REG_NO + 32],
+                          PlatformArm64::regName[dest_baseRegId],
+                          PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
+                iloc.inst("str", "wzr", "[" + PlatformArm64::regName[ARM64_TMP_REG_NO + 32] + "]");
+            }
         }
     } else if (arg1_regId != -1) {
         // 寄存器 => 内存
@@ -888,11 +983,15 @@ void InstSelectorArm64::translate_store(Instruction * inst)
             if (base_reg_name[0] == 'w')
                 base_reg_name[0] = 'x';
 
-            // 重新计算目标地址
-            if (dest_offset >= 0) {
+            // 重新计算目标地址，检查立即数范围
+            if (dest_offset >= 0 && dest_offset <= 4095) {
                 iloc.inst("add", temp_reg_name, base_reg_name, "#" + std::to_string(dest_offset));
-            } else {
+            } else if (dest_offset < 0 && (-dest_offset) <= 4095) {
                 iloc.inst("sub", temp_reg_name, base_reg_name, "#" + std::to_string(-dest_offset));
+            } else {
+                // 偏移量超出范围，使用临时寄存器
+                iloc.load_imm(temp_reg, dest_offset);
+                iloc.inst("add", temp_reg_name, base_reg_name, temp_reg_name);
             }
 
             // 存储到重新计算的地址
@@ -953,8 +1052,24 @@ void InstSelectorArm64::translate_ret(Instruction * inst)
             } else {
                 LocalVariable * localResult = dynamic_cast<LocalVariable *>(returnValue);
                 int off = localResult->getOffset();
-                std::string s = "[sp,#" + std::to_string(off) + "]";
-                iloc.inst("ldr", PlatformArm64::regName[0], s);
+
+                // 检查偏移量是否在ldr指令的有效范围内
+                // 对于32位数据：有符号偏移-256到+255，或无符号偏移0到16380（4字节对齐）
+                if ((off >= -256 && off <= 255) || (off >= 0 && off <= 16380 && (off % 4) == 0)) {
+                    // 偏移量在有效范围内，直接使用ldr指令
+                    std::string s = "[sp,#" + std::to_string(off) + "]";
+                    iloc.inst("ldr", PlatformArm64::regName[0], s);
+                } else {
+                    // 偏移量超出范围，使用间接寻址
+                    iloc.load_imm(ARM64_TMP_REG_NO, off);
+                    iloc.inst("add",
+                              PlatformArm64::regName[ARM64_TMP_REG_NO + 32],
+                              "sp",
+                              PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
+                    iloc.inst("ldr",
+                              PlatformArm64::regName[0],
+                              "[" + PlatformArm64::regName[ARM64_TMP_REG_NO + 32] + "]");
+                }
             }
         }
     }
@@ -1241,10 +1356,17 @@ void InstSelectorArm64::translate_bitcast(Instruction * inst)
                     base_reg_name[0] = 'x';
                 }
 
-                if (offset >= 0) {
+                // 检查偏移量是否在add/sub指令的立即数范围内（0-4095）
+                if (offset >= 0 && offset <= 4095) {
+                    // 正偏移量在有效范围内，使用add指令
                     iloc.inst("add", result_reg_name, base_reg_name, "#" + std::to_string(offset));
-                } else {
+                } else if (offset < 0 && (-offset) <= 4095) {
+                    // 负偏移量在有效范围内，使用sub指令
                     iloc.inst("sub", result_reg_name, base_reg_name, "#" + std::to_string(-offset));
+                } else {
+                    // 偏移量超出范围，使用临时寄存器
+                    iloc.load_imm(ARM64_TMP_REG_NO, offset);
+                    iloc.inst("add", result_reg_name, base_reg_name, PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
                 }
 
             } else if (result_reg != source_reg) {
@@ -1369,10 +1491,15 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
             if (base_reg_name[0] == 'w')
                 base_reg_name[0] = 'x';
 
-            if (base_offset >= 0) {
+            // 检查偏移量是否在add/sub指令的立即数范围内（0-4095）
+            if (base_offset >= 0 && base_offset <= 4095) {
                 iloc.inst("add", dest_reg_name, base_reg_name, "#" + std::to_string(base_offset));
-            } else {
+            } else if (base_offset < 0 && (-base_offset) <= 4095) {
                 iloc.inst("sub", dest_reg_name, base_reg_name, "#" + std::to_string(-base_offset));
+            } else {
+                // 偏移量超出范围，使用临时寄存器
+                iloc.load_imm(ARM64_TMP_REG_NO + 1, base_offset); // 使用另一个临时寄存器
+                iloc.inst("add", dest_reg_name, base_reg_name, PlatformArm64::regName[ARM64_TMP_REG_NO + 1 + 32]);
             }
             printf("Debug: memcpy calculated dest address: %s = %s + %ld\n",
                    dest_reg_name.c_str(),
@@ -1424,10 +1551,20 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
                 dest_reg_name[0] = 'x';
             }
 
+            // 选择一个不与dest_reg和src_reg冲突的临时寄存器
+            int temp_reg = ARM64_TMP_REG_NO; // 默认使用w10
+            if (temp_reg == dest_reg || temp_reg == src_reg) {
+                temp_reg = ARM64_TMP_REG_NO + 1; // 使用w11
+                if (temp_reg == dest_reg || temp_reg == src_reg) {
+                    temp_reg = ARM64_TMP_REG_NO + 2; // 使用w12
+                }
+            }
+            std::string temp_reg_name = PlatformArm64::regName[temp_reg];
+
             // 从源地址加载数据
-            iloc.inst("ldr", "w2", "[" + src_reg_name + ", #" + std::to_string(i * 4) + "]");
+            iloc.inst("ldr", temp_reg_name, "[" + src_reg_name + ", #" + std::to_string(i * 4) + "]");
             // 存储到目标地址
-            iloc.inst("str", "w2", "[" + dest_reg_name + ", #" + std::to_string(i * 4) + "]");
+            iloc.inst("str", temp_reg_name, "[" + dest_reg_name + ", #" + std::to_string(i * 4) + "]");
         }
     } else {
         // 动态大小的memcpy，暂时不实现
