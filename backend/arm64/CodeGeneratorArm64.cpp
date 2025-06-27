@@ -393,7 +393,9 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 // 获取实参的值
                 auto arg = callInst->getOperand(k);
                 // 新建一个内存变量，把实参的值保存到栈中，以便栈传值，其寻址为SP + 非负偏移
-                MemVariable * newVal = func->newMemVariable(IntegerType::getTypeInt());
+
+                // 注意：这里按照约定，把LocalVariable当做内存变量使用
+                LocalVariable * newVal = func->newLocalVarValue(IntegerType::getTypeInt());
                 newVal->setMemoryAddr(ARM64_SP_REG_NO, esp);
                 esp += 8;
 
@@ -536,10 +538,11 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
 
     int64_t sp_esp = 0;
 
-    // 只处理未分配到寄存器的局部变量
+    // 只处理未分配到栈空间的局部变量
     for (auto local: func->getVarValues()) {
-        if (local->getRegId() != -1) {
-            continue; // 跳过已分配寄存器的变量
+        int64_t offset;
+        if (local->getMemoryAddr(nullptr, &offset)) {
+            continue; // 跳过已分配内存的变量
         }
         // 对齐到4字节边界
         sp_esp = (sp_esp + 3) & ~3;

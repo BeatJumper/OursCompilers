@@ -265,6 +265,8 @@ bool InterferenceGraph::color_graph(InterferenceGraph * graph, int color_size)
     std::stack<node_IG *> removed_nodes;
 
     // 先删除小度节点
+
+    // 这里的queue只是为了代码方便，提前存储的一个uncolored_node_set的副本
     std::vector<node_IG *> uncolored_node_queue(graph->uncolored_node_set.begin(), graph->uncolored_node_set.end());
     for (node_IG * node: uncolored_node_queue) {
         if (node->degree() < color_size) {
