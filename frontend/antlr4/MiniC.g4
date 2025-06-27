@@ -210,3 +210,6 @@ LINE_COMMENT: '//' ~[\r\n]* -> skip;
 
 // 多行注释：从 /* 开始到 */ 结束，可跨行，跳过处理
 BLOCK_COMMENT: '/*' .*? '*/' -> skip;
+
+// 预处理指令：#define 宏定义，跳过处理（由预处理器处理）
+PREPROCESSOR_DEFINE: '#define' ~[\r\n]* -> skip;

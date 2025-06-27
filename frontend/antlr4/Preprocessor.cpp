@@ -1,0 +1,113 @@
+///
+/// @file Preprocessor.cpp
+/// @brief 简单的预处理器实现文件，用于处理#define宏定义
+/// @author zenglj (zenglj@live.com)
+/// @version 1.0
+/// @date 2024-12-27
+///
+/// @copyright Copyright (c) 2024
+///
+/// @par 修改日志:
+/// <table>
+/// <tr><th>Date       <th>Version <th>Author  <th>Description
+/// <tr><td>2024-12-27 <td>1.0     <td>zenglj  <td>新建
+/// </table>
+///
+
+#include "Preprocessor.h"
+#include <sstream>
+#include <regex>
+#include <cctype>
+
+/// @brief 处理源代码中的#define宏定义
+/// @param sourceCode 输入的源代码
+/// @return 处理后的源代码（宏已被替换）
+std::string Preprocessor::process(const std::string& sourceCode)
+{
+    std::istringstream iss(sourceCode);
+    std::ostringstream oss;
+    std::string line;
+
+    // 第一遍：解析所有的#define指令
+    while (std::getline(iss, line)) {
+        if (line.find("#define") == 0) {
+            // 解析#define指令
+            if (parseDefine(line)) {
+                // 成功解析，跳过这一行（不输出到结果中）
+                continue;
+            }
+        }
+        // 保留非#define行
+        oss << line << "\n";
+    }
+
+    // 第二遍：替换所有的宏
+    std::string processedCode = oss.str();
+    return replaceMacros(processedCode);
+}
+
+/// @brief 解析#define指令
+/// @param line 包含#define的行
+/// @return 是否成功解析
+bool Preprocessor::parseDefine(const std::string& line)
+{
+    // 使用正则表达式解析 #define MACRO_NAME MACRO_VALUE
+    std::regex defineRegex(R"(^\s*#define\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+(.+)\s*$)");
+    std::smatch match;
+
+    if (std::regex_match(line, match, defineRegex)) {
+        std::string macroName = match[1].str();
+        std::string macroValue = match[2].str();
+        
+        // 去除宏值末尾的空白字符
+        while (!macroValue.empty() && std::isspace(macroValue.back())) {
+            macroValue.pop_back();
+        }
+        
+        // 存储宏定义
+        macroDefinitions[macroName] = macroValue;
+        return true;
+    }
+
+    return false;
+}
+
+/// @brief 在文本中替换宏
+/// @param text 要处理的文本
+/// @return 替换后的文本
+std::string Preprocessor::replaceMacros(const std::string& text)
+{
+    std::string result = text;
+    
+    // 对每个宏定义进行替换
+    for (const auto& macro : macroDefinitions) {
+        const std::string& macroName = macro.first;
+        const std::string& macroValue = macro.second;
+        
+        size_t pos = 0;
+        while ((pos = result.find(macroName, pos)) != std::string::npos) {
+            // 检查前后字符，确保是完整的标识符
+            bool validStart = (pos == 0) || !isIdentifierChar(result[pos - 1]);
+            bool validEnd = (pos + macroName.length() >= result.length()) || 
+                           !isIdentifierChar(result[pos + macroName.length()]);
+            
+            if (validStart && validEnd) {
+                // 进行替换
+                result.replace(pos, macroName.length(), macroValue);
+                pos += macroValue.length();
+            } else {
+                pos += macroName.length();
+            }
+        }
+    }
+    
+    return result;
+}
+
+/// @brief 检查字符是否为标识符字符
+/// @param c 要检查的字符
+/// @return 是否为标识符字符
+bool Preprocessor::isIdentifierChar(char c)
+{
+    return std::isalnum(c) || c == '_';
+}

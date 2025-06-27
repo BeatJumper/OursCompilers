@@ -972,42 +972,59 @@ void InstSelectorArm64::translate_bitcast(Instruction * inst)
     int32_t result_reg = result->getRegId();
     int32_t source_reg = source->getRegId();
 
-    if (result_reg != -1) {
-        if (source_reg != -1) {
-            // 源和目标都在寄存器中
-            if (result_reg != source_reg) {
-                // bitcast通常用于地址转换，确保使用64位寄存器
-                std::string result_reg_name = PlatformArm64::regName[result_reg];
-                std::string source_reg_name = PlatformArm64::regName[source_reg];
-                if (result_reg_name[0] == 'w') {
-                    result_reg_name[0] = 'x';
-                }
-                if (source_reg_name[0] == 'w') {
-                    source_reg_name[0] = 'x';
-                }
-                iloc.inst("mov", result_reg_name, source_reg_name);
+    printf("Debug: translate_bitcast - result_reg=%d, source_reg=%d\n", result_reg, source_reg);
+    printf("Debug: translate_bitcast - result=%s, source=%s\n",
+           result->getIRName().c_str(),
+           source->getIRName().c_str());
+
+    // 如果结果没有分配寄存器，说明寄存器分配有问题
+    if (result_reg == -1) {
+        printf("Error: bitcast result %s has no register assigned\n", result->getIRName().c_str());
+        printf("Error: This indicates a problem with register allocation\n");
+        // 不应该在这里强制分配寄存器，应该让寄存器分配器处理
+        return;
+    }
+
+    if (source_reg != -1) {
+        // 源和目标都在寄存器中
+        if (result_reg != source_reg) {
+            // bitcast通常用于地址转换，确保使用64位寄存器
+            std::string result_reg_name = PlatformArm64::regName[result_reg];
+            std::string source_reg_name = PlatformArm64::regName[source_reg];
+            if (result_reg_name[0] == 'w') {
+                result_reg_name[0] = 'x';
             }
+            if (source_reg_name[0] == 'w') {
+                source_reg_name[0] = 'x';
+            }
+            iloc.inst("mov", result_reg_name, source_reg_name);
+        }
+    } else {
+        // 源不在寄存器中，可能是全局变量或局部变量
+        if (auto globalVar = dynamic_cast<GlobalVariable *>(source)) {
+            // 加载全局变量地址
+            // adrp指令必须使用64位寄存器
+            std::string result_reg_name = PlatformArm64::regName[result_reg];
+            if (result_reg_name[0] == 'w') {
+                result_reg_name[0] = 'x';
+            }
+            printf("Debug: Loading global variable %s address to %s\n",
+                   globalVar->getName().c_str(),
+                   result_reg_name.c_str());
+            iloc.inst("adrp", result_reg_name, globalVar->getName());
+            iloc.inst("add", result_reg_name, result_reg_name, ":lo12:" + globalVar->getName());
         } else {
-            // 源不在寄存器中，可能是全局变量或局部变量
-            if (auto globalVar = dynamic_cast<GlobalVariable *>(source)) {
-                // 加载全局变量地址
-                // adrp指令必须使用64位寄存器
-                std::string result_reg_name = PlatformArm64::regName[result_reg];
-                if (result_reg_name[0] == 'w') {
-                    result_reg_name[0] = 'x';
-                }
-                iloc.inst("adrp", result_reg_name, globalVar->getName());
-                iloc.inst("add", result_reg_name, result_reg_name, ":lo12:" + globalVar->getName());
+            // 其他情况，加载局部变量地址
+            int32_t base_reg_id;
+            int64_t offset;
+            if (source->getMemoryAddr(&base_reg_id, &offset)) {
+                // 使用lea_var加载变量地址
+                printf("Debug: Loading local variable %s address to register %d\n",
+                       source->getIRName().c_str(),
+                       result_reg);
+                iloc.lea_var(result_reg, source);
             } else {
-                // 其他情况，加载局部变量地址
-                int32_t base_reg_id;
-                int64_t offset;
-                if (source->getMemoryAddr(&base_reg_id, &offset)) {
-                    // 使用lea_var加载变量地址
-                    iloc.lea_var(result_reg, source);
-                } else {
-                    printf("Error: bitcast source has no memory address\n");
-                }
+                printf("Error: bitcast source has no memory address\n");
             }
         }
     }
@@ -1023,13 +1040,49 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
     Value * src = inst->getOperand(1);
     Value * size = inst->getOperand(2);
 
+    printf("Debug: translate_memcpy - dest=%s, src=%s\n", dest->getIRName().c_str(), src->getIRName().c_str());
+
     // 获取目标和源地址的寄存器
     int32_t dest_reg = dest->getRegId();
     int32_t src_reg = src->getRegId();
 
-    // 确保地址在寄存器中
+    // 如果操作数不在寄存器中，尝试从内存地址加载
     if (dest_reg == -1 || src_reg == -1) {
-        printf("Error: memcpy operands not in registers\n");
+        printf("Warning: memcpy operands not in registers - dest_reg=%d, src_reg=%d\n", dest_reg, src_reg);
+        printf("Warning: Using memory-based memcpy implementation\n");
+
+        // 使用内存地址直接进行复制
+        if (auto constSize = dynamic_cast<ConstInt *>(size)) {
+            int copySize = constSize->getVal();
+            int wordCount = (copySize + 3) / 4; // 向上取整到字边界
+
+            printf("Debug: memory-based memcpy size=%d, wordCount=%d\n", copySize, wordCount);
+
+            // 获取源和目标的内存地址
+            int32_t dest_base_reg, src_base_reg;
+            int64_t dest_offset, src_offset;
+
+            if (!dest->getMemoryAddr(&dest_base_reg, &dest_offset) || !src->getMemoryAddr(&src_base_reg, &src_offset)) {
+                printf("Error: Cannot get memory addresses for memcpy operands\n");
+                return;
+            }
+
+            // 使用临时寄存器进行复制
+            for (int i = 0; i < wordCount; i++) {
+                // 从源地址加载数据到w2
+                iloc.inst("ldr",
+                          "w2",
+                          "[" + PlatformArm64::regName[src_base_reg] + ", #" + std::to_string(src_offset + i * 4) +
+                              "]");
+                // 存储到目标地址
+                iloc.inst("str",
+                          "w2",
+                          "[" + PlatformArm64::regName[dest_base_reg] + ", #" + std::to_string(dest_offset + i * 4) +
+                              "]");
+            }
+        } else {
+            printf("Error: Dynamic size memcpy not supported for memory-based implementation\n");
+        }
         return;
     }
 
@@ -1037,6 +1090,8 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
     if (auto constSize = dynamic_cast<ConstInt *>(size)) {
         int copySize = constSize->getVal();
         int wordCount = (copySize + 3) / 4; // 向上取整到字边界
+
+        printf("Debug: memcpy size=%d, wordCount=%d\n", copySize, wordCount);
 
         // 使用循环复制数据
         for (int i = 0; i < wordCount; i++) {

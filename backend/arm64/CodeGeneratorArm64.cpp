@@ -20,6 +20,7 @@
 #include "ConstFloat.h"
 #include "BinaryInstruction.h"
 #include "StoreInstruction.h"
+#include "AllocaInstruction.h"
 #include "InterferenceGraph.h"
 
 /// @brief 构造函数
@@ -557,25 +558,19 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
             // alloca指令需要为它要分配的数组分配栈空间
             // alloca指令的结果是指向这个数组的指针
 
-            // 简单的大小估算：根据指令类型
+            // 获取alloca指令分配的类型
             Type * allocatedType = inst->getType();
             int64_t size = 8; // 默认大小
 
             if (allocatedType) {
                 size = allocatedType->getSize();
-                if (size == 0) {
-                    size = 8;
+                if (size <= 0) {
+                    size = 8; // 最小8字节
                 }
             }
 
-            // 对于数组类型的alloca，分配更大的空间
-            // 这里使用一个简单的启发式：如果大小小于16，设为16
-            if (size < 16) {
-                size = 16;
-            }
-
-            // 16字节对齐（ARM64要求）
-            size = (size + 15) & ~15;
+            // 对齐到8字节边界（ARM64要求）
+            size = (size + 7) & ~7;
 
             // 为alloca指令设置内存地址，这个地址指向分配的数组空间的起始位置
             // 注意：这里设置的是alloca指令本身的内存地址，
@@ -586,11 +581,11 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
         }
     }
 
-    // 遍历指令中临时变量
+    // 遍历指令中需要栈空间的临时变量
     for (auto inst: func->getInterCode().getInsts()) {
+        // 只为没有分配到寄存器且有结果值的指令分配栈空间
+        if (inst->hasResultValue() && inst->getOp() != IRInstOperator::IRINST_OP_ALLOCA && inst->getRegId() == -1) {
 
-        if (inst->hasResultValue() && inst->getOp() != IRInstOperator::IRINST_OP_ALLOCA) {
-            // 有值
             int32_t size = inst->getType()->getSize();
 
             // 按照4字节的大小整数倍分配局部变量
@@ -601,6 +596,11 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
 
             // 累计当前作用域大小
             sp_esp += size;
+
+            printf("Debug: Allocated stack space for instruction %s: size=%d, offset=%ld\n",
+                   inst->getIRName().c_str(),
+                   size,
+                   sp_esp - size);
         }
     }
 
