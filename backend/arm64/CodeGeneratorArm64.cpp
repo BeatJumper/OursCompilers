@@ -287,12 +287,18 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
             // 首先取出目前干涉图中度数最高的Value
             Value * most_degree_val = (*x)->val;
             auto & insts = func->getInterCode().getInsts();
+
+            // 接下来尝试把该Value的所有出现都替换为新的Value和LocalVariable
             for (int i = 0; i < insts.size(); i++) {
                 Value *regval_write = nullptr, *regval_read = nullptr;
                 LocalVariable *localval_write = nullptr, *localval_read = nullptr;
+
+                // 这里假定了一个instrction的DEF变量只会在{它自己，它的各个操作数}中出现唯一一次
                 if (insts[i] == most_degree_val) {
+                    // DEF是它自己的情况
                     insts[i] = new Instruction(*insts[i]);
                 } else if (insts[i]->get_def_set().count(most_degree_val)) {
+                    // DEF是其中某一个操作数的情况
                     localval_write = func->newLocalVarValue(IntegerType::getTypeInt());
                     regval_write = new Value(IntegerType::getTypeInt());
                     Instruction * strinst = new StoreInstruction(func, regval_write, localval_write);
@@ -304,13 +310,15 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
                         }
                     }
                 }
+
+                // 认定接下来剩下的Value都是USE出现的，也进行改写
                 if (insts[i]->get_use_set().count(most_degree_val)) {
                     localval_read = func->newLocalVarValue(IntegerType::getTypeInt());
                     regval_read = new Value(IntegerType::getTypeInt());
                     Instruction * ldrinst = new LoadInstruction(func, regval_read, localval_read);
                     insts.insert(insts.begin() + i, ldrinst);
                     i++;
-                    for (int k = insts[i]->getOperandsNum() - 1; k >= 0; k--) {
+                    for (int k = 0; k < insts[i]->getOperandsNum(); k++) {
                         if (insts[i]->getOperand(k) == most_degree_val) {
                             insts[i]->getOperands()[k]->setUsee(regval_read);
                             break;
