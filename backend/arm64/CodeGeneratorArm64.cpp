@@ -292,7 +292,17 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
         protectedRegNo.push_back(reg);
     }
 
-    // 为局部变量和临时变量在栈内分配空间，指定偏移，进行栈空间的分配
+    // 保护寄存器的内存分配见ILocArm64::allocStack和ILocArm64::emitFunctionEpilogue处改动
+    /*
+    for (int32_t reg: protectedreg_set) {
+        LocalVariable * newVal = func->newLocalVarValue(PlatformArm64::intRegVal[reg]->getType());
+        Value * regval = new Value(PlatformArm64::intRegVal[reg]->getType());
+        func->get_localspace_for_protected().push_back(newVal);
+        func->get_regvalue_for_protected().push_back(regval);
+    }
+    */
+
+    // 为局部变量和临时变量，以及被保护寄存器在栈内分配空间，指定偏移，进行栈空间的分配
     stackAlloc(func);
     printf("为局部变量和临时变量在栈内分配空间\n");
 
@@ -511,6 +521,8 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 }
                 */
             }
+
+            // 形式化表达函数调用指令对W0~W15产生的USE。
             Value * onlyval = new Value(VoidType::getType());
             for (int index = 0; index < 16; index++) {
                 Value * val = callInst->getOperand(index);
@@ -597,6 +609,7 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
         sp_esp += local->getType()->getSize();
     }
 
+    /*
     printf("开始处理Alloca\n");
     // 遍历指令中的alloca指令，为它们分配的数组分配栈空间
     for (auto inst: func->getInterCode().getInsts()) {
@@ -632,6 +645,7 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
             sp_esp += size;
         }
     }
+    */
 
     // 遍历指令中临时变量
     for (auto inst: func->getInterCode().getInsts()) {

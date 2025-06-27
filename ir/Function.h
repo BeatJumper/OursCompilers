@@ -212,10 +212,15 @@ public:
 
     /// @brief 获取USE集和DEF集中元素
     /// @return USE集和DEF集中元素的集合
-    std::set<Value *> & get_mentioned_vars()
-    {
-        return mentioned_vars;
-    }
+    std::set<Value *> & get_mentioned_vars();
+
+    /// @brief 获取为被保护寄存器准备的形式化localspace表
+    /// @return localspace表
+    std::vector<LocalVariable *> & get_localspace_for_protected();
+
+    /// @brief 获取为被保护寄存器准备的形式化regvalue表
+    /// @return regvalue表
+    std::vector<Value *> & get_regvalue_for_protected();
 
 private:
     ///
@@ -301,6 +306,12 @@ private:
     ///
     std::vector<int32_t> protectedRegs;
 
+    /// @brief 被保护的寄存器出入栈申请的空间
+    std::vector<LocalVariable *> localspace_for_protected;
+
+    /// @brief 被保护的寄存器出入栈所用的形式化变量
+
+    std::vector<Value *> regvalue_for_protected;
     ///
     /// @brief 被保护寄存器字符串
     ///

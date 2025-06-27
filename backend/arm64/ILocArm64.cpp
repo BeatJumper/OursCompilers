@@ -551,7 +551,6 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
     totalSize = (totalSize + 15) & ~15;
 
     func->setStackFrameSize(totalSize);
-    std::string off = "[sp, #" + std::to_string(totalSize - protectedRegNum * 8) + "]";
 
     // 局部变量空间 - 保持原来的逻辑，但确保偏移量为正
     int tem = totalSize - protectedRegNum * 8;
@@ -614,9 +613,13 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
     emit("sub", "sp", "sp", s);
 
     if (func->getExistFuncCall()) {
-        // 非叶子函数：保存 FP 和 LR
-        emit("stp", "x29", "x30", off);
-
+        auto & protectedRegNo = func->getProtectedReg();
+        for (int i = 0; i < protectedRegNo.size(); i++) {
+            std::string off = "[sp, #" + std::to_string(totalSize - (protectedRegNum - i) * 8) + "]";
+            // 非叶子函数：保存 FP 和 LR
+            // emit("stp", "x29", "x30", off);
+            emit("str", PlatformArm64::intRegVal[protectedRegNo[i]]->getName(), off);
+        }
         // 设置新帧指针
         emit("add", "x29", "sp", std::to_string(totalSize - protectedRegNum * 8));
     }
@@ -661,11 +664,18 @@ void ILocArm64::emitFunctionEpilogue(Function * func)
     if (func->getExistFuncCall()) {
         protectedRegNum = func->getProtectedReg().size();
     }
-    std::string off = "[sp, #" + std::to_string(size - protectedRegNum * 8) + "]";
+    // std::string off = "[sp, #" + std::to_string(size - protectedRegNum * 8) + "]";
 
-    // 恢复FP和LR
+    // 恢复所有保护寄存器
     if (func->getExistFuncCall()) {
-        emit("ldp", "x29", "x30", off);
+        auto & protectedRegNo = func->getProtectedReg();
+        for (int i = 0; i < protectedRegNo.size(); i++) {
+            std::string off = "[sp, #" + std::to_string(size - (protectedRegNum - i) * 8) + "]";
+            // 非叶子函数：保存 FP 和 LR
+            // emit("stp", "x29", "x30", off);
+            emit("ldr", PlatformArm64::intRegVal[protectedRegNo[i]]->getName(), off);
+        }
+        // emit("ldp", "x29", "x30", off);
     }
     std::string s = "#" + std::to_string(size);
     emit("add", "sp", "sp", s);

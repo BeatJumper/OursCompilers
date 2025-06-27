@@ -216,6 +216,21 @@ std::string & Function::getProtectedRegStr()
     return protectedRegStr;
 }
 
+std::set<Value *> & Function::get_mentioned_vars()
+{
+    return mentioned_vars;
+}
+
+std::vector<LocalVariable *> & Function::get_localspace_for_protected()
+{
+    return localspace_for_protected;
+}
+
+std::vector<Value *> & Function::get_regvalue_for_protected()
+{
+    return regvalue_for_protected;
+}
+
 /// @brief 获取函数调用参数个数的最大值
 /// @return 函数调用参数个数的最大值
 int Function::getMaxFuncCallArgCnt()
