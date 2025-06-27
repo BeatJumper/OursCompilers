@@ -59,6 +59,11 @@ InterferenceGraph::InterferenceGraph(Function * func)
     // printf("已生成控制流图\n");
     //  用完基本块表之后就可以删了节省空间
     func->clearBasicBlocks();
+
+    func->refreshValuesFromCFG(graph_cfg);
+    // 加完新指令后也该重新调整IR编号
+    func->renameIR();
+
     // printf("已释放临时基本块表\n");
     //  进行活跃变量分析，获得每条语句的DEF和USE集合
     LiveVariableAnalysis(graph_cfg);
@@ -134,7 +139,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
                 assert(value_to_ig[*it1]);
                 assert(value_to_ig[*it2]);
                 add_edge(value_to_ig[*it1], value_to_ig[*it2]);
-                // printf("已经加边\n");
+                printf("干涉图内添加了一条边\n");
             }
             // std::cout << "干涉边添加完毕" << std::endl;
         }
@@ -179,16 +184,22 @@ void InterferenceGraph::GenBasicBlocks(Function * func)
 
 static int least_color_for_node(node_IG * node, int color_size)
 {
-    // printf("寻找最小可用颜色\n");
-    std::vector<bool> used(color_size, false);
+    bool used[color_size];
+    for (int i = 0; i < color_size; i++) {
+        used[i] = false;
+    }
+    // std::vector<bool> used(color_size, false);
     for (node_IG * neighbor: node->neighbors) {
         used[neighbor->color] = true;
     }
     for (int color = 0; color < color_size; color++) {
+        // printf("%d\n", color);
         if (!used[color]) {
+            printf("找到了\n");
             return color;
         }
     }
+    printf("没找到\n");
     return -1;
 }
 
@@ -206,10 +217,11 @@ static bool welsh_powell(InterferenceGraph * graph, int color_size)
     //   按照某序列依次给每个节点染上目前能染的最小编号颜色
     //   时间复杂度：O(m + n * min(c,n))，m为边数，c为颜色数，n为节点数
     for (node_IG * node: remain_nodes) {
+        printf("发生循环\n");
 
         // 尝试染上目前能染的最小编号颜色
         node->color = least_color_for_node(node, color_size);
-
+        printf("里程碑\n");
         // 中途有某个节点无颜色可用，则染色失败
         if (node->color == -1) {
             return false;
@@ -220,6 +232,7 @@ static bool welsh_powell(InterferenceGraph * graph, int color_size)
 
 static bool backtrack_color(InterferenceGraph * graph, int color_size, std::set<node_IG *>::iterator iter)
 {
+    printf("回溯法\n");
 
     // 目前回溯法之时间复杂度：O(m * c^n)，是指数级别，所以节点数只能为个位数，否则时间复杂度无法支持
     // 同时，不需要修改成非递归形式，因为递归深度很浅

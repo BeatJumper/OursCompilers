@@ -251,15 +251,8 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
 
     adjustBinaryInsts(func);
 
-    // 加完新指令后也该重新调整IR编号
-    func->renameIR();
-
     // 主要染色过程（不断尝试染色直至成功）
     while (true) {
-        // 为局部变量和临时变量在栈内分配空间，指定偏移，进行栈空间的分配
-        stackAlloc(func);
-        printf("为局部变量和临时变量在栈内分配空间\n");
-
         // 创建干涉图
         InterferenceGraph * graph_ig = new InterferenceGraph(func);
 
@@ -283,6 +276,10 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
             assert(false);
         }
     }
+
+    // 为局部变量和临时变量在栈内分配空间，指定偏移，进行栈空间的分配
+    stackAlloc(func);
+    printf("为局部变量和临时变量在栈内分配空间\n");
 
     // 函数形参要求前8个寄存器分配，后面的参数采用栈传递，实现实参的值传递给形参
     // 这一步是必须的

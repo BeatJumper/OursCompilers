@@ -111,7 +111,7 @@ int32_t Value::getScopeLevel()
 int32_t Value::getRegId()
 {
     // assert(false);
-    std::cout << "getRegId() = " << regId << std::endl;
+    // std::cout << "getRegId() = " << regId << std::endl;
     return regId;
 }
 

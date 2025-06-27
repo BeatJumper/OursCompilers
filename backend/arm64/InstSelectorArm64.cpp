@@ -37,6 +37,7 @@
 #include "FuncCallInstruction.h"
 #include "MoveInstruction.h"
 #include "AllocaInstruction.h"
+#include "CFG.h"
 
 /// @brief 构造函数
 /// @param _irCode 指令
@@ -717,12 +718,17 @@ void InstSelectorArm64::translate_ret(Instruction * inst)
             iloc.inst("mov", PlatformArm64::regName[0], PlatformArm64::regName[resultRegId]);
         }
     }*/
-    Value * returnValue = func->getReturnValue();
-
+    // Value * returnValue = func->getReturnValue();
+    Value * returnValue;
+    // printval(returnValue);
     // 如果存在返回值，确保其位于x0寄存器
-    if (returnValue != nullptr) {
+    // if (returnValue != nullptr) {
+    if (inst->getOperandsNum()) {
+        returnValue = inst->getOperand(0);
         int32_t resultRegId = returnValue->getRegId();
-
+        /*TODO 在汇编阶段临时添加MOV原则上是不行的（至少在这个项目里），
+         * 因为MOV到的寄存器未必空闲，所以应当在寄存器分配前就加好MOV指令
+         */
         // 如果返回值未在x0中，进行寄存器移动
         if (resultRegId != 0) {
             printf("返回值未在x0中，进行寄存器移动:%d\n", resultRegId);

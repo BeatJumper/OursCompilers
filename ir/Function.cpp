@@ -16,9 +16,12 @@
 
 #include <cstdlib>
 #include <string>
+#include <set>
 
 #include "IRConstant.h"
 #include "Function.h"
+#include "Liveness.h"
+#include "CFG.h"
 
 /// @brief 指定函数名字、函数类型的构造函数
 /// @param _name 函数名称
@@ -283,6 +286,18 @@ void Function::Delete()
     varsVector.clear();
 }
 
+void Function::refreshValuesFromCFG(ControlFlowGraph * graph_cfg)
+{
+    assert(graph_cfg);
+    std::set<Value *> & vars_set = mentioned_vars;
+    for (auto node_cfg: graph_cfg->get_node_list()) {
+        for (auto node_dataflow: node_cfg->get_dataflow_list()) {
+            merge_set(vars_set, node_dataflow->def_set);
+            merge_set(vars_set, node_dataflow->use_set);
+        }
+    }
+}
+
 ///
 /// @brief 函数内的Value重命名
 ///
@@ -304,7 +319,16 @@ void Function::renameIR()
         // param->getIRName().c_str());
         nameIndex++;
     }
-
+    // 新加进来的寄存器变量(Value*)重命名
+    for (auto & var: mentioned_vars) {
+        std::string oldName = var->getIRName();
+        var->setIRName(IR_LOCAL_VARNAME_PREFIX + std::to_string(nameIndex));
+        /*printf("Renamed local var %s: %s -> %s\n",
+               var->getName().c_str(),
+               oldName.empty() ? "(empty)" : oldName.c_str(),
+               var->getIRName().c_str());*/
+        nameIndex++;
+    }
     // 局部变量重命名
     for (auto & var: this->varsVector) {
         std::string oldName = var->getIRName();

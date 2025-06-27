@@ -6,6 +6,7 @@
 #include "AllocaInstruction.h"
 #include "StoreInstruction.h"
 #include "LoadInstruction.h"
+#include "MoveInstruction.h"
 
 ControlFlowGraph::ControlFlowGraph(Function * func)
 {
@@ -90,13 +91,19 @@ Node_Dataflow::Node_Dataflow(Instruction * _inst) : inst(_inst)
      */
     // printf("产生数据流节点\n");
     if (Instanceof(inst, AllocaInstruction *, _inst)) {
-        // Alloca指令分配栈空间，其结果是栈地址，不应该参与寄存器分配
-        // alloca指令的结果应该直接映射到栈地址，不需要寄存器
-        // 因此不将alloca指令加入def_set，避免参与寄存器分配
+        // Alloc指令没有直接数据流，所以不做任何事
     } else if (Instanceof(inst, StoreInstruction *, _inst)) {
         use_set.insert(inst->getOperand(0));
     } else if (Instanceof(inst, LoadInstruction *, _inst)) {
         def_set.insert(inst);
+    } else if (Instanceof(inst, MoveInstruction *, _inst)) {
+        def_set.insert(inst->getOperand(0));
+        Value * source = inst->getOperand(1);
+        if (Instanceof(constvar, Constant *, source)) {
+            // 什么都不做
+        } else {
+            use_set.insert(source);
+        }
     } else if (Instanceof(inst, Instruction *, _inst)) {
         // printf("其它指令\n");
         //  Instanceof(inst, Instruction *, _inst);
