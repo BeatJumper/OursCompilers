@@ -245,6 +245,9 @@ private:
     std::vector<ConstInt *> constIntVector;
     std::vector<ConstFloat *> constFloatVector;
 
+    /// @brief 全局标签计数器，确保标签全局唯一
+    int32_t globalLabelCounter;
+
 public:
     /// @brief 新建64位整型常量
     /// @param val 常量值
@@ -256,4 +259,8 @@ public:
     /// @param type 整数类型
     /// @return 常量Value
     ConstInt * newConstInt(int64_t val, Type * type);
+
+    /// @brief 获取下一个全局唯一的标签ID
+    /// @return 标签ID
+    int32_t getNextLabelId();
 };

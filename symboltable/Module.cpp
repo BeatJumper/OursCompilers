@@ -21,7 +21,7 @@
 #include "PointerType.h"
 #include "FloatType.h"
 
-Module::Module(std::string _name) : name(_name)
+Module::Module(std::string _name) : name(_name), globalLabelCounter(0)
 {
     // 创建作用域栈
     scopeStack = new ScopeStack();
@@ -544,4 +544,11 @@ ConstInt * Module::newConstInt(int64_t val, Type * type)
 {
     ConstInt * newConst = new ConstInt(type, val);
     return newConst;
+}
+
+/// @brief 获取下一个全局唯一的标签ID
+/// @return 标签ID
+int32_t Module::getNextLabelId()
+{
+    return globalLabelCounter++;
 }

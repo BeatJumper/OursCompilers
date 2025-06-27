@@ -21,6 +21,7 @@
 #include "Instruction.h"
 
 class Function;
+class Module;
 
 ///
 /// @brief Label指令
@@ -33,6 +34,13 @@ public:
     /// @param _func 所属函数
     ///
     explicit LabelInstruction(Function * _func);
+
+    ///
+    /// @brief 构造函数（使用Module生成全局唯一标签）
+    /// @param _func 所属函数
+    /// @param _module 所属模块
+    ///
+    LabelInstruction(Function * _func, Module * _module);
 
     ///
     /// @brief 转换成字符串
