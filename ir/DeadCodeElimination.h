@@ -119,7 +119,7 @@ private:
     /// @param instructions 指令序列
     /// @param index 跳转指令的索引
     /// @return 是否是冗余跳转
-    bool isRedundantJump(const std::vector<Instruction *> & instructions, int index);
+    bool isRedundantJump(const std::vector<Instruction *> & instructions, size_t index);
 
     /// @brief 清理基本块内存
     /// @param blocks 基本块列表

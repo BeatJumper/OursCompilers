@@ -172,6 +172,12 @@ protected:
     void translate_memcpy(Instruction * inst);
 
     ///
+    /// @brief memset指令翻译成ARM64汇编
+    /// @param inst IR指令
+    ///
+    void translate_memset(Instruction * inst);
+
+    ///
     /// @brief 输出IR指令
     ///
     void outputIRInstruction(Instruction * inst);

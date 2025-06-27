@@ -89,7 +89,7 @@ Node_Dataflow::Node_Dataflow(Instruction * _inst) : inst(_inst)
      * ......由于各种原因所以需要特判。
      */
     // printf("产生数据流节点\n");
-    if (Instanceof(inst, AllocaInstruction *, _inst)) {
+    if (Instanceof(inst, AllocaInstruction *, _inst); inst) {
         // Alloca指令分配栈空间，其结果是栈地址，不应该参与寄存器分配
         // alloca指令的结果应该直接映射到栈地址，不需要寄存器
         // 因此不将alloca指令加入def_set，避免参与寄存器分配
@@ -107,7 +107,7 @@ Node_Dataflow::Node_Dataflow(Instruction * _inst) : inst(_inst)
         for (auto usee: inst->getOperandsValue()) {
             // 除了store指令以外的立即数都不需要寄存器
             // 同时alloca指令也不需要寄存器，因为它们的结果是栈地址
-            if (Instanceof(constusee, Constant *, usee) == nullptr && def_set.count(usee) == 0 &&
+            if (dynamic_cast<Constant *>(usee) == nullptr && def_set.count(usee) == 0 &&
                 dynamic_cast<AllocaInstruction *>(usee) == nullptr) {
                 // use集中不能包含刚刚def的元素和alloca指令
                 use_set.insert(usee);

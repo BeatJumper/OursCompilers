@@ -3399,15 +3399,15 @@ bool IRGenerator::ir_array_init(ast_node * node)
                     break;
                 }
             }
-            if (allBasicConstants && initValues.size() == realTotalElements) {
+            if (allBasicConstants && initValues.size() == static_cast<size_t>(realTotalElements)) {
                 isFlatInitialization = true;
                 printf("Debug: Detected flat initialization with %zu elements\n", initValues.size());
             }
         }
 
         // 检查是否是混合初始化（包含基础常量和GlobalVariable的混合）
-        if (arrayType->getElementType()->isArrayType() && initValues.size() > expectedElements &&
-            initValues.size() <= realTotalElements) {
+        if (arrayType->getElementType()->isArrayType() && initValues.size() > static_cast<size_t>(expectedElements) &&
+            initValues.size() <= static_cast<size_t>(realTotalElements)) {
             bool hasBasicConstants = false;
             bool hasGlobalVars = false;
             for (Value * val: initValues) {
@@ -3424,19 +3424,20 @@ bool IRGenerator::ir_array_init(ast_node * node)
         }
 
         // 对于所有情况，如果初始化值不足，都需要用零填充
-        if (initValues.size() < expectedElements) {
+        if (initValues.size() < static_cast<size_t>(expectedElements)) {
             printf("Warning: Initializer has %zu elements, but array expects %d elements\n",
                    initValues.size(),
                    expectedElements);
 
             // 如果初始化值不足，用零填充
-            while (initValues.size() < expectedElements) {
+            while (initValues.size() < static_cast<size_t>(expectedElements)) {
                 initValues.push_back(module->newConstInt(0));
             }
         }
 
         // 如果初始化值过多，截断（但不截断扁平化和混合初始化）
-        if (!isFlatInitialization && !isMixedInitialization && initValues.size() > expectedElements) {
+        if (!isFlatInitialization && !isMixedInitialization &&
+            initValues.size() > static_cast<size_t>(expectedElements)) {
             initValues.resize(expectedElements);
         }
     } else if (node->parent && node->parent->type && node->parent->type->isArrayType()) {
@@ -3446,17 +3447,17 @@ bool IRGenerator::ir_array_init(ast_node * node)
 
         // 验证初始化值数量是否匹配
         int expectedElements = arrayType->getTotalElements();
-        if (initValues.size() != expectedElements) {
+        if (initValues.size() != static_cast<size_t>(expectedElements)) {
             printf("Warning: Initializer has %zu elements, but array expects %d elements\n",
                    initValues.size(),
                    expectedElements);
 
             // 如果初始化值不足，用零填充
-            while (initValues.size() < expectedElements) {
+            while (initValues.size() < static_cast<size_t>(expectedElements)) {
                 initValues.push_back(module->newConstInt(0));
             }
             // 如果初始化值过多，截断
-            if (initValues.size() > expectedElements) {
+            if (initValues.size() > static_cast<size_t>(expectedElements)) {
                 initValues.resize(expectedElements);
             }
         }
@@ -3576,7 +3577,7 @@ bool IRGenerator::ir_array_init(ast_node * node)
                                 }
 
                                 // 如果收集到的值不足一行，用零填充
-                                while (rowValues.size() < cols) {
+                                while (rowValues.size() < static_cast<size_t>(cols)) {
                                     rowValues.push_back(module->newConstInt(0));
                                 }
 
@@ -3591,7 +3592,7 @@ bool IRGenerator::ir_array_init(ast_node * node)
                     }
 
                     // 如果行数不足，用零填充的行补充
-                    while (finalInitValues.size() < rows) {
+                    while (finalInitValues.size() < static_cast<size_t>(rows)) {
                         std::vector<Value *> zeroRow;
                         for (int j = 0; j < cols; ++j) {
                             zeroRow.push_back(module->newConstInt(0));
@@ -3804,14 +3805,14 @@ bool IRGenerator::handleDynamicInitialization(ast_node * node,
     printf("Debug: Array dimensions: [%d x %d]\n", rows, cols);
 
     // 处理每个初始化元素
-    for (size_t i = 0; i < initExprNode->sons.size() && i < rows; ++i) {
+    for (size_t i = 0; i < initExprNode->sons.size() && i < static_cast<size_t>(rows); ++i) {
         ast_node * rowInitNode = initExprNode->sons[i];
 
         if (rowInitNode->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
             // 处理嵌套的数组初始化 {{...}, {...}}
             printf("Debug: Processing row %zu with nested array init\n", i);
 
-            for (size_t j = 0; j < rowInitNode->sons.size() && j < cols; ++j) {
+            for (size_t j = 0; j < rowInitNode->sons.size() && j < static_cast<size_t>(cols); ++j) {
                 ast_node * elementNode = rowInitNode->sons[j];
 
                 // 生成目标地址：arrayVar[i][j]

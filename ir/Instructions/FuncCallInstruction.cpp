@@ -57,7 +57,7 @@ void FuncCallInstruction::toString(std::string & str)
     size_t expectedParamCount = calledFunction->getParams().size();
 
     // 只输出前expectedParamCount个操作数作为参数
-    for (size_t k = 0; k < expectedParamCount && k < getOperandsNum(); ++k) {
+    for (size_t k = 0; k < expectedParamCount && k < static_cast<size_t>(getOperandsNum()); ++k) {
         auto operand = getOperand(k);
         if (!operand) {
             printf("Error: Null operand at position %zu in FuncCallInstruction::toString\n", k);

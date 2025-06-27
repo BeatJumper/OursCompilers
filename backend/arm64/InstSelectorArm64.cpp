@@ -86,6 +86,7 @@ InstSelectorArm64::InstSelectorArm64(vector<Instruction *> & _irCode, ILocArm64 
     translator_handlers[IRInstOperator::IRINST_OP_GEP] = &InstSelectorArm64::translate_gep;
     translator_handlers[IRInstOperator::IRINST_OP_BITCAST] = &InstSelectorArm64::translate_bitcast;
     translator_handlers[IRInstOperator::IRINST_OP_MEMCPY] = &InstSelectorArm64::translate_memcpy;
+    translator_handlers[IRInstOperator::IRINST_OP_MEMSET] = &InstSelectorArm64::translate_memset;
 }
 
 ///
@@ -764,7 +765,7 @@ void InstSelectorArm64::translate_store(Instruction * inst)
         }
     } else {
         // 若源操作数不是寄存器，先加载到一个临时寄存器
-        if (Instanceof(constVal, ConstInt *, arg1)) {
+        if (dynamic_cast<ConstInt *>(arg1)) {
             // 其他整数常量情况
             // TODO 可能需要在寄存器分配前检查store指令源操作数是否为寄存器，若不是则插入赋值语句
             // int32_t temp_regno = simpleRegisterAllocator.Allocate(arg1);
@@ -1266,5 +1267,93 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
     } else {
         // 动态大小的memcpy，暂时不实现
         printf("Warning: Dynamic size memcpy not implemented\n");
+    }
+}
+
+/// @brief memset指令翻译成ARM64汇编
+/// @param inst IR指令
+void InstSelectorArm64::translate_memset(Instruction * inst)
+{
+    // memset指令用于内存设置（通常是清零）
+    // 参数：dest, value, size, volatile
+    Value * dest = inst->getOperand(0);
+    Value * value = inst->getOperand(1);
+    Value * size = inst->getOperand(2);
+
+    printf("Debug: memset dest=%s, value=%s, size=%s\n",
+           dest ? dest->getIRName().c_str() : "null",
+           value ? value->getIRName().c_str() : "null",
+           size ? size->getIRName().c_str() : "null");
+
+    // 获取目标地址的寄存器
+    int32_t dest_reg = dest->getRegId();
+
+    printf("Debug: memset dest_reg=%d\n", dest_reg);
+
+    // 如果地址不在寄存器中，需要先加载地址
+    if (dest_reg == -1) {
+        // 目标地址不在寄存器中，需要计算地址
+        int32_t base_reg_id;
+        int64_t base_offset;
+        if (dest->getMemoryAddr(&base_reg_id, &base_offset)) {
+            // 目标在栈上，使用临时寄存器计算地址
+            dest_reg = ARM64_TMP_REG_NO;
+            std::string dest_reg_name = PlatformArm64::regName[dest_reg];
+            std::string base_reg_name = PlatformArm64::regName[base_reg_id];
+
+            // 确保使用64位寄存器
+            if (dest_reg_name[0] == 'w')
+                dest_reg_name[0] = 'x';
+            if (base_reg_name[0] == 'w')
+                base_reg_name[0] = 'x';
+
+            if (base_offset >= 0) {
+                iloc.inst("add", dest_reg_name, base_reg_name, "#" + std::to_string(base_offset));
+            } else {
+                iloc.inst("sub", dest_reg_name, base_reg_name, "#" + std::to_string(-base_offset));
+            }
+            printf("Debug: memset calculated dest address: %s = %s + %ld\n",
+                   dest_reg_name.c_str(),
+                   base_reg_name.c_str(),
+                   base_offset);
+        } else {
+            printf("Error: memset dest address calculation failed\n");
+            return;
+        }
+    }
+
+    // 检查设置的值（通常是0）
+    ConstInt * constValue = dynamic_cast<ConstInt *>(value);
+    if (!constValue) {
+        printf("Warning: memset with non-constant value not implemented\n");
+        return;
+    }
+
+    int setValue = constValue->getVal();
+    if (setValue != 0) {
+        printf("Warning: memset with non-zero value not implemented\n");
+        return;
+    }
+
+    // 获取设置大小
+    if (auto constSize = dynamic_cast<ConstInt *>(size)) {
+        int setSize = constSize->getVal();
+        int wordCount = (setSize + 3) / 4; // 向上取整到字边界
+
+        printf("Debug: memset setting %d bytes (%d words) to zero\n", setSize, wordCount);
+
+        // 使用循环设置数据为零
+        std::string dest_reg_name = PlatformArm64::regName[dest_reg];
+        if (dest_reg_name[0] == 'w') {
+            dest_reg_name[0] = 'x';
+        }
+
+        for (int i = 0; i < wordCount; i++) {
+            // 存储零到目标地址
+            iloc.inst("str", "wzr", "[" + dest_reg_name + ", #" + std::to_string(i * 4) + "]");
+        }
+    } else {
+        // 动态大小的memset，暂时不实现
+        printf("Warning: Dynamic size memset not implemented\n");
     }
 }

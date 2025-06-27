@@ -606,7 +606,20 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
             if (temp_offset < 0) {
                 temp_offset = 0;
             }
-            inst->setMemoryAddr(ARM64_SP_REG_NO, temp_offset);
+
+            // 检查是否已经有内存地址（可能是alloca指令的结果）
+            int32_t existing_base;
+            int64_t existing_offset;
+            if (!inst->getMemoryAddr(&existing_base, &existing_offset)) {
+                // 只有当指令还没有内存地址时才设置
+                inst->setMemoryAddr(ARM64_SP_REG_NO, temp_offset);
+                printf("Debug: 设置临时变量 %s 内存地址: offset=%d\n", inst->getIRName().c_str(), temp_offset);
+            } else {
+                printf("Debug: 跳过已有内存地址的指令 %s: base=%d, offset=%ld\n",
+                       inst->getIRName().c_str(),
+                       existing_base,
+                       existing_offset);
+            }
         }
     }
 

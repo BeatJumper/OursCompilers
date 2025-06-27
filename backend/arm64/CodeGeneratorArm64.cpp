@@ -18,6 +18,7 @@
 #include "MoveInstruction.h"
 #include "Instruction.h"
 #include "ConstFloat.h"
+#include "LocalVariable.h"
 #include "BinaryInstruction.h"
 #include "StoreInstruction.h"
 #include "InterferenceGraph.h"
@@ -304,12 +305,12 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
 void CodeGeneratorArm64::adjustMovInsts(Function * func)
 {
     auto & insts = func->getInterCode().getInsts();
-    for (int i = 0; i < insts.size();) {
+    for (size_t i = 0; i < insts.size();) {
 
         //目前第i条指令
         Instruction * inst = insts[i];
         //检测是否是Store指令
-        if (Instanceof(strinst, StoreInstruction *, inst)) {
+        if (dynamic_cast<StoreInstruction *>(inst)) {
             //要存入的数
             Value * val = inst->getOperand(0);
             //检测要存入的数是否是constant
@@ -492,7 +493,7 @@ void CodeGeneratorArm64::adjustBinaryInsts(Function * func)
                 printf("检测到两元乘法除法指令\n");
                 Value * arg1 = binaryInst->getOperand(0);
                 Value * arg2 = binaryInst->getOperand(1);
-                if (Instanceof(constVal, ConstInt *, arg1)) {
+                if (dynamic_cast<ConstInt *>(arg1)) {
                     printf("检测到操作数1为常量\n");
                     Value * newval = new Value(arg1->getType());
                     Instruction * assignInst = new MoveInstruction(func, newval, arg1);
@@ -501,7 +502,7 @@ void CodeGeneratorArm64::adjustBinaryInsts(Function * func)
                     printf("插入一条赋值指令\n");
                     pIter++;
                 }
-                if (Instanceof(constVal, ConstInt *, arg2)) {
+                if (dynamic_cast<ConstInt *>(arg2)) {
                     printf("检测到操作数2为常量\n");
                     Value * newval = new Value(arg2->getType());
                     Instruction * assignInst = new MoveInstruction(func, newval, arg2);
@@ -515,7 +516,7 @@ void CodeGeneratorArm64::adjustBinaryInsts(Function * func)
                 binaryInst->getOp() == IRInstOperator::IRINST_OP_SUB_I) {
                 printf("检测到两元加法减法指令\n");
                 Value * arg1 = binaryInst->getOperand(0);
-                if (Instanceof(constVal, ConstInt *, arg1)) {
+                if (dynamic_cast<ConstInt *>(arg1)) {
                     printf("检测到操作数1为常量\n");
                     Value * newval = new Value(arg1->getType());
                     Instruction * assignInst = new MoveInstruction(func, newval, arg1);
@@ -544,13 +545,22 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
         if (local->getRegId() != -1) {
             continue; // 跳过已分配寄存器的变量
         }
+
+        // 检查是否是数组类型的局部变量，如果是则跳过（它们由alloca指令处理）
+        bool isArrayVariable = local->getType()->isArrayType();
+
+        if (isArrayVariable) {
+
+            continue; // 跳过数组变量，它们的地址将在alloca处理阶段设置
+        }
+
         // 对齐到4字节边界
         sp_esp = (sp_esp + 3) & ~3;
         local->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
+
         sp_esp += local->getType()->getSize();
     }
 
-    printf("开始处理Alloca\n");
     // 遍历指令中的alloca指令，为它们分配的数组分配栈空间
     for (auto inst: func->getInterCode().getInsts()) {
         if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
@@ -581,7 +591,15 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
             // 注意：这里设置的是alloca指令本身的内存地址，
             // 在指令翻译时，lea_var会使用这个地址
             inst->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
-            printf("Alloca分配数组: 大小=%ld, 起始偏移=%ld, 设置地址=%ld\n", size, sp_esp, sp_esp);
+
+            // 为alloca指令的结果变量设置相同的内存地址
+            if (inst->getOperandsNum() > 0) {
+                Value * result = inst->getOperand(0);
+                // 尝试将结果变量转换为LocalVariable并设置内存地址
+                if (LocalVariable * localVar = dynamic_cast<LocalVariable *>(result)) {
+                    localVar->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
+                }
+            }
             sp_esp += size;
         }
     }

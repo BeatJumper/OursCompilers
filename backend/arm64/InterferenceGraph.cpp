@@ -84,7 +84,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
     // 为控制流图中每个Value都创建一个干涉图节点
     for (Value * val: all_value_in_cfg) {
         // 跳过alloca指令，它们不应该参与寄存器分配
-        if (auto allocaInst = dynamic_cast<AllocaInstruction *>(val)) {
+        if (dynamic_cast<AllocaInstruction *>(val)) {
             continue;
         }
 
