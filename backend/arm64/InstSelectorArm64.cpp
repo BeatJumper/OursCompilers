@@ -27,6 +27,7 @@
 #include "PlatformArm64.h"
 
 #include "PointerType.h"
+#include "ArrayType.h"
 #include "RegVariable.h"
 #include "Function.h"
 #include "Value.h"
@@ -650,6 +651,41 @@ void InstSelectorArm64::translate_load(Instruction * inst)
     printf("Debug: translate_load - arg1 name=%s, IRName=%s\n", arg1->getName().c_str(), arg1->getIRName().c_str());
 
     if (result_regId != -1) {
+        // 检查arg1是否是getelementptr的结果，需要重新计算地址
+        // 这是为了解决寄存器分配器将多个getelementptr结果分配到同一寄存器导致地址被覆盖的问题
+        int32_t base_reg_id;
+        int64_t offset;
+        if (arg1->getMemoryAddr(&base_reg_id, &offset)) {
+            // arg1有内存地址信息，说明它是getelementptr的结果
+            // 重新计算地址到临时寄存器，确保地址正确
+            int32_t temp_reg = ARM64_TMP_REG_NO;
+            std::string temp_reg_name = PlatformArm64::regName[temp_reg];
+            std::string base_reg_name = PlatformArm64::regName[base_reg_id];
+
+            // 确保使用64位寄存器
+            if (temp_reg_name[0] == 'w')
+                temp_reg_name[0] = 'x';
+            if (base_reg_name[0] == 'w')
+                base_reg_name[0] = 'x';
+
+            if (offset >= 0) {
+                iloc.inst("add", temp_reg_name, base_reg_name, "#" + std::to_string(offset));
+            } else {
+                iloc.inst("sub", temp_reg_name, base_reg_name, "#" + std::to_string(-offset));
+            }
+
+            // 从临时寄存器中的地址加载数据
+            std::string result_reg_name = PlatformArm64::regName[result_regId];
+            iloc.inst("ldr", result_reg_name, "[" + temp_reg_name + "]");
+
+            printf("Debug: load recalculated address: %s = %s + %ld, loaded to %s\n",
+                   temp_reg_name.c_str(),
+                   base_reg_name.c_str(),
+                   offset,
+                   result_reg_name.c_str());
+            return;
+        }
+
         // 内存变量 => 寄存器
         iloc.load_var(result_regId, arg1);
     } else {
@@ -672,19 +708,60 @@ void InstSelectorArm64::translate_store(Instruction * inst)
 
     int32_t arg1_regId = arg1->getRegId();
 
+    printf("Debug: translate_store - arg1=%s, arg2=%s\n",
+           arg1 ? arg1->getIRName().c_str() : "null",
+           arg2 ? arg2->getIRName().c_str() : "null");
+    printf("Debug: translate_store - arg1_regId=%d, arg2_regId=%d\n", arg1_regId, arg2->getRegId());
+
     // 优先检查是否是常量0，即使它被分配了寄存器
     ConstInt * constVal = dynamic_cast<ConstInt *>(arg1);
     if (constVal && constVal->getVal() == 0) {
         // 常量0使用零寄存器，更高效
         int32_t dest_baseRegId = -1;
         int64_t dest_offset = -1;
-        arg2->getMemoryAddr(&dest_baseRegId, &dest_offset);
-        std::string s = "[" + PlatformArm64::regName[dest_baseRegId] + ",#" + std::to_string(dest_offset) + "]";
-        iloc.inst("str", "wzr", s);
+        if (arg2->getMemoryAddr(&dest_baseRegId, &dest_offset)) {
+            std::string s = "[" + PlatformArm64::regName[dest_baseRegId] + ",#" + std::to_string(dest_offset) + "]";
+            iloc.inst("str", "wzr", s);
+        }
     } else if (arg1_regId != -1) {
         // 寄存器 => 内存
         printf("寄存器 => 内存");
-        iloc.store_var(arg1_regId, arg2, ARM64_TMP_REG_NO);
+
+        // 检查目标是否是getelementptr的结果，需要重新计算地址
+        int32_t dest_baseRegId = -1;
+        int64_t dest_offset = -1;
+        if (arg2->getMemoryAddr(&dest_baseRegId, &dest_offset)) {
+            // 目标有内存地址信息，重新计算地址到临时寄存器
+            int32_t temp_reg = ARM64_TMP_REG_NO;
+            std::string temp_reg_name = PlatformArm64::regName[temp_reg];
+            std::string base_reg_name = PlatformArm64::regName[dest_baseRegId];
+            std::string src_reg_name = PlatformArm64::regName[arg1_regId];
+
+            // 确保使用64位寄存器进行地址计算
+            if (temp_reg_name[0] == 'w')
+                temp_reg_name[0] = 'x';
+            if (base_reg_name[0] == 'w')
+                base_reg_name[0] = 'x';
+
+            // 重新计算目标地址
+            if (dest_offset >= 0) {
+                iloc.inst("add", temp_reg_name, base_reg_name, "#" + std::to_string(dest_offset));
+            } else {
+                iloc.inst("sub", temp_reg_name, base_reg_name, "#" + std::to_string(-dest_offset));
+            }
+
+            // 存储到重新计算的地址
+            iloc.inst("str", src_reg_name, "[" + temp_reg_name + "]");
+
+            printf("Debug: store recalculated address: %s = %s + %ld, stored %s\n",
+                   temp_reg_name.c_str(),
+                   base_reg_name.c_str(),
+                   dest_offset,
+                   src_reg_name.c_str());
+        } else {
+            // 使用原来的方法
+            iloc.store_var(arg1_regId, arg2, ARM64_TMP_REG_NO);
+        }
     } else {
         // 若源操作数不是寄存器，先加载到一个临时寄存器
         if (Instanceof(constVal, ConstInt *, arg1)) {
@@ -798,31 +875,54 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                     ConstInt * constIdx = dynamic_cast<ConstInt *>(index);
                     if (constIdx) {
                         int64_t idx = constIdx->getVal();
-                        int64_t element_offset = base_offset + (idx * 4); // 假设int类型，4字节
 
-                        printf("Debug: 1D array access: idx=%ld, base_offset=%ld, element_offset=%ld\n",
-                               idx,
-                               base_offset,
+                        // 计算正确的元素大小
+                        int64_t element_size = 4; // 默认int类型，4字节
+
+                        // 检查基址指针的类型来确定元素大小
+                        Type * baseType = basePtr->getType();
+                        if (baseType->isArrayType()) {
+                            const ArrayType * arrayType = static_cast<const ArrayType *>(baseType);
+                            const std::vector<int> & dimensions = arrayType->getDimensions();
+
+                            if (dimensions.size() > 1) {
+                                // 多维数组：每个元素是一个子数组
+                                // 计算子数组的大小
+                                int sub_array_size = 1;
+                                for (size_t i = 1; i < dimensions.size(); i++) {
+                                    sub_array_size *= dimensions[i];
+                                }
+                                element_size = sub_array_size * arrayType->getElementType()->getSize();
+                            } else {
+                                // 一维数组：每个元素是基本类型
+                                element_size = arrayType->getElementType()->getSize();
+                            }
+                        } else if (baseType->isPointerType()) {
+                            const PointerType * ptrType = static_cast<const PointerType *>(baseType);
+                            const Type * pointeeType = ptrType->getPointeeType();
+                            if (pointeeType->isArrayType()) {
+                                const ArrayType * arrayType = static_cast<const ArrayType *>(pointeeType);
+                                element_size = arrayType->getElementType()->getSize();
+                            } else {
+                                element_size = pointeeType->getSize();
+                            }
+                        }
+
+                        int64_t element_offset = base_offset + (idx * element_size);
+
+                        printf(
+                            "Debug: 1D array access: idx=%ld, element_size=%ld, base_offset=%ld, element_offset=%ld\n",
+                            idx,
+                            element_size,
+                            base_offset,
+                            element_offset);
+
+                        // 只设置结果的内存地址信息，不生成地址计算指令
+                        // 地址计算将在load/store指令中进行
+                        inst->setMemoryAddr(base_reg_id, element_offset);
+                        printf("Debug: getelementptr set memory addr (1D): base_reg=%d, offset=%ld\n",
+                               base_reg_id,
                                element_offset);
-
-                        // 生成地址计算指令
-                        std::string result_reg_name = PlatformArm64::regName[result_reg];
-                        std::string base_reg_name = PlatformArm64::regName[base_reg_id];
-
-                        // 确保使用64位寄存器
-                        if (result_reg_name[0] == 'w') {
-                            result_reg_name[0] = 'x';
-                        }
-                        if (base_reg_name[0] == 'w') {
-                            base_reg_name[0] = 'x';
-                        }
-
-                        // 处理偏移量
-                        if (element_offset >= 0) {
-                            iloc.inst("add", result_reg_name, base_reg_name, "#" + std::to_string(element_offset));
-                        } else {
-                            iloc.inst("sub", result_reg_name, base_reg_name, "#" + std::to_string(-element_offset));
-                        }
                         return;
                     }
                 } else if (actual_operands >= 4) {
@@ -846,50 +946,24 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                             //        col_idx,
                             //        element_offset);
 
-                            // 生成地址计算指令: add result_reg, sp, #offset
-                            // 注意：在ARM64中，地址计算必须使用64位寄存器
-                            std::string result_reg_name = PlatformArm64::regName[result_reg];
-                            std::string base_reg_name = PlatformArm64::regName[base_reg_id];
-
-                            // 如果是32位寄存器名，转换为64位
-                            if (result_reg_name[0] == 'w') {
-                                result_reg_name[0] = 'x';
-                            }
-                            if (base_reg_name[0] == 'w') {
-                                base_reg_name[0] = 'x';
-                            }
-
-                            // 处理负偏移量
-                            if (element_offset >= 0) {
-                                iloc.inst("add", result_reg_name, base_reg_name, "#" + std::to_string(element_offset));
-                            } else {
-                                iloc.inst("sub", result_reg_name, base_reg_name, "#" + std::to_string(-element_offset));
-                            }
+                            // 只设置结果的内存地址信息，不生成地址计算指令
+                            // 地址计算将在load/store指令中进行
+                            inst->setMemoryAddr(base_reg_id, element_offset);
+                            printf("Debug: getelementptr set memory addr: base_reg=%d, offset=%ld\n",
+                                   base_reg_id,
+                                   element_offset);
                             return;
                         }
                     }
                 }
             }
 
-            // 默认情况：只是获取数组的基地址
-            // 注意：在ARM64中，地址计算必须使用64位寄存器
-            std::string result_reg_name = PlatformArm64::regName[result_reg];
-            std::string base_reg_name = PlatformArm64::regName[base_reg_id];
-
-            // 如果是32位寄存器名，转换为64位
-            if (result_reg_name[0] == 'w') {
-                result_reg_name[0] = 'x';
-            }
-            if (base_reg_name[0] == 'w') {
-                base_reg_name[0] = 'x';
-            }
-
-            // 处理负偏移量
-            if (base_offset >= 0) {
-                iloc.inst("add", result_reg_name, base_reg_name, "#" + std::to_string(base_offset));
-            } else {
-                iloc.inst("sub", result_reg_name, base_reg_name, "#" + std::to_string(-base_offset));
-            }
+            // 默认情况：只设置内存地址信息，不生成地址计算指令
+            // 地址计算将在load/store指令中进行
+            inst->setMemoryAddr(base_reg_id, base_offset);
+            printf("Debug: getelementptr set memory addr (default): base_reg=%d, offset=%ld\n",
+                   base_reg_id,
+                   base_offset);
         } else {
             // 检查是否是全局变量
             if (auto globalVar = dynamic_cast<GlobalVariable *>(basePtr)) {
@@ -969,62 +1043,124 @@ void InstSelectorArm64::translate_bitcast(Instruction * inst)
     Value * result = inst;
     Value * source = inst->getOperand(0);
 
+    printf("Debug: bitcast result=%s, source=%s\n",
+           result ? result->getIRName().c_str() : "null",
+           source ? source->getIRName().c_str() : "null");
+
     int32_t result_reg = result->getRegId();
     int32_t source_reg = source->getRegId();
 
-    printf("Debug: translate_bitcast - result_reg=%d, source_reg=%d\n", result_reg, source_reg);
-    printf("Debug: translate_bitcast - result=%s, source=%s\n",
-           result->getIRName().c_str(),
-           source->getIRName().c_str());
+    printf("Debug: bitcast result_reg=%d, source_reg=%d\n", result_reg, source_reg);
 
-    // 如果结果没有分配寄存器，说明寄存器分配有问题
-    if (result_reg == -1) {
-        printf("Error: bitcast result %s has no register assigned\n", result->getIRName().c_str());
-        printf("Error: This indicates a problem with register allocation\n");
-        // 不应该在这里强制分配寄存器，应该让寄存器分配器处理
-        return;
-    }
-
-    if (source_reg != -1) {
-        // 源和目标都在寄存器中
-        if (result_reg != source_reg) {
-            // bitcast通常用于地址转换，确保使用64位寄存器
-            std::string result_reg_name = PlatformArm64::regName[result_reg];
-            std::string source_reg_name = PlatformArm64::regName[source_reg];
-            if (result_reg_name[0] == 'w') {
-                result_reg_name[0] = 'x';
-            }
-            if (source_reg_name[0] == 'w') {
-                source_reg_name[0] = 'x';
-            }
-            iloc.inst("mov", result_reg_name, source_reg_name);
-        }
-    } else {
-        // 源不在寄存器中，可能是全局变量或局部变量
-        if (auto globalVar = dynamic_cast<GlobalVariable *>(source)) {
-            // 加载全局变量地址
-            // adrp指令必须使用64位寄存器
-            std::string result_reg_name = PlatformArm64::regName[result_reg];
-            if (result_reg_name[0] == 'w') {
-                result_reg_name[0] = 'x';
-            }
-            printf("Debug: Loading global variable %s address to %s\n",
-                   globalVar->getName().c_str(),
-                   result_reg_name.c_str());
-            iloc.inst("adrp", result_reg_name, globalVar->getName());
-            iloc.inst("add", result_reg_name, result_reg_name, ":lo12:" + globalVar->getName());
-        } else {
-            // 其他情况，加载局部变量地址
+    if (result_reg != -1) {
+        if (source_reg != -1) {
+            // 源和目标都在寄存器中
+            // 对于alloca指令，即使被分配了寄存器，也应该计算其栈地址
+            // 检查源是否有内存地址（这通常意味着它是alloca指令的结果或局部变量）
             int32_t base_reg_id;
             int64_t offset;
-            if (source->getMemoryAddr(&base_reg_id, &offset)) {
-                // 使用lea_var加载变量地址
-                printf("Debug: Loading local variable %s address to register %d\n",
-                       source->getIRName().c_str(),
-                       result_reg);
-                iloc.lea_var(result_reg, source);
+            bool hasMemAddr = source->getMemoryAddr(&base_reg_id, &offset);
+
+            if (hasMemAddr && base_reg_id == 31) { // 31是SP寄存器
+                // 源在栈上，需要计算地址而不是移动寄存器值
+                // 源在栈上，计算栈地址
+                std::string result_reg_name = PlatformArm64::regName[result_reg];
+                std::string base_reg_name = PlatformArm64::regName[base_reg_id];
+
+                // 确保使用64位寄存器
+                if (result_reg_name[0] == 'w') {
+                    result_reg_name[0] = 'x';
+                }
+                if (base_reg_name[0] == 'w') {
+                    base_reg_name[0] = 'x';
+                }
+
+                if (offset >= 0) {
+                    iloc.inst("add", result_reg_name, base_reg_name, "#" + std::to_string(offset));
+                } else {
+                    iloc.inst("sub", result_reg_name, base_reg_name, "#" + std::to_string(-offset));
+                }
+
+            } else if (result_reg != source_reg) {
+                // 非alloca指令的普通寄存器移动
+                std::string result_reg_name = PlatformArm64::regName[result_reg];
+                std::string source_reg_name = PlatformArm64::regName[source_reg];
+                if (result_reg_name[0] == 'w') {
+                    result_reg_name[0] = 'x';
+                }
+                if (source_reg_name[0] == 'w') {
+                    source_reg_name[0] = 'x';
+                }
+                iloc.inst("mov", result_reg_name, source_reg_name);
             } else {
-                printf("Error: bitcast source has no memory address\n");
+                // 即使寄存器相同，对于数组类型的bitcast，我们也需要计算地址
+                // 检查源是否是数组类型的alloca结果
+                int32_t base_reg_id;
+                int64_t offset;
+                if (source->getMemoryAddr(&base_reg_id, &offset)) {
+                    // 源在栈上，需要计算地址
+                    std::string result_reg_name = PlatformArm64::regName[result_reg];
+                    std::string base_reg_name = PlatformArm64::regName[base_reg_id];
+
+                    // 确保使用64位寄存器
+                    if (result_reg_name[0] == 'w') {
+                        result_reg_name[0] = 'x';
+                    }
+                    if (base_reg_name[0] == 'w') {
+                        base_reg_name[0] = 'x';
+                    }
+
+                    if (offset >= 0) {
+                        iloc.inst("add", result_reg_name, base_reg_name, "#" + std::to_string(offset));
+                    } else {
+                        iloc.inst("sub", result_reg_name, base_reg_name, "#" + std::to_string(-offset));
+                    }
+                    printf("Debug: bitcast same register but calculated address: %s = %s + %ld\n",
+                           result_reg_name.c_str(),
+                           base_reg_name.c_str(),
+                           offset);
+                }
+            }
+        } else {
+            // 源不在寄存器中，可能是全局变量、局部变量或alloca指令
+            if (auto globalVar = dynamic_cast<GlobalVariable *>(source)) {
+                // 加载全局变量地址
+                // adrp指令必须使用64位寄存器
+                std::string result_reg_name = PlatformArm64::regName[result_reg];
+                if (result_reg_name[0] == 'w') {
+                    result_reg_name[0] = 'x';
+                }
+                iloc.inst("adrp", result_reg_name, globalVar->getName());
+                iloc.inst("add", result_reg_name, result_reg_name, ":lo12:" + globalVar->getName());
+            } else {
+                // 其他情况，加载局部变量或alloca指令的地址
+                int32_t base_reg_id;
+                int64_t offset;
+                if (source->getMemoryAddr(&base_reg_id, &offset)) {
+                    // 计算地址：result_reg = base_reg + offset
+                    std::string result_reg_name = PlatformArm64::regName[result_reg];
+                    std::string base_reg_name = PlatformArm64::regName[base_reg_id];
+
+                    // 确保使用64位寄存器
+                    if (result_reg_name[0] == 'w') {
+                        result_reg_name[0] = 'x';
+                    }
+                    if (base_reg_name[0] == 'w') {
+                        base_reg_name[0] = 'x';
+                    }
+
+                    if (offset >= 0) {
+                        iloc.inst("add", result_reg_name, base_reg_name, "#" + std::to_string(offset));
+                    } else {
+                        iloc.inst("sub", result_reg_name, base_reg_name, "#" + std::to_string(-offset));
+                    }
+                    printf("Debug: bitcast calculated address: %s = %s + %ld\n",
+                           result_reg_name.c_str(),
+                           base_reg_name.c_str(),
+                           offset);
+                } else {
+                    printf("Error: bitcast source has no memory address\n");
+                }
             }
         }
     }
@@ -1040,50 +1176,65 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
     Value * src = inst->getOperand(1);
     Value * size = inst->getOperand(2);
 
-    printf("Debug: translate_memcpy - dest=%s, src=%s\n", dest->getIRName().c_str(), src->getIRName().c_str());
+    printf("Debug: memcpy dest=%s, src=%s\n",
+           dest ? dest->getIRName().c_str() : "null",
+           src ? src->getIRName().c_str() : "null");
 
     // 获取目标和源地址的寄存器
     int32_t dest_reg = dest->getRegId();
     int32_t src_reg = src->getRegId();
 
-    // 如果操作数不在寄存器中，尝试从内存地址加载
-    if (dest_reg == -1 || src_reg == -1) {
-        printf("Warning: memcpy operands not in registers - dest_reg=%d, src_reg=%d\n", dest_reg, src_reg);
-        printf("Warning: Using memory-based memcpy implementation\n");
+    printf("Debug: memcpy dest_reg=%d, src_reg=%d\n", dest_reg, src_reg);
 
-        // 使用内存地址直接进行复制
-        if (auto constSize = dynamic_cast<ConstInt *>(size)) {
-            int copySize = constSize->getVal();
-            int wordCount = (copySize + 3) / 4; // 向上取整到字边界
+    // 如果地址不在寄存器中，需要先加载地址
+    if (dest_reg == -1) {
+        // 目标地址不在寄存器中，需要计算地址
+        int32_t base_reg_id;
+        int64_t base_offset;
+        if (dest->getMemoryAddr(&base_reg_id, &base_offset)) {
+            // 目标在栈上，使用临时寄存器计算地址
+            dest_reg = ARM64_TMP_REG_NO;
+            std::string dest_reg_name = PlatformArm64::regName[dest_reg];
+            std::string base_reg_name = PlatformArm64::regName[base_reg_id];
 
-            printf("Debug: memory-based memcpy size=%d, wordCount=%d\n", copySize, wordCount);
+            // 确保使用64位寄存器
+            if (dest_reg_name[0] == 'w')
+                dest_reg_name[0] = 'x';
+            if (base_reg_name[0] == 'w')
+                base_reg_name[0] = 'x';
 
-            // 获取源和目标的内存地址
-            int32_t dest_base_reg, src_base_reg;
-            int64_t dest_offset, src_offset;
-
-            if (!dest->getMemoryAddr(&dest_base_reg, &dest_offset) || !src->getMemoryAddr(&src_base_reg, &src_offset)) {
-                printf("Error: Cannot get memory addresses for memcpy operands\n");
-                return;
+            if (base_offset >= 0) {
+                iloc.inst("add", dest_reg_name, base_reg_name, "#" + std::to_string(base_offset));
+            } else {
+                iloc.inst("sub", dest_reg_name, base_reg_name, "#" + std::to_string(-base_offset));
             }
-
-            // 使用临时寄存器进行复制
-            for (int i = 0; i < wordCount; i++) {
-                // 从源地址加载数据到w2
-                iloc.inst("ldr",
-                          "w2",
-                          "[" + PlatformArm64::regName[src_base_reg] + ", #" + std::to_string(src_offset + i * 4) +
-                              "]");
-                // 存储到目标地址
-                iloc.inst("str",
-                          "w2",
-                          "[" + PlatformArm64::regName[dest_base_reg] + ", #" + std::to_string(dest_offset + i * 4) +
-                              "]");
-            }
+            printf("Debug: memcpy calculated dest address: %s = %s + %ld\n",
+                   dest_reg_name.c_str(),
+                   base_reg_name.c_str(),
+                   base_offset);
         } else {
-            printf("Error: Dynamic size memcpy not supported for memory-based implementation\n");
+            printf("Error: memcpy dest address calculation failed\n");
+            return;
         }
-        return;
+    }
+
+    if (src_reg == -1) {
+        // 源地址不在寄存器中，检查是否是全局变量
+        if (auto globalVar = dynamic_cast<GlobalVariable *>(src)) {
+            // 源是全局变量，使用另一个临时寄存器
+            src_reg = (dest_reg == ARM64_TMP_REG_NO) ? ARM64_TMP_REG_NO + 1 : ARM64_TMP_REG_NO;
+            std::string src_reg_name = PlatformArm64::regName[src_reg];
+            if (src_reg_name[0] == 'w')
+                src_reg_name[0] = 'x';
+
+            // 加载全局变量地址
+            iloc.inst("adrp", src_reg_name, globalVar->getName());
+            iloc.inst("add", src_reg_name, src_reg_name, ":lo12:" + globalVar->getName());
+            printf("Debug: memcpy loaded global src address: %s\n", globalVar->getName().c_str());
+        } else {
+            printf("Error: memcpy src address calculation failed\n");
+            return;
+        }
     }
 
     // 获取复制大小
@@ -1091,7 +1242,7 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
         int copySize = constSize->getVal();
         int wordCount = (copySize + 3) / 4; // 向上取整到字边界
 
-        printf("Debug: memcpy size=%d, wordCount=%d\n", copySize, wordCount);
+        printf("Debug: memcpy copying %d bytes (%d words)\n", copySize, wordCount);
 
         // 使用循环复制数据
         for (int i = 0; i < wordCount; i++) {
