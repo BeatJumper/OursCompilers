@@ -1475,10 +1475,20 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
                 dest_reg_name[0] = 'x';
             }
 
+            // 选择一个不与dest_reg和src_reg冲突的临时寄存器
+            int temp_reg = ARM64_TMP_REG_NO; // 默认使用w10
+            if (temp_reg == dest_reg || temp_reg == src_reg) {
+                temp_reg = ARM64_TMP_REG_NO + 1; // 使用w11
+                if (temp_reg == dest_reg || temp_reg == src_reg) {
+                    temp_reg = ARM64_TMP_REG_NO + 2; // 使用w12
+                }
+            }
+            std::string temp_reg_name = PlatformArm64::regName[temp_reg];
+
             // 从源地址加载数据
-            iloc.inst("ldr", "w2", "[" + src_reg_name + ", #" + std::to_string(i * 4) + "]");
+            iloc.inst("ldr", temp_reg_name, "[" + src_reg_name + ", #" + std::to_string(i * 4) + "]");
             // 存储到目标地址
-            iloc.inst("str", "w2", "[" + dest_reg_name + ", #" + std::to_string(i * 4) + "]");
+            iloc.inst("str", temp_reg_name, "[" + dest_reg_name + ", #" + std::to_string(i * 4) + "]");
         }
     } else {
         // 动态大小的memcpy，暂时不实现

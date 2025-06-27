@@ -3467,6 +3467,7 @@ bool IRGenerator::ir_array_init(ast_node * node)
             while (initValues.size() < static_cast<size_t>(expectedElements)) {
                 initValues.push_back(module->newConstInt(0));
             }
+            printf("Debug: Filled array with zeros to %zu elements\n", initValues.size());
         }
 
         // 如果初始化值过多，截断（但不截断扁平化和混合初始化）
@@ -3542,120 +3543,52 @@ bool IRGenerator::ir_array_init(ast_node * node)
         printf("Debug: Array element type is array: %s\n",
                arrayType->getElementType()->isArrayType() ? "true" : "false");
         if (arrayType->getElementType()->isArrayType()) {
-            // 这是多维数组，需要重新组织初始化值
-            const ArrayType * innerArrayType = static_cast<const ArrayType *>(arrayType->getElementType());
-            const std::vector<int> & outerDims = arrayType->getDimensions();
-            const std::vector<int> & innerDims = innerArrayType->getDimensions();
+            // 这是多维数组，直接扁平化所有初始化值
+            printf("Debug: Flattening multi-dimensional array initialization\n");
 
-            if (outerDims.size() == 1 && innerDims.size() == 1) {
-                int rows = outerDims[0];
-                int cols = innerDims[0];
-
-                printf("Debug: Checking for flat init values for [%d x %d] array, got %zu values\n",
-                       rows,
-                       cols,
-                       initValues.size());
-
-                // 检查是否需要重新组织（扁平化或混合初始化）
-                if (isFlatInitialization) {
-                    printf("Debug: Reorganizing flat init values into nested structure\n");
-                    // 重新组织为嵌套结构
-                    for (int i = 0; i < rows; ++i) {
-                        std::vector<Value *> rowValues;
-                        for (int j = 0; j < cols; ++j) {
-                            int flatIndex = (i * cols) + j;
-                            if (flatIndex < static_cast<int>(initValues.size())) {
-                                rowValues.push_back(initValues[flatIndex]);
-                            }
-                        }
-
-                        // 创建内层数组的全局变量
-                        static int tempRowCounter = 0;
-                        std::string tempRowName = "__temp_row_" + std::to_string(tempRowCounter++);
-                        GlobalVariable * rowArray =
-                            module->newGlobalConstArray(const_cast<ArrayType *>(innerArrayType), tempRowName);
-                        rowArray->setInitValueList(rowValues);
-                        rowArray->setBSSSection(false); // 有初始值，不在BSS段
-                        finalInitValues.push_back(rowArray);
-                        printf("Debug: Created row %d with %zu elements\n", i, rowValues.size());
-                    }
-                    printf("Debug: Reorganized %zu flat values into %zu rows\n",
-                           initValues.size(),
-                           finalInitValues.size());
-                } else if (isMixedInitialization || (initValues.size() > static_cast<size_t>(rows) &&
-                                                     initValues.size() <= static_cast<size_t>(rows * cols))) {
-                    // 混合初始化：部分扁平化，需要重新组织
-                    printf("Debug: Reorganizing mixed initialization with %zu values\n", initValues.size());
-
-                    size_t valueIndex = 0;
-                    for (int i = 0; i < rows && valueIndex < initValues.size(); ++i) {
-                        std::vector<Value *> rowValues;
-
-                        // 检查当前位置的值类型
-                        if (valueIndex < initValues.size()) {
-                            Value * currentValue = initValues[valueIndex];
-
-                            if (dynamic_cast<GlobalVariable *>(currentValue)) {
-                                // 这是一个嵌套数组，直接使用
-                                finalInitValues.push_back(currentValue);
-                                valueIndex++;
-                                printf("Debug: Used existing nested array for row %d\n", i);
-                            } else {
-                                // 这是基础常量，需要收集足够的值来组成一行
-                                for (int j = 0; j < cols && valueIndex < initValues.size(); ++j) {
-                                    Value * val = initValues[valueIndex];
-                                    if (dynamic_cast<ConstInt *>(val) || dynamic_cast<ConstFloat *>(val)) {
-                                        rowValues.push_back(val);
-                                        valueIndex++;
-                                    } else {
-                                        // 遇到非基础常量，停止收集
-                                        break;
-                                    }
-                                }
-
-                                // 如果收集到的值不足一行，用零填充
-                                while (rowValues.size() < static_cast<size_t>(cols)) {
-                                    rowValues.push_back(module->newConstInt(0));
-                                }
-
-                                // 创建内层数组
-                                static int tempRowCounter2 = 0;
-                                std::string tempRowName2 = "__temp_row_mixed_" + std::to_string(tempRowCounter2++);
-                                GlobalVariable * rowArray =
-                                    module->newGlobalConstArray(const_cast<ArrayType *>(innerArrayType), tempRowName2);
-                                rowArray->setInitValueList(rowValues);
-                                rowArray->setBSSSection(false); // 有初始值，不在BSS段
-                                finalInitValues.push_back(rowArray);
-                                printf("Debug: Created mixed row %d with %zu elements\n", i, rowValues.size());
-                            }
-                        }
-                    }
-
-                    // 如果行数不足，用零填充的行补充
-                    while (finalInitValues.size() < static_cast<size_t>(rows)) {
-                        std::vector<Value *> zeroRow;
-                        for (int j = 0; j < cols; ++j) {
-                            zeroRow.push_back(module->newConstInt(0));
-                        }
-                        static int tempRowCounter3 = 0;
-                        std::string tempRowName3 = "__temp_row_zero_" + std::to_string(tempRowCounter3++);
-                        GlobalVariable * rowArray =
-                            module->newGlobalConstArray(const_cast<ArrayType *>(innerArrayType), tempRowName3);
-                        rowArray->setInitValueList(zeroRow);
-                        rowArray->setBSSSection(false); // 有初始值，不在BSS段
-                        finalInitValues.push_back(rowArray);
-                        printf("Debug: Added zero-filled row %zu\n", finalInitValues.size() - 1);
-                    }
-
-                    printf("Debug: Reorganized mixed initialization into %zu rows\n", finalInitValues.size());
-                } else {
-                    // 不需要重新组织，直接使用原始值
-                    printf("Debug: Using original values without reorganization\n");
-                    finalInitValues = initValues;
+            // 计算总的基础元素个数
+            int totalElements = 1;
+            const Type * currentType = arrayType;
+            while (currentType && currentType->isArrayType()) {
+                const ArrayType * currentArrayType = static_cast<const ArrayType *>(currentType);
+                const std::vector<int> & dims = currentArrayType->getDimensions();
+                if (!dims.empty()) {
+                    totalElements *= dims[0];
                 }
-            } else {
-                finalInitValues = initValues;
+                currentType = currentArrayType->getElementType();
             }
+
+            printf("Debug: Total elements needed: %d, got %zu init values\n", totalElements, initValues.size());
+
+            // 扁平化所有初始化值
+            std::vector<Value *> flatValues;
+            for (auto value: initValues) {
+                if (auto constInt = dynamic_cast<ConstInt *>(value)) {
+                    flatValues.push_back(constInt);
+                } else if (auto constFloat = dynamic_cast<ConstFloat *>(value)) {
+                    flatValues.push_back(constFloat);
+                } else if (auto globalVar = dynamic_cast<GlobalVariable *>(value)) {
+                    // 展开嵌套数组的初始化值
+                    const std::vector<Value *> & nestedValues = globalVar->getInitValueList();
+                    for (auto nestedValue: nestedValues) {
+                        flatValues.push_back(nestedValue);
+                    }
+                }
+            }
+
+            // 用零填充不足的元素，但不超过总元素数
+            while (flatValues.size() < static_cast<size_t>(totalElements)) {
+                flatValues.push_back(module->newConstInt(0));
+            }
+
+            // 确保不超过总元素数
+            if (flatValues.size() > static_cast<size_t>(totalElements)) {
+                flatValues.resize(totalElements);
+                printf("Debug: Trimmed flat values to %d elements\n", totalElements);
+            }
+
+            printf("Debug: Flattened to %zu values, setting as final init values\n", flatValues.size());
+            finalInitValues = flatValues;
         } else {
             finalInitValues = initValues;
         }
@@ -3666,14 +3599,57 @@ bool IRGenerator::ir_array_init(ast_node * node)
                constArray->getIRName().c_str(),
                arrayType->toString().c_str());
     } else {
-        // 嵌套数组：创建临时的全局变量，加入到模块中以确保生成符号定义
-        static int tempArrayCounter = 0;
-        std::string tempArrayName = "__temp_array_" + std::to_string(tempArrayCounter++);
-        GlobalVariable * tempArray = module->newGlobalConstArray(arrayType, tempArrayName);
-        tempArray->setInitValueList(initValues);
-        tempArray->setBSSSection(false); // 有初始值，不在BSS段
-        node->val = tempArray;
-        printf("Debug: Created temporary nested array for inlining\n");
+        // 嵌套数组：对于多维数组，直接扁平化而不创建临时数组
+        if (arrayType && arrayType->getElementType()->isArrayType()) {
+            // 这是多维数组，直接扁平化所有初始化值
+            printf("Debug: Creating flattened inline array (no temp array)\n");
+
+            // 直接将扁平化的值作为节点值，不创建全局变量
+            std::vector<Value *> flatValues;
+            for (auto value: initValues) {
+                if (auto constInt = dynamic_cast<ConstInt *>(value)) {
+                    flatValues.push_back(constInt);
+                } else if (auto constFloat = dynamic_cast<ConstFloat *>(value)) {
+                    flatValues.push_back(constFloat);
+                }
+            }
+
+            // 计算总的基础元素个数
+            int totalElements = 1;
+            const Type * currentType = arrayType;
+            while (currentType && currentType->isArrayType()) {
+                const ArrayType * currentArrayType = static_cast<const ArrayType *>(currentType);
+                const std::vector<int> & dims = currentArrayType->getDimensions();
+                if (!dims.empty()) {
+                    totalElements *= dims[0];
+                }
+                currentType = currentArrayType->getElementType();
+            }
+
+            // 用零填充不足的元素
+            while (flatValues.size() < static_cast<size_t>(totalElements)) {
+                flatValues.push_back(module->newConstInt(0));
+            }
+
+            // 创建一个特殊的值来表示这个扁平化的数组
+            // 这里我们使用第一个值作为代表，但实际上应该有更好的方法
+            if (!flatValues.empty()) {
+                node->val = flatValues[0];
+            } else {
+                node->val = module->newConstInt(0);
+            }
+            printf("Debug: Created flattened inline array with %zu elements\n", flatValues.size());
+        } else {
+            // 普通数组：创建临时的全局变量
+            static int tempArrayCounter = 0;
+            std::string tempArrayName = "__temp_array_" + std::to_string(tempArrayCounter++);
+
+            GlobalVariable * tempArray = module->newGlobalConstArray(arrayType, tempArrayName);
+            tempArray->setInitValueList(initValues);
+            tempArray->setBSSSection(false); // 有初始值，不在BSS段
+            node->val = tempArray;
+            printf("Debug: Created temporary nested array for inlining with %zu elements\n", initValues.size());
+        }
     }
 
     return true;

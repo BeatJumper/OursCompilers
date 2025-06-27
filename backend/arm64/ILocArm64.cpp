@@ -557,8 +557,39 @@ void ILocArm64::leaStack(int rs_reg_no, int base_reg_no, int64_t off)
 /// @param tmp_reg_No
 void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 {
-    // 使用在stackAlloc中计算的栈帧大小
-    int totalSize = func->getMaxDep();
+    // 重新计算栈帧大小，确保所有alloca指令的空间都被正确计算
+    int64_t allocaSize = 0;
+    int64_t localVarSize = 0;
+    int64_t tempVarSize = 0;
+
+    // 计算所有alloca指令的空间需求
+    for (auto inst: func->getInterCode().getInsts()) {
+        if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
+            Type * allocatedType = inst->getType();
+            int64_t size = allocatedType ? allocatedType->getSize() : 8;
+            size = (size + 7) & ~7; // 对齐到8字节
+            allocaSize += size;
+        }
+    }
+
+    // 计算局部变量的空间需求（非数组类型）
+    for (auto & local: func->getVarValues()) {
+        if (!local->getType()->isArrayType()) {
+            localVarSize += local->getType()->getSize();
+        }
+    }
+
+    // 计算临时变量的空间需求
+    for (auto inst: func->getInterCode().getInsts()) {
+        if (inst->hasResultValue() && inst->getOp() != IRInstOperator::IRINST_OP_ALLOCA && inst->getRegId() == -1) {
+            int32_t size = inst->getType()->getSize();
+            size += (4 - size % 4) % 4; // 对齐到4字节
+            tempVarSize += size;
+        }
+    }
+
+    // 计算总的栈帧大小
+    int totalSize = allocaSize + localVarSize + tempVarSize;
     int protectedRegNum = 0;
 
     // 保存寄存器空间
@@ -577,6 +608,12 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 
     func->setStackFrameSize(totalSize);
 
+    printf("Debug: 栈帧大小计算 - alloca: %ld, localVar: %ld, tempVar: %ld, total: %d\n",
+           allocaSize,
+           localVarSize,
+           tempVarSize,
+           totalSize);
+
     // 计算保存寄存器的偏移量
     int64_t saveOffset = totalSize - protectedRegNum * 8;
     std::string off;
@@ -591,10 +628,25 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
         off = "[sp, #LARGE_OFFSET]";
     }
 
-    // 局部变量空间 - 保持原来的逻辑，但确保偏移量为正
-    int tem = totalSize - protectedRegNum * 8;
-    // printf("Debug: allocStack totalSize=%d, protectedRegNum=%d, starting offset=%d\n", totalSize, protectedRegNum,
-    // tem);
+    // 局部变量空间 - 从alloca分配的空间之后开始分配
+    // 首先找到alloca指令分配的最大偏移量
+    int64_t maxAllocaOffset = 0;
+    for (auto inst: func->getInterCode().getInsts()) {
+        if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
+            int32_t base;
+            int64_t offset;
+            if (inst->getMemoryAddr(&base, &offset)) {
+                Type * allocatedType = inst->getType();
+                int64_t size = allocatedType ? allocatedType->getSize() : 8;
+                size = (size + 7) & ~7; // 对齐到8字节
+                maxAllocaOffset = std::max(maxAllocaOffset, offset + size);
+            }
+        }
+    }
+
+    // 从alloca空间之后开始分配局部变量
+    int64_t localVarOffset = maxAllocaOffset;
+
     for (auto & local: func->getVarValues()) {
         // 检查这个变量是否是alloca指令的结果
         std::string localName = local->getName();
@@ -606,9 +658,17 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 
         bool isAllocaResult = false;
 
-        // 简单的启发式：如果变量名是 "a"，跳过它（因为这是我们的数组变量）
-        if (localName == "a") {
-            isAllocaResult = true;
+        // 检查是否已经通过alloca指令分配了内存
+        for (auto inst: func->getInterCode().getInsts()) {
+            if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
+                if (inst->getOperandsNum() > 0) {
+                    Value * allocaResult = inst->getOperand(0);
+                    if (allocaResult == local) {
+                        isAllocaResult = true;
+                        break;
+                    }
+                }
+            }
         }
 
         if (isAllocaResult) {
@@ -616,22 +676,20 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
             continue;
         }
 
-        tem -= local->getType()->getSize();
-        // 确保偏移量为正数
-        if (tem < 0) {
-            tem = 0;
-        }
-        local->setOffset(tem);
-        printf("Debug: allocStack variable %s: size=%d, offset=%d\n",
+        // 对齐到4字节边界
+        localVarOffset = (localVarOffset + 3) & ~3;
+        local->setOffset(localVarOffset);
+        printf("Debug: allocStack variable %s: size=%d, offset=%ld\n",
                local->getName().c_str(),
                local->getType()->getSize(),
-               tem);
+               localVarOffset);
+
+        localVarOffset += local->getType()->getSize();
     }
 
     // 重新设置临时变量的偏移量，确保在栈帧范围内
-    // 临时变量从局部变量空间的最小偏移量开始分配
-    int min_local_offset = tem; // 局部变量的最小偏移量
-    int temp_offset = min_local_offset;
+    // 临时变量从局部变量空间之后开始分配
+    int64_t temp_offset = localVarOffset;
 
     for (auto inst: func->getInterCode().getInsts()) {
         if (inst->hasResultValue() && inst->getOp() != IRInstOperator::IRINST_OP_ALLOCA) {
@@ -651,7 +709,7 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
             if (!inst->getMemoryAddr(&existing_base, &existing_offset)) {
                 // 只有当指令还没有内存地址时才设置
                 inst->setMemoryAddr(ARM64_SP_REG_NO, temp_offset);
-                printf("Debug: 设置临时变量 %s 内存地址: offset=%d\n", inst->getIRName().c_str(), temp_offset);
+                printf("Debug: 设置临时变量 %s 内存地址: offset=%ld\n", inst->getIRName().c_str(), temp_offset);
             } else {
                 printf("Debug: 跳过已有内存地址的指令 %s: base=%d, offset=%ld\n",
                        inst->getIRName().c_str(),

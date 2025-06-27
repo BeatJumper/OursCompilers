@@ -109,7 +109,11 @@ void CodeGeneratorArm64::genDataSection()
                 // 处理数组类型全局变量的初始化值列表
                 auto & initValues = var->getInitValueList();
                 expandAndOutputInitValues(initValues);
-                fprintf(fp, ".size %s, %d\n", var->getName().c_str(), var->getType()->getSize());
+
+                // 计算实际输出的字节数：展开后的元素个数 * 4字节
+                int actualElements = countExpandedInitValues(initValues);
+                int actualSize = actualElements * 4;
+                fprintf(fp, ".size %s, %d\n", var->getName().c_str(), actualSize);
             } else {
                 // 默认情况：输出单个0
                 fprintf(fp, ".word 0\n");
@@ -581,6 +585,10 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
             // 注意：这里设置的是alloca指令本身的内存地址，
             // 在指令翻译时，lea_var会使用这个地址
             inst->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
+            printf("Debug: stackAlloc - alloca指令 %s 设置内存地址: offset=%ld, size=%ld\n",
+                   inst->getIRName().c_str(),
+                   sp_esp,
+                   size);
 
             // 为alloca指令的结果变量设置相同的内存地址
             if (inst->getOperandsNum() > 0) {
@@ -588,6 +596,9 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
                 // 尝试将结果变量转换为LocalVariable并设置内存地址
                 if (LocalVariable * localVar = dynamic_cast<LocalVariable *>(result)) {
                     localVar->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
+                    printf("Debug: stackAlloc - 局部变量 %s 设置内存地址: offset=%ld\n",
+                           localVar->getName().c_str(),
+                           sp_esp);
                 }
             }
             sp_esp += size;
@@ -638,12 +649,51 @@ void CodeGeneratorArm64::expandAndOutputInitValues(const std::vector<Value *> & 
             if (!globalVarElement->getInitValueList().empty()) {
                 expandAndOutputInitValues(globalVarElement->getInitValueList());
             } else {
-                // 如果嵌套的全局变量没有初始化值列表，输出0
-                fprintf(fp, ".word 0\n");
+                // 如果嵌套数组没有初始化值，输出零
+                if (globalVarElement->getType()->isArrayType()) {
+                    ArrayType * nestedArrayType = static_cast<ArrayType *>(globalVarElement->getType());
+                    int totalElements = nestedArrayType->getTotalElements();
+                    for (int i = 0; i < totalElements; i++) {
+                        fprintf(fp, ".word 0\n");
+                    }
+                } else {
+                    fprintf(fp, ".word 0\n");
+                }
             }
         } else {
             // 默认输出0
             fprintf(fp, ".word 0\n");
         }
     }
+}
+
+/// @brief 计算初始化值列表的实际元素个数（递归展开）
+/// @param initValues 初始化值列表
+/// @return 实际元素个数
+int CodeGeneratorArm64::countExpandedInitValues(const std::vector<Value *> & initValues)
+{
+    int count = 0;
+    for (auto element: initValues) {
+        if (auto constIntElement = dynamic_cast<ConstInt *>(element)) {
+            count++;
+        } else if (auto constFloatElement = dynamic_cast<ConstFloat *>(element)) {
+            count++;
+        } else if (auto globalVarElement = dynamic_cast<GlobalVariable *>(element)) {
+            // 递归计算嵌套的全局变量（嵌套数组）
+            if (!globalVarElement->getInitValueList().empty()) {
+                count += countExpandedInitValues(globalVarElement->getInitValueList());
+            } else {
+                // 如果嵌套数组没有初始化值，计算其应有的元素个数
+                if (globalVarElement->getType()->isArrayType()) {
+                    ArrayType * nestedArrayType = static_cast<ArrayType *>(globalVarElement->getType());
+                    count += nestedArrayType->getTotalElements();
+                } else {
+                    count++;
+                }
+            }
+        } else {
+            count++;
+        }
+    }
+    return count;
 }
