@@ -2962,14 +2962,15 @@ bool IRGenerator::ir_global_const_declare(ast_node * node,
                                           ast_node * initExprNode)
 {
     // 检查初始化表达式类型
-    if (initExprNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
-        // 处理简单的整数字面量
+    if (initExprNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT ||
+        initExprNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
+        // 处理标量字面量（整数或浮点数）
         return ir_global_const_scalar_declare(node, typeNode, nameNode, initExprNode);
     } else if (initExprNode->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
         // 处理数组初始化
         return ir_global_const_array_declare(node, typeNode, nameNode, initExprNode);
     } else {
-        printf("Error: Global constant must be initialized with integer literal or array initializer.\n");
+        printf("Error: Global constant must be initialized with literal value or array initializer.\n");
         return false;
     }
 }
@@ -2985,32 +2986,57 @@ bool IRGenerator::ir_global_const_scalar_declare(ast_node * node,
                                                  ast_node * nameNode,
                                                  ast_node * initExprNode)
 {
-    // 解析常量值
-    std::string numStr = initExprNode->name;
-    int32_t constValue = 0;
+    Value * constValue = nullptr;
 
-    try {
-        if (numStr.size() >= 2 && (numStr.substr(0, 2) == "0x" || numStr.substr(0, 2) == "0X")) {
-            // 十六进制数字 - 使用stoull避免溢出，然后转换为int32_t
-            uint64_t temp = std::stoull(numStr, nullptr, 16);
-            constValue = static_cast<int32_t>(static_cast<uint32_t>(temp));
-        } else if (numStr.size() >= 2 && numStr[0] == '0' && numStr[1] >= '0' && numStr[1] <= '7') {
-            // 八进制数字
-            uint64_t temp = std::stoull(numStr, nullptr, 8);
-            constValue = static_cast<int32_t>(static_cast<uint32_t>(temp));
-        } else {
-            // 十进制数字
-            uint64_t temp = std::stoull(numStr, nullptr, 10);
-            constValue = static_cast<int32_t>(static_cast<uint32_t>(temp));
+    // 根据初始化表达式的类型创建相应的常量值
+    if (initExprNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+        // 整数字面量
+        std::string numStr = initExprNode->name;
+        int32_t intValue = 0;
+
+        try {
+            if (numStr.size() >= 2 && (numStr.substr(0, 2) == "0x" || numStr.substr(0, 2) == "0X")) {
+                // 十六进制数字
+                uint64_t temp = std::stoull(numStr, nullptr, 16);
+                intValue = static_cast<int32_t>(static_cast<uint32_t>(temp));
+            } else if (numStr.size() >= 2 && numStr[0] == '0' && numStr[1] >= '0' && numStr[1] <= '7') {
+                // 八进制数字
+                uint64_t temp = std::stoull(numStr, nullptr, 8);
+                intValue = static_cast<int32_t>(static_cast<uint32_t>(temp));
+            } else {
+                // 十进制数字
+                uint64_t temp = std::stoull(numStr, nullptr, 10);
+                intValue = static_cast<int32_t>(static_cast<uint32_t>(temp));
+            }
+        } catch (const std::exception & e) {
+            printf("Error: Failed to parse integer constant '%s': %s\n", numStr.c_str(), e.what());
+            return false;
         }
-    } catch (const std::exception & e) {
-        printf("Error: Failed to parse constant literal '%s': %s\n", numStr.c_str(), e.what());
+
+        if (typeNode->type->isFloatType()) {
+            // 目标类型是浮点数，进行类型转换
+            constValue = module->newConstFloat(static_cast<float>(intValue));
+        } else {
+            // 目标类型是整数
+            constValue = module->newConstInt(intValue);
+        }
+    } else if (initExprNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
+        // 浮点数字面量
+        float floatValue = initExprNode->float_val;
+
+        if (typeNode->type->isIntegerType()) {
+            // 目标类型是整数，进行类型转换
+            constValue = module->newConstInt(static_cast<int32_t>(floatValue));
+        } else {
+            // 目标类型是浮点数
+            constValue = module->newConstFloat(floatValue);
+        }
+    } else {
+        printf("Error: Unsupported constant type for global constant declaration.\n");
         return false;
     }
 
-    // 创建常量值
-    ConstInt * constInt = module->newConstInt(constValue);
-    if (!constInt) {
+    if (!constValue) {
         printf("Error: Failed to create constant value.\n");
         return false;
     }
@@ -3024,11 +3050,19 @@ bool IRGenerator::ir_global_const_scalar_declare(ast_node * node,
 
     // 将其转换为 GlobalVariable 并设置初值
     GlobalVariable * globalVar = static_cast<GlobalVariable *>(globalConst);
-    globalVar->setInitValue(constInt);
-    // 设置BSS
-    if (constInt->getVal() != 0) {
-        globalVar->setBSSSection(false);
+    globalVar->setInitValue(constValue);
+
+    // 设置BSS段标志
+    if (ConstInt * constInt = dynamic_cast<ConstInt *>(constValue)) {
+        if (constInt->getVal() != 0) {
+            globalVar->setBSSSection(false);
+        }
+    } else if (ConstFloat * constFloat = dynamic_cast<ConstFloat *>(constValue)) {
+        if (constFloat->getVal() != 0.0f) {
+            globalVar->setBSSSection(false);
+        }
     }
+
     globalVar->setConstant(true);
 
     // 设置节点值
@@ -3536,9 +3570,12 @@ bool IRGenerator::ir_array_init(ast_node * node)
                         }
 
                         // 创建内层数组的全局变量
+                        static int tempRowCounter = 0;
+                        std::string tempRowName = "__temp_row_" + std::to_string(tempRowCounter++);
                         GlobalVariable * rowArray =
-                            new GlobalVariable(const_cast<ArrayType *>(innerArrayType), "temp_row");
+                            module->newGlobalConstArray(const_cast<ArrayType *>(innerArrayType), tempRowName);
                         rowArray->setInitValueList(rowValues);
+                        rowArray->setBSSSection(false); // 有初始值，不在BSS段
                         finalInitValues.push_back(rowArray);
                         printf("Debug: Created row %d with %zu elements\n", i, rowValues.size());
                     }
@@ -3582,9 +3619,12 @@ bool IRGenerator::ir_array_init(ast_node * node)
                                 }
 
                                 // 创建内层数组
+                                static int tempRowCounter2 = 0;
+                                std::string tempRowName2 = "__temp_row_mixed_" + std::to_string(tempRowCounter2++);
                                 GlobalVariable * rowArray =
-                                    new GlobalVariable(const_cast<ArrayType *>(innerArrayType), "temp_row");
+                                    module->newGlobalConstArray(const_cast<ArrayType *>(innerArrayType), tempRowName2);
                                 rowArray->setInitValueList(rowValues);
+                                rowArray->setBSSSection(false); // 有初始值，不在BSS段
                                 finalInitValues.push_back(rowArray);
                                 printf("Debug: Created mixed row %d with %zu elements\n", i, rowValues.size());
                             }
@@ -3597,9 +3637,12 @@ bool IRGenerator::ir_array_init(ast_node * node)
                         for (int j = 0; j < cols; ++j) {
                             zeroRow.push_back(module->newConstInt(0));
                         }
+                        static int tempRowCounter3 = 0;
+                        std::string tempRowName3 = "__temp_row_zero_" + std::to_string(tempRowCounter3++);
                         GlobalVariable * rowArray =
-                            new GlobalVariable(const_cast<ArrayType *>(innerArrayType), "temp_row");
+                            module->newGlobalConstArray(const_cast<ArrayType *>(innerArrayType), tempRowName3);
                         rowArray->setInitValueList(zeroRow);
+                        rowArray->setBSSSection(false); // 有初始值，不在BSS段
                         finalInitValues.push_back(rowArray);
                         printf("Debug: Added zero-filled row %zu\n", finalInitValues.size() - 1);
                     }
@@ -3623,9 +3666,12 @@ bool IRGenerator::ir_array_init(ast_node * node)
                constArray->getIRName().c_str(),
                arrayType->toString().c_str());
     } else {
-        // 嵌套数组：创建临时的虚拟全局变量，不加入到模块中
-        GlobalVariable * tempArray = new GlobalVariable(arrayType, "temp");
+        // 嵌套数组：创建临时的全局变量，加入到模块中以确保生成符号定义
+        static int tempArrayCounter = 0;
+        std::string tempArrayName = "__temp_array_" + std::to_string(tempArrayCounter++);
+        GlobalVariable * tempArray = module->newGlobalConstArray(arrayType, tempArrayName);
         tempArray->setInitValueList(initValues);
+        tempArray->setBSSSection(false); // 有初始值，不在BSS段
         node->val = tempArray;
         printf("Debug: Created temporary nested array for inlining\n");
     }
@@ -3853,8 +3899,45 @@ bool IRGenerator::handleDynamicInitialization(ast_node * node,
                 printf("Debug: Stored element [%zu][%zu]\n", i, j);
             }
         } else {
-            printf("Error: Expected nested array initialization for row %zu\n", i);
-            return false;
+            // 处理非嵌套的初始化，比如单个表达式或数组访问
+            printf("Debug: Processing row %zu with single expression\n", i);
+
+            // 生成目标地址：arrayVar[i][0] (假设是行的第一个元素)
+            ConstInt * rowIndex = module->newConstInt(i);
+            ConstInt * colIndex = module->newConstInt(0);
+            ConstInt * zeroConst = module->newConstInt(0);
+
+            // 首先获取行地址：arrayVar[0][i]
+            GetelementptrInstruction * rowGepInst =
+                new GetelementptrInstruction(currentFunc, arrayVar, zeroConst, rowIndex);
+            node->blockInsts.addInst(rowGepInst);
+
+            // 然后获取列地址：row[0][0]
+            GetelementptrInstruction * colGepInst =
+                new GetelementptrInstruction(currentFunc, rowGepInst, zeroConst, colIndex);
+            node->blockInsts.addInst(colGepInst);
+
+            // 处理元素值
+            if (!ir_visit_ast_node(rowInitNode)) {
+                printf("Error: Failed to process element [%zu][0]\n", i);
+                return false;
+            }
+            node->blockInsts.addInst(rowInitNode->blockInsts);
+
+            Value * elementValue = rowInitNode->val;
+
+            // 如果是数组访问或变量，需要load
+            if (needsLoad(elementValue)) {
+                LoadInstruction * loadInst = new LoadInstruction(currentFunc, elementValue, elementValue, 4);
+                node->blockInsts.addInst(loadInst);
+                elementValue = loadInst;
+            }
+
+            // 存储到目标位置
+            StoreInstruction * storeInst = new StoreInstruction(currentFunc, elementValue, colGepInst, 4);
+            node->blockInsts.addInst(storeInst);
+
+            printf("Debug: Stored single element [%zu][0]\n", i);
         }
     }
 

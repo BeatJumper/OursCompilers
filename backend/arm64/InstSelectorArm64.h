@@ -90,10 +90,31 @@ protected:
     /// @param inst IR指令
     void translate_div_i(Instruction * inst);
 
+    /// @brief 浮点数加法指令翻译成ARM64汇编
+    /// @param inst IR指令
+    void translate_add_f(Instruction * inst);
+
+    /// @brief 浮点数减法指令翻译成ARM64汇编
+    /// @param inst IR指令
+    void translate_sub_f(Instruction * inst);
+
+    /// @brief 浮点数乘法指令翻译成ARM64汇编
+    /// @param inst IR指令
+    void translate_mul_f(Instruction * inst);
+
+    /// @brief 浮点数除法指令翻译成ARM64汇编
+    /// @param inst IR指令
+    void translate_div_f(Instruction * inst);
+
     /// @brief 二元操作指令翻译成ARM64汇编
     /// @param inst IR指令
     /// @param operator_name 操作码
     void translate_two_operator(Instruction * inst, string operator_name);
+
+    /// @brief 浮点数二元操作指令翻译成ARM64汇编
+    /// @param inst IR指令
+    /// @param operator_name 操作码
+    void translate_two_operator_float(Instruction * inst, string operator_name);
 
     /// @brief 函数调用指令翻译成ARM64汇编
     /// @param inst IR指令
@@ -152,6 +173,12 @@ protected:
     /// @param inst IR指令
     ///
     void translate_fptosi(Instruction * inst);
+
+    ///
+    /// @brief sitofp指令翻译成ARM64汇编
+    /// @param inst IR指令
+    ///
+    void translate_sitofp(Instruction * inst);
 
     ///
     /// @brief getelementptr指令翻译成ARM64汇编

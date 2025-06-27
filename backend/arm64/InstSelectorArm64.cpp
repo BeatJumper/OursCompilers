@@ -57,6 +57,12 @@ InstSelectorArm64::InstSelectorArm64(vector<Instruction *> & _irCode, ILocArm64 
     translator_handlers[IRInstOperator::IRINST_OP_DIV_I] = &InstSelectorArm64::translate_div_i;
     translator_handlers[IRInstOperator::IRINST_OP_MOD_I] = &InstSelectorArm64::translate_mod_i;
 
+    // 浮点数算术指令
+    translator_handlers[IRInstOperator::IRINST_OP_ADD_F] = &InstSelectorArm64::translate_add_f;
+    translator_handlers[IRInstOperator::IRINST_OP_SUB_F] = &InstSelectorArm64::translate_sub_f;
+    translator_handlers[IRInstOperator::IRINST_OP_MUL_F] = &InstSelectorArm64::translate_mul_f;
+    translator_handlers[IRInstOperator::IRINST_OP_DIV_F] = &InstSelectorArm64::translate_div_f;
+
     translator_handlers[IRInstOperator::IRINST_OP_FUNC_CALL] = &InstSelectorArm64::translate_call;
     translator_handlers[IRInstOperator::IRINST_OP_ARG] = &InstSelectorArm64::translate_arg;
 
@@ -81,6 +87,7 @@ InstSelectorArm64::InstSelectorArm64(vector<Instruction *> & _irCode, ILocArm64 
     translator_handlers[IRInstOperator::IRINST_OP_RET] = &InstSelectorArm64::translate_ret;
 
     translator_handlers[IRInstOperator::IRINST_OP_FPTOSI] = &InstSelectorArm64::translate_fptosi;
+    translator_handlers[IRInstOperator::IRINST_OP_SITOFP] = &InstSelectorArm64::translate_sitofp;
 
     // 添加数组相关操作符支持
     translator_handlers[IRInstOperator::IRINST_OP_GEP] = &InstSelectorArm64::translate_gep;
@@ -307,6 +314,67 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
     iloc.inst(operator_name, PlatformArm64::regName[result_reg_no], s1, s2);
 }
 
+/// @brief 浮点数二元操作指令翻译成ARM64汇编
+/// @param inst IR指令
+/// @param operator_name 操作码
+void InstSelectorArm64::translate_two_operator_float(Instruction * inst, string operator_name)
+{
+    // 获取操作数
+    Value * arg1 = inst->getOperand(0);
+    Value * arg2 = inst->getOperand(1);
+
+    // 获取寄存器编号
+    int result_reg_no = inst->getRegId();
+    int arg1_reg_no = arg1->getRegId();
+    int arg2_reg_no = arg2->getRegId();
+
+    printf("Debug: translate_two_operator_float - result_reg=%d, arg1_reg=%d, arg2_reg=%d\n",
+           result_reg_no,
+           arg1_reg_no,
+           arg2_reg_no);
+
+    // 检查结果寄存器编号有效性
+    if (result_reg_no < 0 || result_reg_no >= PlatformArm64::maxVecRegNum) {
+        printf("Error: Invalid result register number: %d\n", result_reg_no);
+        return;
+    }
+
+    // 处理操作数
+    std::string s1, s2;
+
+    // 处理第一个操作数
+    if (arg1_reg_no >= 0 && arg1_reg_no < PlatformArm64::maxVecRegNum) {
+        // 操作数1在浮点寄存器中
+        s1 = PlatformArm64::floatRegName[arg1_reg_no];
+    } else {
+        // 操作数1不在寄存器中，需要加载到临时寄存器
+        printf("Debug: arg1 not in register, loading to temp register\n");
+        iloc.load_var(ARM64_TMP_REG_NO, arg1);
+        s1 = PlatformArm64::regName[ARM64_TMP_REG_NO];
+    }
+
+    // 处理第二个操作数
+    if (arg2_reg_no >= 0 && arg2_reg_no < PlatformArm64::maxVecRegNum) {
+        // 操作数2在浮点寄存器中
+        s2 = PlatformArm64::floatRegName[arg2_reg_no];
+    } else {
+        // 操作数2不在寄存器中，需要加载到另一个临时寄存器
+        printf("Debug: arg2 not in register, loading to temp register\n");
+        int temp_reg = (s1 == PlatformArm64::regName[ARM64_TMP_REG_NO]) ? ARM64_TMP_REG_NO + 1 : ARM64_TMP_REG_NO;
+        iloc.load_var(temp_reg, arg2);
+        s2 = PlatformArm64::regName[temp_reg];
+    }
+
+    printf("Debug: Generating %s %s, %s, %s\n",
+           operator_name.c_str(),
+           PlatformArm64::floatRegName[result_reg_no].c_str(),
+           s1.c_str(),
+           s2.c_str());
+
+    // 生成浮点数运算指令
+    iloc.inst(operator_name, PlatformArm64::floatRegName[result_reg_no], s1, s2);
+}
+
 /// @brief 加法指令翻译成ARM64汇编
 /// @param inst IR指令
 void InstSelectorArm64::translate_add_i(Instruction * inst)
@@ -414,6 +482,34 @@ void InstSelectorArm64::translate_mod_i(Instruction * inst)
         need_save_arg1 ? PlatformArm64::regName[temp_reg_no] : PlatformArm64::regName[arg1_reg_no];
 
     iloc.inst("subs", PlatformArm64::regName[result_reg_no], arg1_reg_name, PlatformArm64::regName[result_reg_no]);
+}
+
+/// @brief 浮点数加法指令翻译成ARM64汇编
+/// @param inst IR指令
+void InstSelectorArm64::translate_add_f(Instruction * inst)
+{
+    translate_two_operator_float(inst, "fadd");
+}
+
+/// @brief 浮点数减法指令翻译成ARM64汇编
+/// @param inst IR指令
+void InstSelectorArm64::translate_sub_f(Instruction * inst)
+{
+    translate_two_operator_float(inst, "fsub");
+}
+
+/// @brief 浮点数乘法指令翻译成ARM64汇编
+/// @param inst IR指令
+void InstSelectorArm64::translate_mul_f(Instruction * inst)
+{
+    translate_two_operator_float(inst, "fmul");
+}
+
+/// @brief 浮点数除法指令翻译成ARM64汇编
+/// @param inst IR指令
+void InstSelectorArm64::translate_div_f(Instruction * inst)
+{
+    translate_two_operator_float(inst, "fdiv");
 }
 
 /// @brief 函数调用指令翻译成ARM64汇编
@@ -584,47 +680,95 @@ void InstSelectorArm64::translate_cmp(Instruction * inst)
     int32_t arg2_reg_no = arg2->getRegId();
     int32_t result_reg_no = result->getRegId();
 
-    // 处理常量操作数
-    std::string arg1_str = PlatformArm64::regName[arg1_reg_no];
-    std::string arg2_str;
+    // 检查是否为浮点数比较
+    Value * arg1_val = inst->getOperand(0);
+    Value * arg2_val = inst->getOperand(1);
+    bool isFloatComparison = arg1_val->getType()->isFloatType() || arg2_val->getType()->isFloatType();
 
-    if (Instanceof(constVal, ConstInt *, arg2)) {
-        // 第二个操作数是常量
-        arg2_str = "#" + std::to_string(constVal->getVal());
+    // 处理常量操作数和寄存器名称
+    std::string arg1_str, arg2_str;
+
+    if (isFloatComparison) {
+        // 浮点数比较使用浮点寄存器名称
+        arg1_str = PlatformArm64::floatRegName[arg1_reg_no];
+
+        if (Instanceof(constFloat, ConstFloat *, arg2)) {
+            // 浮点数常量需要先加载到寄存器
+            arg2_str = PlatformArm64::floatRegName[arg2_reg_no];
+        } else {
+            arg2_str = PlatformArm64::floatRegName[arg2_reg_no];
+        }
     } else {
-        arg2_str = PlatformArm64::regName[arg2_reg_no];
-    }
+        // 整数比较使用通用寄存器名称
+        arg1_str = PlatformArm64::regName[arg1_reg_no];
 
-    // 生成比较指令
-    iloc.inst("cmp", arg1_str, arg2_str);
+        if (Instanceof(constVal, ConstInt *, arg2)) {
+            // 第二个操作数是常量
+            arg2_str = "#" + std::to_string(constVal->getVal());
+        } else {
+            arg2_str = PlatformArm64::regName[arg2_reg_no];
+        }
+    }
 
     // 根据比较类型设置结果寄存器
     IRInstOperator op = inst->getOp();
     std::string condition;
 
-    switch (op) {
-        case IRInstOperator::IRINST_OP_LT:
-        case IRInstOperator::IRINST_OP_ICMP: // 假设 icmp slt
-            condition = "lt";
-            break;
-        case IRInstOperator::IRINST_OP_LE:
-            condition = "le";
-            break;
-        case IRInstOperator::IRINST_OP_GT:
-            condition = "gt";
-            break;
-        case IRInstOperator::IRINST_OP_GE:
-            condition = "ge";
-            break;
-        case IRInstOperator::IRINST_OP_EQ:
-            condition = "eq";
-            break;
-        case IRInstOperator::IRINST_OP_NE:
-            condition = "ne";
-            break;
-        default:
-            condition = "lt"; // 默认为小于
-            break;
+    if (isFloatComparison) {
+        // 浮点数比较使用fcmp指令
+        iloc.inst("fcmp", arg1_str, arg2_str);
+
+        switch (op) {
+            case IRInstOperator::IRINST_OP_LT:
+                condition = "mi"; // minus (less than for floats)
+                break;
+            case IRInstOperator::IRINST_OP_LE:
+                condition = "ls"; // lower or same
+                break;
+            case IRInstOperator::IRINST_OP_GT:
+                condition = "gt"; // greater than
+                break;
+            case IRInstOperator::IRINST_OP_GE:
+                condition = "ge"; // greater or equal
+                break;
+            case IRInstOperator::IRINST_OP_EQ:
+                condition = "eq"; // equal
+                break;
+            case IRInstOperator::IRINST_OP_NE:
+                condition = "ne"; // not equal
+                break;
+            default:
+                condition = "mi"; // 默认为小于
+                break;
+        }
+    } else {
+        // 整数比较使用cmp指令
+        iloc.inst("cmp", arg1_str, arg2_str);
+
+        switch (op) {
+            case IRInstOperator::IRINST_OP_LT:
+            case IRInstOperator::IRINST_OP_ICMP: // 假设 icmp slt
+                condition = "lt";
+                break;
+            case IRInstOperator::IRINST_OP_LE:
+                condition = "le";
+                break;
+            case IRInstOperator::IRINST_OP_GT:
+                condition = "gt";
+                break;
+            case IRInstOperator::IRINST_OP_GE:
+                condition = "ge";
+                break;
+            case IRInstOperator::IRINST_OP_EQ:
+                condition = "eq";
+                break;
+            case IRInstOperator::IRINST_OP_NE:
+                condition = "ne";
+                break;
+            default:
+                condition = "lt"; // 默认为小于
+                break;
+        }
     }
 
     // 设置结果寄存器：如果条件成立则为1，否则为0
@@ -821,7 +965,28 @@ void InstSelectorArm64::translate_ret(Instruction * inst)
 /// @brief fptosi指令翻译成ARM64汇编
 /// @param inst IR指令
 void InstSelectorArm64::translate_fptosi(Instruction * inst)
-{}
+{
+    // 浮点数转有符号整数：fcvtzs
+    Value * src = inst->getOperand(0);
+    int src_reg_no = src->getRegId();
+    int result_reg_no = inst->getRegId();
+
+    // 使用fcvtzs指令：浮点数转有符号整数（向零舍入）
+    iloc.inst("fcvtzs", PlatformArm64::regName[result_reg_no], PlatformArm64::floatRegName[src_reg_no]);
+}
+
+/// @brief sitofp指令翻译成ARM64汇编
+/// @param inst IR指令
+void InstSelectorArm64::translate_sitofp(Instruction * inst)
+{
+    // 有符号整数转浮点数：scvtf
+    Value * src = inst->getOperand(0);
+    int src_reg_no = src->getRegId();
+    int result_reg_no = inst->getRegId();
+
+    // 使用scvtf指令：有符号整数转浮点数
+    iloc.inst("scvtf", PlatformArm64::floatRegName[result_reg_no], PlatformArm64::regName[src_reg_no]);
+}
 
 /// @brief getelementptr指令翻译成ARM64汇编
 /// @param inst IR指令

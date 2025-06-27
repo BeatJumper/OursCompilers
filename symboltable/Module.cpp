@@ -520,6 +520,7 @@ GlobalVariable * Module::newGlobalConstArray(ArrayType * arrayType, const std::s
     GlobalVariable * constArray = new GlobalVariable(arrayType, arrayName);
     constArray->setConstant(true);
     constArray->setAlignment(16);
+    constArray->setBSSSection(false); // 常量数组不在BSS段
 
     // 使用 insertGlobalValueDirectly 方法来正确添加到全局变量列表
     insertGlobalValueDirectly(constArray);

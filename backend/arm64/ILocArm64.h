@@ -130,6 +130,11 @@ public:
     /// @param num 立即数
     void load_imm(int rs_reg_no, int64_t num);
 
+    /// @brief 加载浮点数立即数
+    /// @param rs_reg_no 结果寄存器号
+    /// @param val 浮点数值
+    void load_float_imm(int rs_reg_no, float val);
+
     /// @brief Load指令，基址寻址 ldr x0,[fp,#100]
     /// @param rs_reg_no 结果寄存器
     /// @param base_reg_no 基址寄存器

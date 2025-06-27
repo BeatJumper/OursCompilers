@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <string>
 #include <iostream>
+#include <cstring>
 
 #include "ILocArm64.h"
 #include "Common.h"
@@ -264,6 +265,25 @@ void ILocArm64::load_imm(int rs_reg_no, int64_t constant)
     emit("mov", PlatformArm64::regName[rs_reg_no], "#" + std::to_string(constant));
 }
 
+/*
+    加载浮点数立即数
+*/
+void ILocArm64::load_float_imm(int rs_reg_no, float val)
+{
+    // 对于浮点数常量，ARM64通常需要通过内存加载
+    // 这里我们使用一个简化的方法：将浮点数转换为整数位模式，然后移动到浮点寄存器
+
+    // 将float转换为uint32_t的位模式
+    uint32_t bits;
+    std::memcpy(&bits, &val, sizeof(float));
+
+    // 先将位模式加载到通用寄存器
+    emit("mov", "w" + std::to_string(rs_reg_no + 32), "#" + std::to_string(bits));
+
+    // 然后从通用寄存器移动到浮点寄存器
+    emit("fmov", "s" + std::to_string(rs_reg_no), "w" + std::to_string(rs_reg_no + 32));
+}
+
 /// @brief 加载符号值 ldr r0,=g ldr r0,=.L1
 /// @param rs_reg_no 结果寄存器编号
 /// @param name 符号名
@@ -371,6 +391,10 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
         // 整型常量
         // mov w8,#100
         load_imm(rs_reg_no, constVal->getVal());
+    } else if (Instanceof(constFloat, ConstFloat *, src_var)) {
+        // 浮点数常量
+        // 对于浮点数常量，需要将其加载到浮点寄存器
+        load_float_imm(rs_reg_no, constFloat->getVal());
     } else if (src_var->getRegId() != -1) {
 
         // 源操作数为寄存器变量
