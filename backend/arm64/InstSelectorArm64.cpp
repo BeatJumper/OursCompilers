@@ -812,10 +812,15 @@ void InstSelectorArm64::translate_load(Instruction * inst)
             if (base_reg_name[0] == 'w')
                 base_reg_name[0] = 'x';
 
-            if (offset >= 0) {
+            // 检查立即数范围
+            if (offset >= 0 && offset <= 4095) {
                 iloc.inst("add", temp_reg_name, base_reg_name, "#" + std::to_string(offset));
-            } else {
+            } else if (offset < 0 && (-offset) <= 4095) {
                 iloc.inst("sub", temp_reg_name, base_reg_name, "#" + std::to_string(-offset));
+            } else {
+                // 偏移量超出范围，使用临时寄存器
+                iloc.load_imm(temp_reg, offset);
+                iloc.inst("add", temp_reg_name, base_reg_name, temp_reg_name);
             }
 
             // 从临时寄存器中的地址加载数据
@@ -864,8 +869,22 @@ void InstSelectorArm64::translate_store(Instruction * inst)
         int32_t dest_baseRegId = -1;
         int64_t dest_offset = -1;
         if (arg2->getMemoryAddr(&dest_baseRegId, &dest_offset)) {
-            std::string s = "[" + PlatformArm64::regName[dest_baseRegId] + ",#" + std::to_string(dest_offset) + "]";
-            iloc.inst("str", "wzr", s);
+            // 检查偏移量是否在str指令的有效范围内
+            // 对于32位数据：有符号偏移-256到+255，或无符号偏移0到16380（4字节对齐）
+            if ((dest_offset >= -256 && dest_offset <= 255) ||
+                (dest_offset >= 0 && dest_offset <= 16380 && (dest_offset % 4) == 0)) {
+                // 偏移量在有效范围内，直接使用str指令
+                std::string s = "[" + PlatformArm64::regName[dest_baseRegId] + ",#" + std::to_string(dest_offset) + "]";
+                iloc.inst("str", "wzr", s);
+            } else {
+                // 偏移量超出范围，先计算地址，然后使用间接寻址
+                iloc.load_imm(ARM64_TMP_REG_NO, dest_offset);
+                iloc.inst("add",
+                          PlatformArm64::regName[ARM64_TMP_REG_NO + 32],
+                          PlatformArm64::regName[dest_baseRegId],
+                          PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
+                iloc.inst("str", "wzr", "[" + PlatformArm64::regName[ARM64_TMP_REG_NO + 32] + "]");
+            }
         }
     } else if (arg1_regId != -1) {
         // 寄存器 => 内存
@@ -887,11 +906,15 @@ void InstSelectorArm64::translate_store(Instruction * inst)
             if (base_reg_name[0] == 'w')
                 base_reg_name[0] = 'x';
 
-            // 重新计算目标地址
-            if (dest_offset >= 0) {
+            // 重新计算目标地址，检查立即数范围
+            if (dest_offset >= 0 && dest_offset <= 4095) {
                 iloc.inst("add", temp_reg_name, base_reg_name, "#" + std::to_string(dest_offset));
-            } else {
+            } else if (dest_offset < 0 && (-dest_offset) <= 4095) {
                 iloc.inst("sub", temp_reg_name, base_reg_name, "#" + std::to_string(-dest_offset));
+            } else {
+                // 偏移量超出范围，使用临时寄存器
+                iloc.load_imm(temp_reg, dest_offset);
+                iloc.inst("add", temp_reg_name, base_reg_name, temp_reg_name);
             }
 
             // 存储到重新计算的地址
@@ -952,8 +975,24 @@ void InstSelectorArm64::translate_ret(Instruction * inst)
             } else {
                 LocalVariable * localResult = dynamic_cast<LocalVariable *>(returnValue);
                 int off = localResult->getOffset();
-                std::string s = "[sp,#" + std::to_string(off) + "]";
-                iloc.inst("ldr", PlatformArm64::regName[0], s);
+
+                // 检查偏移量是否在ldr指令的有效范围内
+                // 对于32位数据：有符号偏移-256到+255，或无符号偏移0到16380（4字节对齐）
+                if ((off >= -256 && off <= 255) || (off >= 0 && off <= 16380 && (off % 4) == 0)) {
+                    // 偏移量在有效范围内，直接使用ldr指令
+                    std::string s = "[sp,#" + std::to_string(off) + "]";
+                    iloc.inst("ldr", PlatformArm64::regName[0], s);
+                } else {
+                    // 偏移量超出范围，使用间接寻址
+                    iloc.load_imm(ARM64_TMP_REG_NO, off);
+                    iloc.inst("add",
+                              PlatformArm64::regName[ARM64_TMP_REG_NO + 32],
+                              "sp",
+                              PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
+                    iloc.inst("ldr",
+                              PlatformArm64::regName[0],
+                              "[" + PlatformArm64::regName[ARM64_TMP_REG_NO + 32] + "]");
+                }
             }
         }
     }
@@ -1240,10 +1279,17 @@ void InstSelectorArm64::translate_bitcast(Instruction * inst)
                     base_reg_name[0] = 'x';
                 }
 
-                if (offset >= 0) {
+                // 检查偏移量是否在add/sub指令的立即数范围内（0-4095）
+                if (offset >= 0 && offset <= 4095) {
+                    // 正偏移量在有效范围内，使用add指令
                     iloc.inst("add", result_reg_name, base_reg_name, "#" + std::to_string(offset));
-                } else {
+                } else if (offset < 0 && (-offset) <= 4095) {
+                    // 负偏移量在有效范围内，使用sub指令
                     iloc.inst("sub", result_reg_name, base_reg_name, "#" + std::to_string(-offset));
+                } else {
+                    // 偏移量超出范围，使用临时寄存器
+                    iloc.load_imm(ARM64_TMP_REG_NO, offset);
+                    iloc.inst("add", result_reg_name, base_reg_name, PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
                 }
 
             } else if (result_reg != source_reg) {
@@ -1368,10 +1414,15 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
             if (base_reg_name[0] == 'w')
                 base_reg_name[0] = 'x';
 
-            if (base_offset >= 0) {
+            // 检查偏移量是否在add/sub指令的立即数范围内（0-4095）
+            if (base_offset >= 0 && base_offset <= 4095) {
                 iloc.inst("add", dest_reg_name, base_reg_name, "#" + std::to_string(base_offset));
-            } else {
+            } else if (base_offset < 0 && (-base_offset) <= 4095) {
                 iloc.inst("sub", dest_reg_name, base_reg_name, "#" + std::to_string(-base_offset));
+            } else {
+                // 偏移量超出范围，使用临时寄存器
+                iloc.load_imm(ARM64_TMP_REG_NO + 1, base_offset); // 使用另一个临时寄存器
+                iloc.inst("add", dest_reg_name, base_reg_name, PlatformArm64::regName[ARM64_TMP_REG_NO + 1 + 32]);
             }
             printf("Debug: memcpy calculated dest address: %s = %s + %ld\n",
                    dest_reg_name.c_str(),
