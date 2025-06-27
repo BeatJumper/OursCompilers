@@ -21,6 +21,7 @@
 #include "BinaryInstruction.h"
 #include "StoreInstruction.h"
 #include "InterferenceGraph.h"
+#include "LoadInstruction.h"
 #include "VoidType.h"
 
 /// @brief 构造函数
@@ -274,7 +275,49 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
             break;
         } else {
             // TODO 完成变量溢出的工作
-            assert(false);
+            auto x = graph_ig->uncolored_node_set.end();
+            x--;
+            /*
+            while ((*x)->val->getRegId() != -1) {
+                x--;
+            }
+            // 首先取出目前干涉图中度数最高,且没有预定寄存器的Value
+            Value * most_degree_val = (*x)->val;
+            */
+            // 首先取出目前干涉图中度数最高的Value
+            Value * most_degree_val = (*x)->val;
+            auto & insts = func->getInterCode().getInsts();
+            for (int i = 0; i < insts.size(); i++) {
+                Value *regval_write = nullptr, *regval_read = nullptr;
+                LocalVariable *localval_write = nullptr, *localval_read = nullptr;
+                if (insts[i] == most_degree_val) {
+                    insts[i] = new Instruction(*insts[i]);
+                } else if (insts[i]->get_def_set().count(most_degree_val)) {
+                    localval_write = func->newLocalVarValue(IntegerType::getTypeInt());
+                    regval_write = new Value(IntegerType::getTypeInt());
+                    Instruction * strinst = new StoreInstruction(func, regval_write, localval_write);
+                    insts.insert(insts.begin() + i + 1, strinst);
+                    for (int k = 0; k < insts[i]->getOperandsNum(); k++) {
+                        if (insts[i]->getOperand(k) == most_degree_val) {
+                            insts[i]->getOperands()[k]->setUsee(regval_write);
+                            break;
+                        }
+                    }
+                }
+                if (insts[i]->get_use_set().count(most_degree_val)) {
+                    localval_read = func->newLocalVarValue(IntegerType::getTypeInt());
+                    regval_read = new Value(IntegerType::getTypeInt());
+                    Instruction * ldrinst = new LoadInstruction(func, regval_read, localval_read);
+                    insts.insert(insts.begin() + i, ldrinst);
+                    i++;
+                    for (int k = insts[i]->getOperandsNum() - 1; k >= 0; k--) {
+                        if (insts[i]->getOperand(k) == most_degree_val) {
+                            insts[i]->getOperands()[k]->setUsee(regval_read);
+                            break;
+                        }
+                    }
+                }
+            }
         }
     }
 

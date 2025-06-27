@@ -137,6 +137,10 @@ Node_Dataflow::Node_Dataflow(Instruction * _inst) : inst(_inst)
             }
         }
     }
+
+    // 拷贝一份，之后变量溢出时可用
+    inst->get_def_set() = def_set;
+    inst->get_use_set() = use_set;
 }
 
 std::vector<Node_Dataflow *> & Node_CFG::get_dataflow_list()
