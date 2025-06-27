@@ -3,6 +3,7 @@
 
 #include "InterferenceGraph.h"
 #include "PlatformArm64.h"
+#include "AllocaInstruction.h"
 
 node_IG::node_IG(Value * _val) : val(_val)
 {}
@@ -82,6 +83,11 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
 
     // 为控制流图中每个Value都创建一个干涉图节点
     for (Value * val: all_value_in_cfg) {
+        // 跳过alloca指令，它们不应该参与寄存器分配
+        if (auto allocaInst = dynamic_cast<AllocaInstruction *>(val)) {
+            continue;
+        }
+
         node_IG * newnode = new node_IG(val);
         value_to_ig[val] = newnode;
         node_set.insert(newnode);

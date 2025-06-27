@@ -3423,7 +3423,8 @@ bool IRGenerator::ir_array_init(ast_node * node)
             }
         }
 
-        if (!isFlatInitialization && !isMixedInitialization && initValues.size() != expectedElements) {
+        // 对于所有情况，如果初始化值不足，都需要用零填充
+        if (initValues.size() < expectedElements) {
             printf("Warning: Initializer has %zu elements, but array expects %d elements\n",
                    initValues.size(),
                    expectedElements);
@@ -3432,10 +3433,11 @@ bool IRGenerator::ir_array_init(ast_node * node)
             while (initValues.size() < expectedElements) {
                 initValues.push_back(module->newConstInt(0));
             }
-            // 如果初始化值过多，截断（但不截断扁平化和混合初始化）
-            if (initValues.size() > expectedElements) {
-                initValues.resize(expectedElements);
-            }
+        }
+
+        // 如果初始化值过多，截断（但不截断扁平化和混合初始化）
+        if (!isFlatInitialization && !isMixedInitialization && initValues.size() > expectedElements) {
+            initValues.resize(expectedElements);
         }
     } else if (node->parent && node->parent->type && node->parent->type->isArrayType()) {
         // 备用方案：检查父节点是否提供了目标数组类型信息
