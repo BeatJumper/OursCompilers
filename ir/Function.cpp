@@ -318,13 +318,8 @@ void Function::renameIR()
     // 遍历指令重命名
     for (auto inst: this->getInterCode().getInsts()) {
         if (inst->getOp() == IRInstOperator::IRINST_OP_LABEL) {
-            // label参与编号
-            std::string oldName = inst->getIRName();
-            inst->setIRName(IR_LABEL_PREFIX + std::to_string(nameIndex));
-            /*printf("Renamed label: %s -> %s\n",
-                   oldName.empty() ? "(empty)" : oldName.c_str(),
-                   inst->getIRName().c_str());*/
-            nameIndex++;
+            // 标签已经在创建时设置为全局唯一，跳过重命名
+            continue;
         } else if (inst->hasResultValue()) {
             // 跳过alloca指令，不分配新编号
             if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {

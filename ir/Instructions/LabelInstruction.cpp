@@ -14,6 +14,7 @@
 /// </table>
 ///
 #include "VoidType.h"
+#include "Module.h"
 
 #include "LabelInstruction.h"
 
@@ -24,6 +25,19 @@
 LabelInstruction::LabelInstruction(Function * _func)
     : Instruction(_func, IRInstOperator::IRINST_OP_LABEL, VoidType::getType())
 {}
+
+///
+/// @brief 构造函数（使用Module生成全局唯一标签）
+/// @param _func 所属函数
+/// @param _module 所属模块
+///
+LabelInstruction::LabelInstruction(Function * _func, Module * _module)
+    : Instruction(_func, IRInstOperator::IRINST_OP_LABEL, VoidType::getType())
+{
+    // 使用全局标签计数器生成唯一标签名
+    int32_t labelId = _module->getNextLabelId();
+    setIRName(std::to_string(labelId));
+}
 
 /// @brief 转换成字符串
 /// @param str 返回指令字符串

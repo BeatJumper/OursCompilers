@@ -240,11 +240,11 @@ bool IRGenerator::ir_function_define(ast_node * node)
     InterCode & irCode = newFunc->getInterCode();
 
     // 创建函数入口标签
-    LabelInstruction * entryLabelInst = new LabelInstruction(newFunc);
+    LabelInstruction * entryLabelInst = new LabelInstruction(newFunc, module);
     irCode.addInst(entryLabelInst);
 
     // 创建函数出口标签（稍后添加）
-    LabelInstruction * exitLabelInst = new LabelInstruction(newFunc);
+    LabelInstruction * exitLabelInst = new LabelInstruction(newFunc, module);
     newFunc->setExitLabel(exitLabelInst);
 
     // 处理函数形参
@@ -2060,10 +2060,10 @@ bool IRGenerator::ir_while(ast_node * node)
     Function * currentFunc = module->getCurrentFunction();
 
     // 创建循环的入口、条件、和退出标签
-    LabelInstruction * entryLabel = new LabelInstruction(currentFunc);
-    LabelInstruction * condLabel = new LabelInstruction(currentFunc);
-    LabelInstruction * bodyLabel = new LabelInstruction(currentFunc);
-    LabelInstruction * exitLabel = new LabelInstruction(currentFunc);
+    LabelInstruction * entryLabel = new LabelInstruction(currentFunc, module);
+    LabelInstruction * condLabel = new LabelInstruction(currentFunc, module);
+    LabelInstruction * bodyLabel = new LabelInstruction(currentFunc, module);
+    LabelInstruction * exitLabel = new LabelInstruction(currentFunc, module);
 
     // 条件检查标签和推出标签压栈
     loopLabelStack.push({condLabel, exitLabel});
@@ -2123,9 +2123,9 @@ bool IRGenerator::ir_if_else(ast_node * node)
     Function * currentFunc = module->getCurrentFunction();
 
     // 创建then分支、else分支（可选）和结束标签
-    LabelInstruction * thenLabel = new LabelInstruction(currentFunc);
-    LabelInstruction * elseLabel = elseNode ? new LabelInstruction(currentFunc) : nullptr;
-    LabelInstruction * endLabel = new LabelInstruction(currentFunc);
+    LabelInstruction * thenLabel = new LabelInstruction(currentFunc, module);
+    LabelInstruction * elseLabel = elseNode ? new LabelInstruction(currentFunc, module) : nullptr;
+    LabelInstruction * endLabel = new LabelInstruction(currentFunc, module);
 
     // 生成条件表达式的 IR，使用新的条件表达式处理方法
     if (!ir_condition_expr(condNode, thenLabel, elseLabel ? elseLabel : endLabel)) {
@@ -2346,9 +2346,9 @@ bool IRGenerator::ir_negative(ast_node * node)
         node->blockInsts.addInst(allocaInst);
 
         // 创建标签
-        LabelInstruction * trueLabel = new LabelInstruction(module->getCurrentFunction());
-        LabelInstruction * falseLabel = new LabelInstruction(module->getCurrentFunction());
-        LabelInstruction * endLabel = new LabelInstruction(module->getCurrentFunction());
+        LabelInstruction * trueLabel = new LabelInstruction(module->getCurrentFunction(), module);
+        LabelInstruction * falseLabel = new LabelInstruction(module->getCurrentFunction(), module);
+        LabelInstruction * endLabel = new LabelInstruction(module->getCurrentFunction(), module);
 
         // 根据i1值进行分支
         BranchInstruction * branchInst =
@@ -2651,7 +2651,7 @@ bool IRGenerator::ir_and_with_labels(ast_node * node, LabelInstruction * trueLab
     Function * currentFunc = module->getCurrentFunction();
 
     // 创建中间标签L3
-    LabelInstruction * rightLabel = new LabelInstruction(currentFunc); // L3
+    LabelInstruction * rightLabel = new LabelInstruction(currentFunc, module); // L3
 
     // 遍历BoolExpr0生成线性IR后插入（本步需要L3和L2，分别作为条件表达式的真出口和假出口）
     if (!ir_condition_expr(leftNode, rightLabel, falseLabel)) {
@@ -2687,7 +2687,7 @@ bool IRGenerator::ir_or_with_labels(ast_node * node, LabelInstruction * trueLabe
     Function * currentFunc = module->getCurrentFunction();
 
     // 创建中间标签L3
-    LabelInstruction * rightLabel = new LabelInstruction(currentFunc); // L3
+    LabelInstruction * rightLabel = new LabelInstruction(currentFunc, module); // L3
 
     // 遍历BoolExpr0生成线性IR后插入（本步需要L1和L3，分别作为条件表达式的真出口和假出口）
     if (!ir_condition_expr(leftNode, trueLabel, rightLabel)) {

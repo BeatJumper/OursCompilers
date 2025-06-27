@@ -163,12 +163,7 @@ void CodeGeneratorArm64::genCodeSection(Function * func)
     std::vector<Instruction *> & IrInsts = func->getInterCode().getInsts();
     printf("成功获取指令列表，指令数量：%d\n", int(IrInsts.size()));
 
-    // 汇编指令输出前要确保Label的名字有效，必须是程序级别的唯一，而不是函数内的唯一。要全局编号。
-    for (auto inst: IrInsts) {
-        if (inst->getOp() == IRInstOperator::IRINST_OP_LABEL) {
-            inst->setIRName(IR_LABEL_PREFIX + std::to_string(labelIndex++));
-        }
-    }
+    // 标签已经在前端IR生成时确保全局唯一，无需重新编号
     // ILOC代码序列
     ILocArm64 iloc(module);
 
