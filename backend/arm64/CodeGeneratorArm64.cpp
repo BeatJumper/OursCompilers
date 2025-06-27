@@ -59,7 +59,7 @@ void CodeGeneratorArm64::genDataSection()
 
     // 全局变量分两种情况：初始化的全局变量和未初始化的全局变量
     for (auto var: module->getGlobalVariables()) {
-        if (var->isInBSSSection() && var->getInitValueList().empty()) {
+        if (var->isInBSSSection() && var->getInitValueList().empty() && !var->getInitValue()) {
             // 在BSS段的全局变量（没有初始化值）
             fprintf(fp, ".type %s, @object\n", var->getName().c_str());
             if (!bssStarted) {
@@ -164,7 +164,7 @@ void CodeGeneratorArm64::genCodeSection(Function * func)
     // 汇编指令输出前要确保Label的名字有效，必须是程序级别的唯一，而不是函数内的唯一。要全局编号。
     for (auto inst: IrInsts) {
         if (inst->getOp() == IRInstOperator::IRINST_OP_LABEL) {
-            inst->setName(IR_LABEL_PREFIX + std::to_string(labelIndex++));
+            inst->setIRName(IR_LABEL_PREFIX + std::to_string(labelIndex++));
         }
     }
     // ILOC代码序列
