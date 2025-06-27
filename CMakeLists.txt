@@ -79,6 +79,8 @@ set(FRONTEND_SRCS
 	frontend/antlr4/Antlr4CSTVisitor.h
 	frontend/antlr4/Antlr4Executor.cpp
 	frontend/antlr4/Antlr4Executor.h
+	frontend/antlr4/Preprocessor.cpp
+	frontend/antlr4/Preprocessor.h
 )
 
 # 后端源代码集合

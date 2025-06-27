@@ -14,12 +14,14 @@
 /// </table>
 ///
 #include <iostream>
+#include <sstream>
 
 #include "AST.h"
 #include "Antlr4Executor.h"
 #include "Antlr4CSTVisitor.h"
 #include "MiniCLexer.h"
 #include "Common.h"
+#include "Preprocessor.h"
 
 /// @brief 前端词法与语法解析生成AST
 /// @return true: 成功 false：错误
@@ -32,8 +34,18 @@ bool Antlr4Executor::run()
         return false;
     }
 
-    // antlr4的输入流类实例
-    antlr4::ANTLRInputStream input{ifs};
+    // 读取整个文件内容
+    std::ostringstream oss;
+    oss << ifs.rdbuf();
+    std::string sourceCode = oss.str();
+    ifs.close();
+
+    // 预处理：处理#define宏定义
+    Preprocessor preprocessor;
+    std::string processedCode = preprocessor.process(sourceCode);
+
+    // antlr4的输入流类实例，使用预处理后的代码
+    antlr4::ANTLRInputStream input{processedCode};
 
     // 词法分析器实例
     MiniCLexer lexer{&input};

@@ -62,11 +62,12 @@ void minicParserInitialize() {
       "T_MUL", "T_DIV", "T_MOD", "T_LT", "T_GT", "T_LE", "T_GE", "T_EQ", 
       "T_NE", "T_AND", "T_OR", "T_NOT", "T_RETURN", "T_INT", "T_FLOAT", 
       "T_VOID", "T_IF", "T_ELSE", "T_WHILE", "T_BREAK", "T_CONTINUE", "T_CONST", 
-      "T_ID", "T_DIGIT", "T_FLOAT_DIGIT", "WS", "LINE_COMMENT", "BLOCK_COMMENT"
+      "T_ID", "T_DIGIT", "T_FLOAT_DIGIT", "WS", "LINE_COMMENT", "BLOCK_COMMENT", 
+      "PREPROCESSOR_DEFINE"
     }
   );
   static const int32_t serializedATNSegment[] = {
-  	4,1,39,358,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,4,2,5,7,5,2,6,7,6,2,
+  	4,1,40,358,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,4,2,5,7,5,2,6,7,6,2,
   	7,7,7,2,8,7,8,2,9,7,9,2,10,7,10,2,11,7,11,2,12,7,12,2,13,7,13,2,14,7,
   	14,2,15,7,15,2,16,7,16,2,17,7,17,2,18,7,18,2,19,7,19,2,20,7,20,2,21,7,
   	21,2,22,7,22,2,23,7,23,2,24,7,24,2,25,7,25,2,26,7,26,2,27,7,27,2,28,7,
