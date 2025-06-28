@@ -19,6 +19,7 @@
 
 #include "Constant.h"
 #include "FloatType.h"
+#include <cinttypes>
 
 ///
 /// @brief 浮点型常量类
@@ -63,8 +64,12 @@ private:
     static std::string formatFloat(float val)
     {
         char buffer[32];
-        // 使用科学计数法格式，这是LLVM IR要求的格式
-        snprintf(buffer, sizeof(buffer), "%.6e", val);
+        // 使用十六进制格式，这是LLVM IR要求的IEEE 754表示
+        // 对于32位float，LLVM期望16位十六进制数字（64位表示）
+        uint32_t bits = *reinterpret_cast<uint32_t *>(&val);
+        // 将32位float值放在64位表示的高32位
+        uint64_t extended_bits = static_cast<uint64_t>(bits) << 32;
+        snprintf(buffer, sizeof(buffer), "0x%016" PRIx64, extended_bits);
         return buffer;
     }
 
