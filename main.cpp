@@ -78,7 +78,7 @@ static std::string gOutputFile;
 /// @param exeName
 static void showHelp(const std::string & exeName)
 {
-    std::cout << exeName + " -S -A [-T | -I] [-o output] source\n";
+    std::cout << exeName + " -S -A [-T | -L] [-o output] source\n";
 }
 
 /// @brief 参数解析与有效性检查
@@ -89,15 +89,15 @@ static int ArgsAnalysis(int argc, char * argv[])
 {
     int ch;
 
-    // 指定参数解析的选项，可识别-h、-o、-S、-T、-I、-A、-D等选项
+    // 指定参数解析的选项，可识别-h、-o、-S、-T、-L、-A、-D等选项
     // -S必须项，输出中间IR、抽象语法树或汇编
-    // -T指定时输出AST，-I输出中间IR，不指定则默认输出汇编
+    // -T指定时输出AST，-L输出中间IR，不指定则默认输出汇编
     // -A指定按照antlr4进行词法与语法分析，-D指定按照递归下降分析法执行，不指定时按flex+bison执行
     // -o要求必须带有附加参数，指定输出的文件
     // -O要求必须带有附加整数，指明优化的级别
     // -t要求必须带有目标CPU，指明目标CPU的汇编
     // -c选项在输出汇编时有效，附带输出IR指令内容
-    const char options[] = "ho:STIADO:t:c";
+    const char options[] = "ho:STLADO:t:c";
 
     opterr = 1;
 
@@ -116,10 +116,9 @@ lb_check:
             case 'T':
                 gShowAST = true;
                 break;
-            case 'I':
+            case 'L':
                 // 产生中间IR
                 gShowLineIR = true;
-                break;
                 break;
             case 'A':
                 // 选用antlr4

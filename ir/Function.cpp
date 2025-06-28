@@ -297,35 +297,41 @@ void Function::renameIR(Module * module)
 
     // printf("==== Starting renameIR for function %s ====\n", this->name.c_str());
 
-    // 形式参数重命名
+    // 每个函数维护两个独立的计数器
+    int32_t variableCounter = 0; // 变量计数器：参数、局部变量、临时值
+    int32_t labelCounter = 0;    // 标签计数器：标签编号
+
+    // 1. 形式参数重命名 - 按照LLVM IR规范，函数参数必须从%0开始连续编号
     for (auto & param: this->params) {
-        param->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(module->getNextIRNameId()));
+        param->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(variableCounter));
+        variableCounter++;
         // printf("Renamed param: %s -> %s\n", oldName.empty() ? "(empty)" : oldName.c_str(),
         // param->getIRName().c_str());
     }
 
-    // 局部变量重命名
-    for (auto & var: this->varsVector) {
-        var->setIRName(IR_LOCAL_VARNAME_PREFIX + std::to_string(module->getNextIRNameId()));
-        /*printf("Renamed local var %s: %s -> %s\n",
-               var->getName().c_str(),
-               oldName.empty() ? "(empty)" : oldName.c_str(),
-               var->getIRName().c_str());*/
-    }
-    // 遍历指令重命名
+    // 2. 按照alloca指令在IR中的出现顺序重命名局部变量，确保变量名与alloca指令顺序一致
+    // 3. 同时处理标签和临时值重命名
     for (auto inst: this->getInterCode().getInsts()) {
         if (inst->getOp() == IRInstOperator::IRINST_OP_LABEL) {
-            // 标签已经在创建时设置为全局唯一，跳过重命名
-            continue;
-        } else if (inst->hasResultValue()) {
-            // 跳过alloca指令，不分配新编号
-            if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
-                // alloca的结果就是变量，变量已经分配过编号
-                continue;
+            // 标签重命名，格式：函数名_Lx
+            std::string funcName = this->getName();
+            std::string labelName = funcName + "_L" + std::to_string(labelCounter);
+            inst->setIRName(labelName);
+            labelCounter++;
+        } else if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
+            // alloca指令：重命名其结果变量（按照IR中的出现顺序）
+            Value * allocaResult = inst->getOperand(0); // alloca的结果是第一个操作数
+            if (allocaResult) {
+                allocaResult->setIRName(IR_LOCAL_VARNAME_PREFIX + std::to_string(variableCounter));
+                variableCounter++;
+                /*printf("Renamed alloca result var %s: -> %s\n",
+                       allocaResult->getName().c_str(),
+                       allocaResult->getIRName().c_str());*/
             }
-            inst->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(module->getNextIRNameId()));
-            // std::string instStr;
-            // inst->toString(instStr);
+        } else if (inst->hasResultValue()) {
+            // 其他有结果值的指令：临时值重命名（加%前缀）
+            inst->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(variableCounter));
+            variableCounter++;
         }
     }
     // printf("==== Finished renameIR for function %s ====\n", this->name.c_str());

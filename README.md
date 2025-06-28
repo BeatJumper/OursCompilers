@@ -283,7 +283,7 @@ java -jar thirdparty/antlr4/antlr-4.12.0-complete.jar -Dlanguage=Cpp -no-listene
 
 C++使用 antlr 时需要使用 antlr 的头文件和库，在 msys2 下可通过如下命令安装 antlr 4.12.0 版即可。
 
-生成的时候无论如何都会生成一个子目录，非常麻烦，烦死了，用下面的指令变化。一键完成。
+生成的时候无论如何都会生成一个子目录，非常麻烦，用下面的指令变化。一键完成。
 下面的指令集成到了tools/generate.sh下。
 在使用之前，首先chmod指令赋予权限。然后执行。
 目前有点bug，先别用了。

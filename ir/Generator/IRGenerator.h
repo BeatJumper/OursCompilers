@@ -45,6 +45,8 @@ protected:
     /// @return 翻译是否成功，true：成功，false：失败
     bool ir_compile_unit(ast_node * node);
 
+    bool parseArrayInitializer(ast_node * initNode, const Type * arrayType, Value *& initValue);
+
     /// @brief 函数定义AST节点翻译成线性中间IR
     /// @param node AST节点
     /// @return 翻译是否成功，true：成功，false：失败

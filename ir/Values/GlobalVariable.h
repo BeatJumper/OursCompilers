@@ -116,7 +116,12 @@ public:
                 str += " 0";
             }
         } else {
-            str += " 0";
+            // 没有初始化值时，根据类型选择合适的初始化方式
+            if (getType()->isArrayType()) {
+                str += " zeroinitializer";
+            } else {
+                str += " 0";
+            }
         }
 
         str += ", align " + std::to_string(getAlignment());
