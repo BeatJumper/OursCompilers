@@ -151,9 +151,6 @@ public:
     /// @brief 清理函数内申请的资源
     void Delete();
 
-    /// @brief 函数内的Value表刷新（用控制流图刷新）
-    void refreshValuesFromCFG(ControlFlowGraph * graph_cfg);
-
     ///
     /// @brief 函数内的Value重命名，用于IR指令的输出
     ///
@@ -210,10 +207,6 @@ public:
     ///
     int getStackFrameSize();
 
-    /// @brief 获取USE集和DEF集中元素
-    /// @return USE集和DEF集中元素的集合
-    std::set<Value *> & get_mentioned_vars();
-
     /// @brief 获取为被保护寄存器准备的形式化localspace表
     /// @return localspace表
     std::vector<LocalVariable *> & get_localspace_for_protected();
@@ -242,9 +235,6 @@ private:
     /// @brief 线性IR指令块，可包含多条IR指令
     ///
     InterCode code;
-
-    /// @brief 所有会在USE集和SET集中提及的量的集合
-    std::set<Value *> mentioned_vars;
 
     ///
     /// @brief 基本块表，可包含多个基本块

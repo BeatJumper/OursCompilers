@@ -1,28 +1,28 @@
 #include "Liveness.h"
 #include <iostream>
 
-bool update_live(Node_Dataflow * node, Node_Dataflow * succ1, Node_Dataflow * succ2)
+bool update_live(Instruction * node, Instruction * succ1, Instruction * succ2)
 {
     bool ret = false;
     if (succ1) {
-        ret |= merge_set(node->liveOUT, succ1->liveIN);
+        ret |= merge_set(node->get_liveout(), succ1->get_livein());
     }
     if (succ2) {
-        ret |= merge_set(node->liveOUT, succ2->liveIN);
+        ret |= merge_set(node->get_liveout(), succ1->get_livein());
     }
-    std::set<Value *> original_livein = node->liveIN;
-    node->liveIN = set_difference(node->liveOUT, node->def_set);
-    merge_set(node->liveIN, node->use_set);
-    ret |= (original_livein != node->liveIN);
+    std::set<Value *> original_livein = node->get_livein();
+    node->get_livein() = set_difference(node->get_liveout(), node->get_def_set());
+    merge_set(node->get_livein(), node->get_use_set());
+    ret |= (original_livein != node->get_livein());
 
     /*
     std::string s;
     node->inst->toString(s);
     std::cout << "node:" << s << std::endl;
-    std::cout << "size of LIVE_OUT:" << node->liveOUT.size() << std::endl;
-    printset(node->liveOUT);
-    std::cout << "size of LIVE_IN:" << node->liveIN.size() << std::endl;
-    printset(node->liveIN);
+    std::cout << "size of LIVE_OUT:" << node->get_liveout().size() << std::endl;
+    printset(node->get_liveout());
+    std::cout << "size of LIVE_IN:" << node->get_livein().size() << std::endl;
+    printset(node->get_livein());
     std::cout << "size of def_set:" << node->def_set.size() << std::endl;
     printset(node->def_set);
     std::cout << "size of use_set:" << node->use_set.size() << std::endl;
@@ -51,24 +51,24 @@ void LiveVariableAnalysis(ControlFlowGraph * _graph)
         }
         */
         for (Node_CFG * node: node_list) {
-            auto & dataflow_list = node->get_dataflow_list();
             // 基本块的末端（跳转指令）可能有多个后继
             Node_CFG ** next_nodes = node->get_next_nodes();
-            need_update |= update_live(dataflow_list[dataflow_list.size() - 1],
+            auto & insts = node->getIRCode()->getCode();
+            need_update |= update_live(insts[insts.size() - 1],
                                        // 第一个后继
-                                       next_nodes[0] ? next_nodes[0]->dataflow_list[0] : nullptr,
+                                       next_nodes[0] ? next_nodes[0]->getIRCode()->getCode()[0] : nullptr,
                                        // 第二个后继（可能是nullptr)
-                                       next_nodes[1] ? next_nodes[1]->dataflow_list[0] : nullptr);
-            for (int i = dataflow_list.size() - 2; i >= 0; --i) {
+                                       next_nodes[1] ? next_nodes[1]->getIRCode()->getCode()[0] : nullptr);
+            for (int i = insts.size() - 2; i >= 0; --i) {
                 std::string s;
-                dataflow_list[i]->inst->toString(s);
+                insts[i]->toString(s);
                 std::cout << "node:" << s << std::endl;
-                std::cout << "size of def_set:" << dataflow_list[i]->def_set.size() << std::endl;
-                // printset(dataflow_list[i]->def_set);
-                std::cout << "size of use_set:" << dataflow_list[i]->use_set.size() << std::endl;
-                // printset(dataflow_list[i]->use_set);
+                std::cout << "size of def_set:" << insts[i]->get_def_set().size() << std::endl;
+                // printset(insts[i]->def_set);
+                std::cout << "size of use_set:" << insts[i]->get_use_set().size() << std::endl;
+                // printset(insts[i]->use_set);
                 //  对于基本块内的前 n-1 个指令，只会有1个后继指令
-                need_update |= update_live(dataflow_list[i], dataflow_list[i + 1]);
+                need_update |= update_live(insts[i], insts[i + 1]);
             }
         }
     }

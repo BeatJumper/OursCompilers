@@ -12,6 +12,9 @@
 
 ControlFlowGraph::ControlFlowGraph(Function * func)
 {
+    // 记录所属函数
+    this->func = func;
+
     // 对基本块表里每个基本块都创建一个新的控制流节点
     for (InterCode * BasicIRBlock: func->getBasicBlocks()) {
         Node_CFG * node = new Node_CFG(this, BasicIRBlock);
@@ -70,84 +73,6 @@ Node_CFG ** Node_CFG::get_next_nodes()
     return next_nodes;
 }
 
-Node_Dataflow::Node_Dataflow(Instruction * _inst) : inst(_inst)
-{
-    /*
-    // 如果是void的返回值，则返回值不占用寄存器
-    if (inst->hasResultValue()) {
-        def_set.insert(inst);
-    }
-
-    for (auto usee: inst->getOperandsValue()) {
-        if (def_set.count(usee) == 0) {
-            // use集中不能包含刚刚def的元素
-            use_set.insert(usee);
-        }
-    }
-    */
-    /*
-     * 这里添加一系列指令类型检测的原因：
-     * 有的指令把不产生数据流的变量也存进了操作数，
-     * 同时有的指令的返回值不是他自己的Instruction*
-     * ......由于各种原因所以需要特判。
-     */
-    // printf("产生数据流节点\n");
-    if (Instanceof(inst, AllocaInstruction *, _inst)) {
-        // Alloc指令没有直接数据流，所以不做任何事
-    } else if (Instanceof(inst, StoreInstruction *, _inst)) {
-        use_set.insert(inst->getOperand(0));
-    } else if (Instanceof(inst, LoadInstruction *, _inst)) {
-        def_set.insert(inst);
-    } else if (Instanceof(inst, MoveInstruction *, _inst)) {
-        def_set.insert(inst->getOperand(0));
-        Value * source = inst->getOperand(1);
-        if (Instanceof(constvar, Constant *, source)) {
-            // 什么都不做
-        } else {
-            use_set.insert(source);
-        }
-    } else if (Instanceof(inst, FuncCallInstruction *, _inst)) {
-        // 在DEF集上，添加16个DEF，表示函数调用使得寄存器W0~W15都可能遭到修改
-        for (int index = 0; index < 16; index++) {
-            Value * val = inst->getOperand(index);
-            val->setRegId(index);
-            def_set.insert(val);
-        }
-
-        // 接下来是USE集的添加
-
-        // 前8个数的临时变量被直接用到
-        for (int index = 0; index < 8 && index < inst->getOperandsNum(); index++) {
-            use_set.insert(inst->getOperand(index));
-        }
-        // 后8个数是仅仅在内存里的，不占寄存器，所以就不进USE了。
-
-    } else if (Instanceof(inst, Instruction *, _inst)) {
-        // printf("其它指令\n");
-        //  Instanceof(inst, Instruction *, _inst);
-        if (inst->hasResultValue()) {
-            def_set.insert(inst);
-        }
-
-        for (auto usee: inst->getOperandsValue()) {
-            // 除了store指令以外的立即数都不需要寄存器
-            if (Instanceof(constusee, Constant *, usee) == nullptr && def_set.count(usee) == 0) {
-                // use集中不能包含刚刚def的元素
-                use_set.insert(usee);
-            }
-        }
-    }
-
-    // 拷贝一份，之后变量溢出时可用
-    inst->get_def_set() = def_set;
-    inst->get_use_set() = use_set;
-}
-
-std::vector<Node_Dataflow *> & Node_CFG::get_dataflow_list()
-{
-    return dataflow_list;
-}
-
 /*
 std::set<Value *> & ControlFlowGraph::get_value_list()
 {
@@ -204,8 +129,8 @@ Node_CFG::Node_CFG(ControlFlowGraph * _graph, InterCode * BasicIRBlock)
     */
 
     for (Instruction * inst: (BasicIRBlock->getInsts())) {
-        // 添加语句对应的数据流节点
-        dataflow_list.push_back(new Node_Dataflow(inst));
+        // 计算DEF和USE
+        inst->transfer();
 
         // get_value_list()方法弃用
         /*

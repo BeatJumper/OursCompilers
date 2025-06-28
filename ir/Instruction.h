@@ -241,6 +241,19 @@ public:
         return use_set;
     }
 
+    std::set<Value *> & get_livein()
+    {
+        return liveIN;
+    }
+
+    std::set<Value *> & get_liveout()
+    {
+        return liveOUT;
+    }
+    /// @brief 对一条指令，计算DEF集与USE集
+    /// @param inst
+    void transfer();
+
 protected:
     ///
     /// @brief IR指令操作码
@@ -249,6 +262,9 @@ protected:
 
     /// @brief 指令的DEF集和USE集
     std::set<Value *> def_set, use_set;
+
+    /// @brief 指令的LIVEIN和LIVEOUT
+    std::set<Value *> liveIN, liveOUT;
 
     ///
     /// @brief 是否是Dead指令

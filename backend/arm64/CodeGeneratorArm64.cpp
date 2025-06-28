@@ -274,7 +274,8 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
             }
             break;
         } else {
-            // TODO 完成变量溢出的工作
+            printf("溢出\n");
+            // 完成变量溢出的工作
             auto x = graph_ig->uncolored_node_set.end();
             x--;
             /*
@@ -286,22 +287,29 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
             */
             // 首先取出目前干涉图中度数最高的Value
             Value * most_degree_val = (*x)->val;
+            int32_t reg_now = most_degree_val->getRegId();
             auto & insts = func->getInterCode().getInsts();
 
             // 接下来尝试把该Value的所有出现都替换为新的Value和LocalVariable
             for (int i = 0; i < insts.size(); i++) {
                 Value *regval_write = nullptr, *regval_read = nullptr;
-                LocalVariable *localval_write = nullptr, *localval_read = nullptr;
+
+                // 用的是同一份栈空间
+                LocalVariable * localval = nullptr;
 
                 // 这里假定了一个instrction的DEF变量只会在{它自己，它的各个操作数}中出现唯一一次
                 if (insts[i] == most_degree_val) {
                     // DEF是它自己的情况
                     insts[i] = new Instruction(*insts[i]);
+                    insts[i]->setRegId(reg_now);
                 } else if (insts[i]->get_def_set().count(most_degree_val)) {
                     // DEF是其中某一个操作数的情况
-                    localval_write = func->newLocalVarValue(IntegerType::getTypeInt());
+                    if (localval == nullptr) {
+                        localval = func->newLocalVarValue(IntegerType::getTypeInt());
+                    }
                     regval_write = new Value(IntegerType::getTypeInt());
-                    Instruction * strinst = new StoreInstruction(func, regval_write, localval_write);
+                    regval_write->setRegId(reg_now);
+                    Instruction * strinst = new StoreInstruction(func, regval_write, localval);
                     insts.insert(insts.begin() + i + 1, strinst);
                     for (int k = 0; k < insts[i]->getOperandsNum(); k++) {
                         if (insts[i]->getOperand(k) == most_degree_val) {
@@ -313,9 +321,12 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
 
                 // 认定接下来剩下的Value都是USE出现的，也进行改写
                 if (insts[i]->get_use_set().count(most_degree_val)) {
-                    localval_read = func->newLocalVarValue(IntegerType::getTypeInt());
+                    if (localval == nullptr) {
+                        localval = func->newLocalVarValue(IntegerType::getTypeInt());
+                    }
                     regval_read = new Value(IntegerType::getTypeInt());
-                    Instruction * ldrinst = new LoadInstruction(func, regval_read, localval_read);
+                    regval_read->setRegId(reg_now);
+                    Instruction * ldrinst = new LoadInstruction(func, regval_read, localval);
                     insts.insert(insts.begin() + i, ldrinst);
                     i++;
                     for (int k = 0; k < insts[i]->getOperandsNum(); k++) {
@@ -332,10 +343,17 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     // 这里加一个set临时存储保护寄存器，因为同一个寄存器可能多次加入，这里用set可以去重。
     std::set<int32_t> protectedreg_set;
     // 如果用到了保护寄存器，就加进保护寄存器集合
-    for (Value * val: func->get_mentioned_vars()) {
-        // 这里为什么有val->getRegId() < 32？因为要考虑到本系统目前给浮点寄存器分配了大于31的regID
-        if (val->getRegId() > 15 && val->getRegId() < 32) {
-            protectedreg_set.insert(val->getRegId());
+    for (Instruction * inst: func->getInterCode().getCode()) {
+        for (Value * val: inst->get_use_set()) {
+            // 这里为什么有val->getRegId() < 32？因为要考虑到本系统目前给浮点寄存器分配了大于31的regID
+            if (val->getRegId() > 15 && val->getRegId() < 32) {
+                protectedreg_set.insert(val->getRegId());
+            }
+        }
+        for (Value * val: inst->get_def_set()) {
+            if (val->getRegId() > 15 && val->getRegId() < 32) {
+                protectedreg_set.insert(val->getRegId());
+            }
         }
     }
     // 然后把集合元素加进真正要用的链表里

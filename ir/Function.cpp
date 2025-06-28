@@ -216,11 +216,6 @@ std::string & Function::getProtectedRegStr()
     return protectedRegStr;
 }
 
-std::set<Value *> & Function::get_mentioned_vars()
-{
-    return mentioned_vars;
-}
-
 std::vector<LocalVariable *> & Function::get_localspace_for_protected()
 {
     return localspace_for_protected;
@@ -301,18 +296,6 @@ void Function::Delete()
     varsVector.clear();
 }
 
-void Function::refreshValuesFromCFG(ControlFlowGraph * graph_cfg)
-{
-    assert(graph_cfg);
-    std::set<Value *> & vars_set = mentioned_vars;
-    for (auto node_cfg: graph_cfg->get_node_list()) {
-        for (auto node_dataflow: node_cfg->get_dataflow_list()) {
-            merge_set(vars_set, node_dataflow->def_set);
-            merge_set(vars_set, node_dataflow->use_set);
-        }
-    }
-}
-
 ///
 /// @brief 函数内的Value重命名
 ///
@@ -332,16 +315,6 @@ void Function::renameIR()
         param->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(nameIndex));
         // printf("Renamed param: %s -> %s\n", oldName.empty() ? "(empty)" : oldName.c_str(),
         // param->getIRName().c_str());
-        nameIndex++;
-    }
-    // 新加进来的寄存器变量(Value*)重命名
-    for (auto & var: mentioned_vars) {
-        std::string oldName = var->getIRName();
-        var->setIRName(IR_LOCAL_VARNAME_PREFIX + std::to_string(nameIndex));
-        /*printf("Renamed local var %s: %s -> %s\n",
-               var->getName().c_str(),
-               oldName.empty() ? "(empty)" : oldName.c_str(),
-               var->getIRName().c_str());*/
         nameIndex++;
     }
     // 局部变量重命名
@@ -364,16 +337,17 @@ void Function::renameIR()
                    oldName.empty() ? "(empty)" : oldName.c_str(),
                    inst->getIRName().c_str());*/
             nameIndex++;
-        } else if (inst->hasResultValue()) {
-            // 跳过alloca指令，不分配新编号
-            if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
-                // alloca的结果就是变量，变量已经分配过编号
-                continue;
+        } else {
+            for (Value * val: inst->get_def_set()) {
+                if (val->getIRName().empty()) {
+                    val->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(nameIndex++));
+                }
             }
-            inst->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(nameIndex));
-            // std::string instStr;
-            // inst->toString(instStr);
-            nameIndex++;
+            for (Value * val: inst->get_use_set()) {
+                if (val->getIRName().empty()) {
+                    val->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(nameIndex++));
+                }
+            }
         }
     }
     // printf("==== Finished renameIR, final nameIndex = %d ====\n", nameIndex);

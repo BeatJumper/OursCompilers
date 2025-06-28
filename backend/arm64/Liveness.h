@@ -12,7 +12,7 @@
 /// @param succ1 数据流节点的后继
 /// @param succ2 数据流节点的另一后继（如果存在），不存在则缺省
 /// @return LIVEOUT是否发生更改
-bool update_live(Node_Dataflow * node, Node_Dataflow * succ1, Node_Dataflow * succ2 = nullptr);
+bool update_live(Instruction * node, Instruction * succ1, Instruction * succ2 = nullptr);
 
 /// @brief 活跃分析
 /// @param _graph 需要被活跃分析的CFG图

@@ -17,6 +17,11 @@
 
 #include "Instruction.h"
 #include "Function.h"
+#include "AllocaInstruction.h"
+#include "StoreInstruction.h"
+#include "LoadInstruction.h"
+#include "MoveInstruction.h"
+#include "FuncCallInstruction.h"
 
 /// @brief 构造函数
 /// @param op
@@ -71,4 +76,53 @@ Function * Instruction::getFunction()
 bool Instruction::hasResultValue()
 {
     return !type->isVoidType();
+}
+
+void Instruction::transfer()
+{
+    if (Instanceof(inst, AllocaInstruction *, this)) {
+        // Alloc指令没有直接数据流，所以不做任何事
+    } else if (Instanceof(inst, StoreInstruction *, this)) {
+        use_set.insert(inst->getOperand(0));
+    } else if (Instanceof(inst, LoadInstruction *, this)) {
+        def_set.insert(inst);
+    } else if (Instanceof(inst, MoveInstruction *, this)) {
+        def_set.insert(inst->getOperand(0));
+        Value * source = inst->getOperand(1);
+        if (Instanceof(constvar, Constant *, source)) {
+            // 什么都不做
+        } else {
+            use_set.insert(source);
+        }
+    } else if (Instanceof(inst, FuncCallInstruction *, this)) {
+        // 在DEF集上，添加16个DEF，表示函数调用使得寄存器W0~W15都可能遭到修改
+        for (int index = 0; index < 16; index++) {
+            Value * val = inst->getOperand(index);
+            val->setRegId(index);
+            def_set.insert(val);
+        }
+
+        // 接下来是USE集的添加
+
+        // 前8个数的临时变量被直接用到
+        for (int index = 0; index < 8 && index < inst->getOperandsNum(); index++) {
+            use_set.insert(inst->getOperand(index));
+        }
+        // 后8个数是仅仅在内存里的，不占寄存器，所以就不进USE了。
+
+    } else if (Instanceof(inst, Instruction *, this)) {
+        // printf("其它指令\n");
+        //  Instanceof(inst, Instruction *, this);
+        if (inst->hasResultValue()) {
+            def_set.insert(inst);
+        }
+
+        for (auto usee: inst->getOperandsValue()) {
+            // 除了store指令以外的立即数都不需要寄存器
+            if (Instanceof(constusee, Constant *, usee) == nullptr && def_set.count(usee) == 0) {
+                // use集中不能包含刚刚def的元素
+                use_set.insert(usee);
+            }
+        }
+    }
 }
