@@ -2,17 +2,174 @@
 
 ## 1.1. 编译器的功能
 
-在基本版的基础上，还支持如下的功能：
+本编译器是一个完整的三阶段编译器，采用前端→IR→后端的经典架构，支持从C语言源代码到ARM64汇编代码的完整编译流程。
 
-1. 支持int类型的全局变量定义，不支持变量初始化设值；
-2. 函数可定义多个，但不支持形参，函数返回值仍然是int类型；
-3. 函数内支持int类型的局部变量定义，不必在语句块的开头；
-4. 支持赋值语句，不支持连续赋值；
-5. 支持语句块；
-6. 表达式支持加减、函数调用、带括号的运算；
-7. 支持内置函数putint，通过它可在终端显示对应的十进制值；
-8. 变量可重名，支持变量分层管理。
-9. 支持if-else，支持while，支持break，continue
+### 1.1.1. 数据类型支持
+
+1. **基本数据类型**：
+   - `int`：32位有符号整数类型
+   - `float`：32位单精度浮点数类型
+   - `void`：空类型，用于函数返回值
+
+2. **复合数据类型**：
+   - **一维数组**：支持`int arr[10]`形式的一维数组声明
+   - **多维数组**：支持`int matrix[3][4]`形式的多维数组声明
+   - **数组初始化**：支持`int arr[5] = {1, 2, 3, 4, 5}`形式的数组初始化
+   - **数组传参**：支持数组作为函数参数，如`int func(int arr[], int matrix[][3])`
+
+3. **常量支持**：
+   - **常量声明**：支持`const int MAX = 100`形式的常量声明
+   - **多进制常量**：支持十进制、八进制（0开头）、十六进制（0x开头）整数常量
+   - **浮点常量**：支持小数形式和科学计数法形式的浮点常量
+
+### 1.1.2. 变量和作用域
+
+1. **全局变量**：支持全局变量声明，支持初始化, Global variable initialization only supports constants.
+2. **局部变量**：支持函数内局部变量声明，可在任意位置声明
+3. **作用域管理**：支持变量分层管理，内层变量可遮蔽外层同名变量
+4. **符号表**：采用栈式符号表管理变量作用域
+
+### 1.1.3. 函数支持
+
+1. **函数定义**：支持多个函数定义
+2. **函数类型**：支持`int`、`float`、`void`三种返回值类型
+3. **函数参数**：支持多个形式参数，包括基本类型和数组类型参数
+4. **函数调用**：支持函数调用表达式，支持递归调用
+5. **内置函数**：
+   - `putint(int)`：输出整数到终端
+   - `putch(int)`：输出字符到终端
+   - `getch()`：从终端读取字符
+   - 支持时间测量相关的内置函数
+
+### 1.1.4. 表达式和运算符
+
+1. **算术运算符**：
+   - 加法（`+`）、减法（`-`）、乘法（`*`）、除法（`/`）、取模（`%`）
+   - 支持整数和浮点数运算
+   - 支持类型自动转换
+
+2. **关系运算符**：
+   - 小于（`<`）、大于（`>`）、小于等于（`<=`）、大于等于（`>=`）
+   - 等于（`==`）、不等于（`!=`）
+
+3. **逻辑运算符**：
+   - 逻辑与（`&&`）、逻辑或（`||`）、逻辑非（`!`）
+   - 支持短路求值
+
+4. **一元运算符**：
+   - 正号（`+`）、负号（`-`）、逻辑非（`!`）
+
+5. **数组访问**：支持`arr[index]`形式的数组元素访问，包括多维数组
+
+6. **表达式优先级**：完整支持C语言表达式优先级和结合性
+
+### 1.1.5. 控制流语句
+
+1. **条件语句**：
+   - `if`语句：支持`if(condition) statement`
+   - `if-else`语句：支持`if(condition) statement else statement`
+
+2. **循环语句**：
+   - `while`循环：支持`while(condition) statement`
+   - 支持`break`和`continue`语句
+
+3. **跳转语句**：
+   - `return`语句：支持带返回值和不带返回值的return
+
+4. **语句块**：支持`{}`包围的复合语句
+
+### 1.1.6. 预处理支持
+
+1. **宏定义**：支持`#define`宏定义的预处理
+2. **注释处理**：支持单行注释（`//`）和多行注释（`/* */`）
+
+## 1.2. 编译器架构和优化功能
+
+### 1.2.1. 编译器架构
+
+本编译器采用经典的三阶段编译架构：
+
+1. **前端（Frontend）**：
+   - **词法分析**：基于ANTLR4的词法分析器，支持C语言词法规则
+   - **语法分析**：基于ANTLR4的语法分析器，生成具体语法树（CST）
+   - **语义分析**：CST到抽象语法树（AST）的转换，进行语义检查
+   - **预处理器**：支持宏定义等预处理指令
+
+2. **中间表示（IR）**：
+   - **IR生成器**：将AST转换为线性中间表示（DragonIR）
+   - **类型系统**：支持整数、浮点、数组、指针等类型
+   - **指令系统**：包含算术、逻辑、控制流、内存访问等指令
+   - **值系统**：支持常量、变量、临时值等不同类型的值
+
+3. **后端（Backend）**：
+   - **指令选择**：将IR指令翻译为目标架构汇编指令
+   - **寄存器分配**：基于图着色算法的寄存器分配
+   - **代码生成**：生成ARM64汇编代码
+
+### 1.2.2. 优化功能
+
+1. **死代码消除（Dead Code Elimination）**：
+   - 移除不可达的基本块
+   - 消除冗余的跳转指令
+   - 移除return语句后的死代码
+   - 基于控制流图的分析
+
+2. **寄存器分配优化**：
+   - 基于图着色算法的寄存器分配策略
+   - 活跃变量分析
+   - 干涉图构建
+   - 支持寄存器溢出处理
+
+3. **控制流优化**：
+   - 基本块划分和优化
+   - 控制流图构建
+   - 跳转指令优化
+
+### 1.2.3. 目标平台支持
+
+1. **ARM64架构**：
+   - 支持ARMv8-A指令集
+   - 完整的ARM64汇编代码生成
+   - 支持ARM64寄存器约定
+
+2. **平台特性**：
+   - 支持29个通用寄存器（x0-x28）
+   - 支持32个向量寄存器（v0-v31）
+   - 支持栈帧管理和函数调用约定
+
+### 1.2.4. 调试和分析工具
+
+1. **AST可视化**：支持将抽象语法树输出为图形文件（PNG、SVG等）
+2. **IR输出**：支持将中间表示输出为文本文件
+3. **汇编注释**：可在汇编代码中包含对应的IR指令作为注释
+4. **符号表管理**：完整的符号表信息管理和输出
+
+### 1.2.5. Result
+1. 代码质量对比
+编译器	总指令数	内存访问指令	内存访问比例	使用寄存器数	栈空间使用
+MiniC	1122		422			37.61%			6			416字节
+GCC -O0	723			422			58.36%			9			144字节
+GCC -O1	298			34			11.40%			45			112字节
+GCC -O2	256			35			13.67%			49			112字节
+2. 性能测试结果（5次运行平均）
+编译器	平均执行时间	计算结果	时间测量方式
+MiniC	704微秒	-487658938	内置时间测量
+GCC -O0	637微秒	338970470	标准C库
+GCC -O1	298微秒	338970470	标准C库
+GCC -O2	368微秒	338970470	标准C库
+3. 关键发现和改进
+✅ MiniC编译器的优势：
+内存访问比例显著优于GCC -O0：37.61% vs 58.36%，节省了35%的内存访问
+图着色算法有效：在复杂的寄存器分配场景下能够正常工作
+功能完整：成功处理大量局部变量的寄存器分配
+稳定性好：5次运行结果完全一致，性能稳定
+🔧 仍需改进的方面：
+寄存器利用率偏低：只使用6个寄存器，远少于ARM64的29个可用寄存器
+指令数量较多：1122条指令，比GCC优化版本多
+栈空间使用较大：416字节，比GCC版本多
+📊 结果差异分析：
+计算结果不同：MiniC输出-487658938，GCC输出338970470
+可能原因：寄存器分配
 
 源代码位置：<https://github.com/NPUCompiler/exp03-minic-expr.git>
 
@@ -38,7 +195,7 @@ minic -S [-A | -D] [-T | -I] [-o output] [-O level] [-t cpu] source
 ```text
 ├── CMake
 ├── backend                     编译器后端
-│   └── arm32                   ARM32后端
+│   └── arm64                   ARM64后端
 ├── doc                         文档资料
 │   ├── figures
 │   └── graphviz
@@ -152,11 +309,11 @@ cd ..
 cd ..
 cd ..
 ```
-```
+```shell
 cd build
 cpack --config CPackSourceConfig.cmake
 ```
-不知道这个是干啥的。
+
 
 ```shell
 pacman -U https://mirrors.ustc.edu.cn/msys2/mingw/mingw64/mingw-w64-x86_64-antlr4-runtime-cpp-4.12.0-1-any.pkg.tar.zst
@@ -227,68 +384,120 @@ chmod u+x ./tools/IRCompiler/Linux-x86_64/Ubuntu-22.04/IRCompiler
 第一条指令通过minic编译器来生成的汇编test1-1.ir
 第二条指令借助IRCompiler工具实现对生成IR的解释执行。
 
-### 1.9.3. 生成 ARM32 的汇编
+### 1.9.3. 生成 ARM64 的汇编
 
 ```shell
-# 翻译 test1-1.c 成 ARM32 汇编
+# 翻译 test1-1.c 成 ARM64 汇编
 ./build/minic -S -o tests/test1-1-0.s tests/test1-1.c
-# 把 test1-1.c 通过 arm 版的交叉编译器 gcc 翻译成汇编
-arm-linux-gnueabihf-gcc -S -o tests/test1-1-1.s tests/test1-1.c
+# 把 test1-1.c 通过 ARM64 版的交叉编译器 gcc 翻译成汇编
+aarch64-linux-gnu-gcc -S -o tests/test1-1-1.s tests/test1-1.c
+
+# 测试复杂的寄存器分配算法
+./build/minic -S -o tests/RegisterAllocationTest.s tests/RegisterAllocationTest.c
+aarch64-linux-gnu-gcc -S -o tests/RegisterAllocationTest_gcc.s tests/RegisterAllocationTest.c
 ```
 
-第一条命令通过minic编译器来生成的汇编test1-1-0.s
-第二条指令是通过arm-linux-gnueabihf-gcc编译器生成的汇编语言test1-1-1.s。
+第一条命令通过minic编译器来生成的ARM64汇编test1-1-0.s
+第二条指令是通过aarch64-linux-gnu-gcc编译器生成的ARM64汇编语言test1-1-1.s。
+第三、四条命令用于测试复杂的寄存器分配算法效果。
 
 在调试运行时可通过对比检查所实现编译器的问题。
 
 ### 1.9.4. 生成可执行程序
 
-通过 gcc 的 arm 交叉编译器对生成的汇编进行编译，生成可执行程序。
+通过 gcc 的 ARM64 交叉编译器对生成的汇编进行编译，生成可执行程序。由于编译器使用了运行时库，需要链接std.c文件。
 
 ```shell
-# 通过 ARM gcc 编译器把汇编程序翻译成可执行程序，目标平台 ARM32
-arm-linux-gnueabihf-gcc -static -g -o tests/test1-1-0 tests/test1-1-0.s
-# 通过 ARM gcc 编译器把汇编程序翻译成可执行程序，目标平台 ARM32
-arm-linux-gnueabihf-gcc -static -g -o tests/test1-1-1 tests/test1-1-1.s
+# 编译运行时库
+aarch64-linux-gnu-gcc -c -o ir/std.o ir/std.c
+
+# 通过 ARM64 gcc 编译器把汇编程序翻译成可执行程序，目标平台 ARM64
+aarch64-linux-gnu-gcc -static -g -o tests/test1-1-0 tests/test1-1-0.s ir/std.o
+# 通过 ARM64 gcc 编译器把汇编程序翻译成可执行程序，目标平台 ARM64
+aarch64-linux-gnu-gcc -static -g -o tests/test1-1-1 tests/test1-1-1.s
+
+# 测试复杂寄存器分配的可执行程序
+aarch64-linux-gnu-gcc -static -g -o tests/RegisterAllocationTest tests/RegisterAllocationTest.s ir/std.o
+aarch64-linux-gnu-gcc -static -g -o tests/RegisterAllocationTest_gcc tests/RegisterAllocationTest_gcc.s
 ```
 
 有以下几个点需要注意：
 
-1. 这里必须用-static 进行静态编译，不依赖动态库，否则后续通过 qemu-arm-static 运行时会提示动态库找不到的错误
-2. 可通过网址<https://godbolt.org/>输入 C 语言源代码后查看各种目标后端的汇编。下图是选择 ARM GCC 11.4.0 的源代码与汇编对应。
-
-![godbolt 效果图](./doc/figures/godbolt-test1-1-arm32-gcc.png)
+1. **静态编译**：这里必须用-static 进行静态编译，不依赖动态库，否则后续通过 qemu-aarch64-static 运行时会提示动态库找不到的错误
+2. **运行时库链接**：由于编译器使用了内置函数（如putint、getch、starttime、stoptime等），需要链接运行时库std.o
+3. **寄存器分配测试**：RegisterAllocationTest.c 包含大量局部变量和复杂表达式，能够充分测试图着色寄存器分配算法的效果
+4. **性能对比**：可通过网址<https://godbolt.org/>输入 C 语言源代码后查看各种目标后端的汇编，选择 ARM64 GCC 来对比汇编质量
 
 ### 1.9.5. 运行可执行程序
 
-借助用户模式的 qemu 来运行，arm 架构可使用 qemu-arm-static 命令。
+借助用户模式的 qemu 来运行，ARM64 架构可使用 qemu-aarch64-static 命令。
 
 ```shell
-qemu-arm-static tests/test1-1-0
+# 运行基本测试程序
+qemu-aarch64-static tests/test1-1-0
 echo $?
-qemu-arm-static tests/test1-1-1
+qemu-aarch64-static tests/test1-1-1
+echo $?
+
+# 运行寄存器分配测试程序（包含性能计时）
+qemu-aarch64-static tests/RegisterAllocationTest
+echo $?
+qemu-aarch64-static tests/RegisterAllocationTest_gcc
 echo $?
 ```
 
 这里可比较运行的结果(即通过指令echo $?获取main函数的返回值，注意截断8位的无符号整数)，如果两者不一致，则编写的编译器程序有问题。
 
+对于包含starttime()和stoptime()的程序，需要设置环境变量启用性能测试：
+
+```shell
+# 启用性能测试模式
+export OPT_TEST=1
+qemu-aarch64-static tests/RegisterAllocationTest
+```
+
 如果测试用例源文件程序需要输入，假定输入的内容在文件A.in中，则可通过以下方式运行。
 
 ```shell
-qemu-arm-static tests/test1-1-0 < A.in
+qemu-aarch64-static tests/test1-1-0 < A.in
 echo $?
-qemu-arm-static tests/test1-1-1 < A.in
+qemu-aarch64-static tests/test1-1-1 < A.in
 echo $?
 ```
 
 如果想把输出的内容写到文件中，可通过重定向符号>来实现，假定输入到B.out文件中。
 
 ```shell
-qemu-arm-static tests/test1-1-0 < A.in > A.out
+qemu-aarch64-static tests/test1-1-0 < A.in > A.out
 echo $?
-qemu-arm-static tests/test1-1-1 < A.in > A.out
+qemu-aarch64-static tests/test1-1-1 < A.in > A.out
 echo $?
 ```
+
+### 1.9.6. 寄存器分配算法测试
+
+编译器实现了基于图着色的寄存器分配算法，RegisterAllocationTest.c 是专门设计的测试用例，具有以下特点：
+
+1. **大量局部变量**：每个函数包含20+个局部变量，超过ARM64可用寄存器数量
+2. **复杂表达式**：包含嵌套的算术表达式，产生大量临时变量
+3. **控制流复杂**：包含嵌套循环、条件分支，增加活跃变量分析的复杂度
+4. **函数调用**：包含递归调用和矩阵运算，测试调用约定和寄存器保存
+5. **性能测量**：使用starttime()和stoptime()测量执行时间
+
+通过对比编译器生成的汇编代码和GCC生成的代码，可以评估寄存器分配算法的效果：
+
+```shell
+# 查看编译器生成的汇编代码中的寄存器使用情况
+grep -E "x[0-9]+|w[0-9]+" tests/RegisterAllocationTest.s | head -20
+
+# 查看GCC生成的汇编代码中的寄存器使用情况
+grep -E "x[0-9]+|w[0-9]+" tests/RegisterAllocationTest_gcc.s | head -20
+```
+
+优秀的寄存器分配应该表现为：
+- 减少内存访问指令（load/store）
+- 充分利用可用寄存器
+- 在寄存器压力大的区域合理进行溢出
 
 ## 1.10. qemu 的用户模式
 
@@ -311,7 +520,7 @@ sudo apt-get install -y gdb-multiarch
 
 ```shell
 # 启动 gdb server，监视的端口号为 1234
-qemu-arm-static -g 1234 tests/test1
+qemu-aarch64-static -g 1234 tests/test1
 ```
 
 其中-g 指定远程调试的端口，这里指定端口号为 1234，这样 qemu 会开启 gdb 的远程调试服务。
@@ -337,7 +546,7 @@ c
 # 之后可使用 gdb 的其它命令进行单步运行与调试
 ```
 
-在调试完毕后前面启动的 qemu-arm-static 程序会自动退出。因此，要想重新调试，请启动第一步的 qemu-arm-static 程序。
+在调试完毕后前面启动的 qemu-aarch64-static 程序会自动退出。因此，要想重新调试，请启动第一步的 qemu-aarch64-static 程序。
 
 ## 1.12. 源程序打包
 

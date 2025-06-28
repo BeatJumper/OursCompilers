@@ -248,6 +248,9 @@ private:
     /// @brief 全局标签计数器，确保标签全局唯一
     int32_t globalLabelCounter;
 
+    /// @brief 全局IR名称计数器，确保所有IR名称（变量、临时值、标签）全局唯一
+    int32_t globalIRNameCounter;
+
 public:
     /// @brief 新建64位整型常量
     /// @param val 常量值
@@ -263,4 +266,8 @@ public:
     /// @brief 获取下一个全局唯一的标签ID
     /// @return 标签ID
     int32_t getNextLabelId();
+
+    /// @brief 获取下一个全局唯一的IR名称ID
+    /// @return IR名称ID
+    int32_t getNextIRNameId();
 };

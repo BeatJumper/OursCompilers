@@ -21,7 +21,7 @@
 #include "PointerType.h"
 #include "FloatType.h"
 
-Module::Module(std::string _name) : name(_name), globalLabelCounter(0)
+Module::Module(std::string _name) : name(_name), globalLabelCounter(0), globalIRNameCounter(0)
 {
     // 创建作用域栈
     scopeStack = new ScopeStack();
@@ -390,7 +390,7 @@ void Module::renameIR()
 
     // 遍历所有的函数，含局部变量名、形参、Label名、指令变量重命名
     for (auto func: funcVector) {
-        func->renameIR();
+        func->renameIR(this);
     }
 }
 
@@ -551,5 +551,12 @@ ConstInt * Module::newConstInt(int64_t val, Type * type)
 /// @return 标签ID
 int32_t Module::getNextLabelId()
 {
-    return globalLabelCounter++;
+    return globalIRNameCounter++;
+}
+
+/// @brief 获取下一个全局唯一的IR名称ID
+/// @return IR名称ID
+int32_t Module::getNextIRNameId()
+{
+    return globalIRNameCounter++;
 }

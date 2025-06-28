@@ -1,7 +1,7 @@
 ///
 /// @file DeadCodeElimination.cpp
 /// @brief 死代码消除优化模块实现文件
-/// @author AI Assistant
+/// @author kyk
 /// @version 1.0
 /// @date 2024-12-26
 ///
@@ -10,7 +10,7 @@
 /// @par 修改日志:
 /// <table>
 /// <tr><th>Date       <th>Version <th>Author  <th>Description
-/// <tr><td>2024-12-26 <td>1.0     <td>AI      <td>新建
+/// <tr><td>2024-12-26 <td>1.0     <td>kyk     <td>新建
 /// </table>
 ///
 

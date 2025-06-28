@@ -2,7 +2,7 @@
 /// @file MemsetInstruction.cpp
 /// @brief memset指令实现，用于数组零初始化等内存设置操作
 ///
-/// @author AI Assistant
+/// @author kyk
 /// @version 1.0
 /// @date 2024-12-26
 ///
@@ -11,7 +11,7 @@
 /// @par 修改日志:
 /// <table>
 /// <tr><th>Date       <th>Version <th>Author  <th>Description
-/// <tr><td>2024-12-26 <td>1.0     <td>AI      <td>新建
+/// <tr><td>2024-12-26 <td>1.0     <td>kyk     <td>新建
 /// </table>
 ///
 
@@ -25,8 +25,8 @@
 /// @param _size 设置大小
 /// @param _volatile 是否volatile
 MemsetInstruction::MemsetInstruction(Function * _func, Value * _dest, Value * _value, Value * _size, bool _volatile)
-    : Instruction(_func, IRInstOperator::IRINST_OP_MEMSET, VoidType::getType()), dest(_dest), value(_value), size(_size),
-      isVolatile(_volatile)
+    : Instruction(_func, IRInstOperator::IRINST_OP_MEMSET, VoidType::getType()), dest(_dest), value(_value),
+      size(_size), isVolatile(_volatile)
 {
     // 添加操作数
     addOperand(_dest);

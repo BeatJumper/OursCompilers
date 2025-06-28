@@ -414,8 +414,11 @@ std::any MiniCCSTVisitor::visitUnaryExp(MiniCParser::UnaryExpContext * ctx)
         return visitPrimaryExp(ctx->primaryExp());
     } else if (ctx->T_ID()) {
         // 函数调用
+        std::string funcName = ctx->T_ID()->getText();
+        int64_t lineNo = (int64_t) ctx->T_ID()->getSymbol()->getLine();
+
         // 创建函数调用名终结符节点
-        ast_node * funcname_node = ast_node::New(ctx->T_ID()->getText(), (int64_t) ctx->T_ID()->getSymbol()->getLine());
+        ast_node * funcname_node = ast_node::New(funcName, lineNo);
 
         // 实参列表
         ast_node * paramListNode = nullptr;
