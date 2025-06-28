@@ -786,15 +786,10 @@ void InstSelectorArm64::translate_load(Instruction * inst)
 
     int32_t result_regId = result->getRegId();
 
-    printf("Debug: translate_load - result=%p, arg1=%p\n", result, arg1);
-    printf("Debug: translate_load - result_regId=%d, arg1_regId=%d\n", result_regId, arg1->getRegId());
-
     if (arg1 == nullptr) {
         printf("Error: load instruction operand is null\n");
         return;
     }
-
-    printf("Debug: translate_load - arg1 name=%s, IRName=%s\n", arg1->getName().c_str(), arg1->getIRName().c_str());
 
     if (result_regId != -1) {
         // 检查arg1是否是getelementptr的结果，需要重新计算地址
@@ -829,11 +824,6 @@ void InstSelectorArm64::translate_load(Instruction * inst)
             std::string result_reg_name = PlatformArm64::regName[result_regId];
             iloc.inst("ldr", result_reg_name, "[" + temp_reg_name + "]");
 
-            printf("Debug: load recalculated address: %s = %s + %ld, loaded to %s\n",
-                   temp_reg_name.c_str(),
-                   base_reg_name.c_str(),
-                   offset,
-                   result_reg_name.c_str());
             return;
         }
 
@@ -859,24 +849,17 @@ void InstSelectorArm64::translate_store(Instruction * inst)
 
     int32_t arg1_regId = arg1->getRegId();
 
-    printf("Debug: translate_store - arg1=%s, arg2=%s\n",
-           arg1 ? arg1->getIRName().c_str() : "null",
-           arg2 ? arg2->getIRName().c_str() : "null");
-    printf("Debug: translate_store - arg1_regId=%d, arg2_regId=%d\n", arg1_regId, arg2->getRegId());
-
     // 检查是否是数组类型的存储
     if (arg1->getType()->isArrayType()) {
-        printf("Debug: translate_store - detected array type store, generating memcpy\n");
 
         // 对于数组类型的存储，生成memcpy指令
         // arg1是源数组（全局变量），arg2是目标数组（局部变量）
 
         // 1. 获取数组大小
         int arraySize = arg1->getType()->getSize();
-        printf("Debug: translate_store - array size = %d bytes (%d words)\n", arraySize, arraySize / 4);
 
         // 2. 获取源地址（全局变量或从全局变量加载的值）
-        int src_reg = ARM64_TMP_REG_NO + 1; // 使用x1作为源地址寄存器
+        int src_reg = ARM64_TMP_REG_NO + 1; // 使用x11作为源地址寄存器
         std::string globalVarName;
 
         if (GlobalVariable * globalVar = dynamic_cast<GlobalVariable *>(arg1)) {
@@ -1025,19 +1008,6 @@ void InstSelectorArm64::translate_store(Instruction * inst)
 /// @param inst IR指令
 void InstSelectorArm64::translate_ret(Instruction * inst)
 {
-    /*Function * func = this->func;
-    Value * returnValue = func->getReturnValue();
-
-    if (returnValue != nullptr) {
-        int32_t resultRegId = returnValue->getRegId();
-
-        // 如果返回值不在w0，将其移动到w0
-        if (resultRegId != 0) {
-            // 使用mov指令将x0的低32位移动到w0（适用于32位返回值）
-            // 或直接使用mov将64位值移动到w0（若返回值为64位但需截断）
-            iloc.inst("mov", PlatformArm64::regName[0], PlatformArm64::regName[resultRegId]);
-        }
-    }*/
     Value * returnValue = func->getReturnValue();
 
     // 如果存在返回值，确保其位于x0寄存器
@@ -1107,9 +1077,6 @@ void InstSelectorArm64::translate_sitofp(Instruction * inst)
 /// @param inst IR指令
 void InstSelectorArm64::translate_gep(Instruction * inst)
 {
-    // getelementptr指令用于计算数组元素的地址
-    // 格式: result = getelementptr type, type* ptr, i64 index1, i64 index2, ...
-
     Value * result = inst;
     Value * basePtr = inst->getOperand(0); // 基址指针
 
@@ -1124,24 +1091,10 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
 
         if (basePtr->getMemoryAddr(&base_reg_id, &base_offset)) {
             // 基址在栈上，计算其地址
-            printf("Debug: getelementptr basePtr=%s, base_offset = %ld, base_reg_id = %d\n",
-                   basePtr->getIRName().c_str(),
-                   base_offset,
-                   base_reg_id);
             if (inst->getOperandsNum() >= 3) {
                 // 有索引，需要计算偏移
                 // 简化处理：对于二维数组 arr[i][j]，偏移 = base_offset + i*sizeof(row) + j*sizeof(element)
                 // 这里我们暂时只处理常量索引
-
-                printf("Debug: getelementptr operands count = %d\n", inst->getOperandsNum());
-                for (int i = 0; i < inst->getOperandsNum(); i++) {
-                    Value * op = inst->getOperand(i);
-                    printf("Debug: operand[%d] = %s\n", i, op ? op->getIRName().c_str() : "null");
-                }
-
-                // 获取第一个索引（通常是0，表示数组本身）
-                Value * index1 = inst->getOperand(1);
-                (void) index1; // 避免未使用变量警告
 
                 // 检查实际的操作数数量（排除结果）
                 int actual_operands = inst->getOperandsNum();
@@ -1169,6 +1122,7 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                             if (dimensions.size() > 1) {
                                 // 多维数组：每个元素是一个子数组
                                 // 计算子数组的大小
+                                // TODO
                                 int sub_array_size = 1;
                                 for (size_t i = 1; i < dimensions.size(); i++) {
                                     sub_array_size *= dimensions[i];
@@ -1191,26 +1145,16 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
 
                         int64_t element_offset = base_offset + (idx * element_size);
 
-                        printf(
-                            "Debug: 1D array access: idx=%ld, element_size=%ld, base_offset=%ld, element_offset=%ld\n",
-                            idx,
-                            element_size,
-                            base_offset,
-                            element_offset);
-
                         // 只设置结果的内存地址信息，不生成地址计算指令
                         // 地址计算将在load/store指令中进行
                         inst->setMemoryAddr(base_reg_id, element_offset);
-                        printf("Debug: getelementptr set memory addr (1D): base_reg=%d, offset=%ld\n",
-                               base_reg_id,
-                               element_offset);
                         return;
                     }
                 } else if (actual_operands >= 4) {
-                    // 获取第二个索引（行索引）
+                    // 获取行索引
                     Value * index2 = inst->getOperand(2);
                     if (inst->getOperandsNum() >= 5) {
-                        // 获取第三个索引（列索引）
+                        // 获取列索引
                         Value * index3 = inst->getOperand(3);
 
                         // 对于int[4][2]数组，每行8字节，每个元素4字节
@@ -1221,18 +1165,9 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                             int64_t col_idx = constIdx3->getVal();
                             int64_t element_offset = base_offset + (row_idx * 8) + (col_idx * 4);
 
-                            // printf("Debug: getelementptr element calculation: row_idx=%ld, col_idx=%ld, "
-                            //        "element_offset=%ld\n",
-                            //        row_idx,
-                            //        col_idx,
-                            //        element_offset);
-
                             // 只设置结果的内存地址信息，不生成地址计算指令
                             // 地址计算将在load/store指令中进行
                             inst->setMemoryAddr(base_reg_id, element_offset);
-                            printf("Debug: getelementptr set memory addr: base_reg=%d, offset=%ld\n",
-                                   base_reg_id,
-                                   element_offset);
                             return;
                         }
                     }
@@ -1242,14 +1177,10 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             // 默认情况：只设置内存地址信息，不生成地址计算指令
             // 地址计算将在load/store指令中进行
             inst->setMemoryAddr(base_reg_id, base_offset);
-            printf("Debug: getelementptr set memory addr (default): base_reg=%d, offset=%ld\n",
-                   base_reg_id,
-                   base_offset);
         } else {
             // 检查是否是全局变量
             if (auto globalVar = dynamic_cast<GlobalVariable *>(basePtr)) {
                 // 处理全局变量的GEP指令
-                printf("Debug: getelementptr for global variable %s\n", globalVar->getName().c_str());
 
                 // 获取索引值来计算偏移量
                 if (inst->getOperandsNum() >= 3) {
@@ -1266,11 +1197,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                         // 对于一维数组 a[5]，偏移量 = idx2 * sizeof(element)
                         // 假设是int数组，每个元素4字节
                         int64_t element_offset = idx2 * 4;
-
-                        printf("Debug: Global array access: idx1=%ld, idx2=%ld, element_offset=%ld\n",
-                               idx1,
-                               idx2,
-                               element_offset);
 
                         // 生成地址计算指令
                         std::string result_reg_name = PlatformArm64::regName[result_reg];
@@ -1324,14 +1250,8 @@ void InstSelectorArm64::translate_bitcast(Instruction * inst)
     Value * result = inst;
     Value * source = inst->getOperand(0);
 
-    printf("Debug: bitcast result=%s, source=%s\n",
-           result ? result->getIRName().c_str() : "null",
-           source ? source->getIRName().c_str() : "null");
-
     int32_t result_reg = result->getRegId();
     int32_t source_reg = source->getRegId();
-
-    printf("Debug: bitcast result_reg=%d, source_reg=%d\n", result_reg, source_reg);
 
     if (result_reg != -1) {
         if (source_reg != -1) {
@@ -1464,15 +1384,9 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
     Value * src = inst->getOperand(1);
     Value * size = inst->getOperand(2);
 
-    printf("Debug: memcpy dest=%s, src=%s\n",
-           dest ? dest->getIRName().c_str() : "null",
-           src ? src->getIRName().c_str() : "null");
-
     // 获取目标和源地址的寄存器
     int32_t dest_reg = dest->getRegId();
     int32_t src_reg = src->getRegId();
-
-    printf("Debug: memcpy dest_reg=%d, src_reg=%d\n", dest_reg, src_reg);
 
     // 如果地址不在寄存器中，需要先加载地址
     if (dest_reg == -1) {
@@ -1501,10 +1415,6 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
                 iloc.load_imm(ARM64_TMP_REG_NO + 1, base_offset); // 使用另一个临时寄存器
                 iloc.inst("add", dest_reg_name, base_reg_name, PlatformArm64::regName[ARM64_TMP_REG_NO + 1 + 32]);
             }
-            printf("Debug: memcpy calculated dest address: %s = %s + %ld\n",
-                   dest_reg_name.c_str(),
-                   base_reg_name.c_str(),
-                   base_offset);
         } else {
             printf("Error: memcpy dest address calculation failed\n");
             return;
@@ -1523,7 +1433,6 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
             // 加载全局变量地址
             iloc.inst("adrp", src_reg_name, globalVar->getName());
             iloc.inst("add", src_reg_name, src_reg_name, ":lo12:" + globalVar->getName());
-            printf("Debug: memcpy loaded global src address: %s\n", globalVar->getName().c_str());
         } else {
             printf("Error: memcpy src address calculation failed\n");
             return;
@@ -1534,8 +1443,6 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
     if (auto constSize = dynamic_cast<ConstInt *>(size)) {
         int copySize = constSize->getVal();
         int wordCount = (copySize + 3) / 4; // 向上取整到字边界
-
-        printf("Debug: memcpy copying %d bytes (%d words)\n", copySize, wordCount);
 
         // 使用循环复制数据
         for (int i = 0; i < wordCount; i++) {
@@ -1582,15 +1489,8 @@ void InstSelectorArm64::translate_memset(Instruction * inst)
     Value * value = inst->getOperand(1);
     Value * size = inst->getOperand(2);
 
-    printf("Debug: memset dest=%s, value=%s, size=%s\n",
-           dest ? dest->getIRName().c_str() : "null",
-           value ? value->getIRName().c_str() : "null",
-           size ? size->getIRName().c_str() : "null");
-
     // 获取目标地址的寄存器
     int32_t dest_reg = dest->getRegId();
-
-    printf("Debug: memset dest_reg=%d\n", dest_reg);
 
     // 如果地址不在寄存器中，需要先加载地址
     if (dest_reg == -1) {
@@ -1614,10 +1514,6 @@ void InstSelectorArm64::translate_memset(Instruction * inst)
             } else {
                 iloc.inst("sub", dest_reg_name, base_reg_name, "#" + std::to_string(-base_offset));
             }
-            printf("Debug: memset calculated dest address: %s = %s + %ld\n",
-                   dest_reg_name.c_str(),
-                   base_reg_name.c_str(),
-                   base_offset);
         } else {
             printf("Error: memset dest address calculation failed\n");
             return;
@@ -1642,8 +1538,6 @@ void InstSelectorArm64::translate_memset(Instruction * inst)
         int setSize = constSize->getVal();
         int wordCount = (setSize + 3) / 4; // 向上取整到字边界
 
-        printf("Debug: memset setting %d bytes (%d words) to zero\n", setSize, wordCount);
-
         // 使用循环设置数据为零
         std::string dest_reg_name = PlatformArm64::regName[dest_reg];
         if (dest_reg_name[0] == 'w') {
@@ -1654,8 +1548,5 @@ void InstSelectorArm64::translate_memset(Instruction * inst)
             // 存储零到目标地址
             iloc.inst("str", "wzr", "[" + dest_reg_name + ", #" + std::to_string(i * 4) + "]");
         }
-    } else {
-        // 动态大小的memset，暂时不实现
-        printf("Warning: Dynamic size memset not implemented\n");
     }
 }

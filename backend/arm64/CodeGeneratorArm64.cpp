@@ -55,7 +55,6 @@ void CodeGeneratorArm64::genDataSection()
 {
     printf("genDataSection\n");
     // 生成数据段
-    // TODO全局常量
     bool bssStarted = false;
     bool dataStarted = false;
 
@@ -78,10 +77,10 @@ void CodeGeneratorArm64::genDataSection()
                 int totalSize = var->getType()->getSize();
                 int wordCount = (totalSize + 3) / 4; // 向上取整到字边界
                 for (int i = 0; i < wordCount; i++) {
-                    fprintf(fp, ".word 0\n");
+                    fprintf(fp, "	.word 0\n");
                 }
             } else {
-                fprintf(fp, ".word 0\n");
+                fprintf(fp, "	.word 0\n");
             }
             fprintf(fp, ".size %s, %d\n", var->getName().c_str(), var->getType()->getSize());
             //, var->getType()->getSize(), var->getAlignment()
@@ -98,13 +97,13 @@ void CodeGeneratorArm64::genDataSection()
             fprintf(fp, "%s:\n", var->getName().c_str());
 
             if (auto constInt = dynamic_cast<ConstInt *>(var->getInitValue())) {
-                fprintf(fp, ".word %d\n", constInt->getVal());
+                fprintf(fp, "	.word %d\n", constInt->getVal());
                 fprintf(fp, ".size %s, %d\n", var->getName().c_str(), var->getType()->getSize());
             } else if (auto constFloat = dynamic_cast<ConstFloat *>(var->getInitValue())) {
                 uint32_t floatBits;
                 float tempFloat = constFloat->getVal();
                 std::memcpy(&floatBits, &tempFloat, sizeof(float));
-                fprintf(fp, ".word %u\n", floatBits);
+                fprintf(fp, "	.word %u\n", floatBits);
             } else if (var->getType()->isArrayType() && !var->getInitValueList().empty()) {
                 // 处理数组类型全局变量的初始化值列表
                 auto & initValues = var->getInitValueList();
@@ -116,7 +115,7 @@ void CodeGeneratorArm64::genDataSection()
                 fprintf(fp, ".size %s, %d\n", var->getName().c_str(), actualSize);
             } else {
                 // 默认情况：输出单个0
-                fprintf(fp, ".word 0\n");
+                fprintf(fp, "	.word 0\n");
                 fprintf(fp, ".size %s, %d\n", var->getName().c_str(), var->getType()->getSize());
             }
         }
@@ -662,12 +661,12 @@ void CodeGeneratorArm64::expandAndOutputInitValues(const std::vector<Value *> & 
 {
     for (auto element: initValues) {
         if (auto constIntElement = dynamic_cast<ConstInt *>(element)) {
-            fprintf(fp, ".word %d\n", constIntElement->getVal());
+            fprintf(fp, "	.word %d\n", constIntElement->getVal());
         } else if (auto constFloatElement = dynamic_cast<ConstFloat *>(element)) {
             uint32_t floatBits;
             float tempFloatElement = constFloatElement->getVal();
             std::memcpy(&floatBits, &tempFloatElement, sizeof(float));
-            fprintf(fp, ".word %u\n", floatBits);
+            fprintf(fp, "	.word %u\n", floatBits);
         } else if (auto globalVarElement = dynamic_cast<GlobalVariable *>(element)) {
             // 递归处理嵌套的全局变量（嵌套数组）
             if (!globalVarElement->getInitValueList().empty()) {
@@ -678,15 +677,15 @@ void CodeGeneratorArm64::expandAndOutputInitValues(const std::vector<Value *> & 
                     ArrayType * nestedArrayType = static_cast<ArrayType *>(globalVarElement->getType());
                     int totalElements = nestedArrayType->getTotalElements();
                     for (int i = 0; i < totalElements; i++) {
-                        fprintf(fp, ".word 0\n");
+                        fprintf(fp, "	.word 0\n");
                     }
                 } else {
-                    fprintf(fp, ".word 0\n");
+                    fprintf(fp, "	.word 0\n");
                 }
             }
         } else {
             // 默认输出0
-            fprintf(fp, ".word 0\n");
+            fprintf(fp, "	.word 0\n");
         }
     }
 }

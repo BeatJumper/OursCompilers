@@ -608,12 +608,6 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 
     func->setStackFrameSize(totalSize);
 
-    printf("Debug: 栈帧大小计算 - alloca: %ld, localVar: %ld, tempVar: %ld, total: %d\n",
-           allocaSize,
-           localVarSize,
-           tempVarSize,
-           totalSize);
-
     // 计算保存寄存器的偏移量
     int64_t saveOffset = totalSize - protectedRegNum * 8;
     std::string off;
@@ -650,11 +644,6 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
     for (auto & local: func->getVarValues()) {
         // 检查这个变量是否是alloca指令的结果
         std::string localName = local->getName();
-        printf("Debug: 检查局部变量 %s, 类型=%s, 是否指针=%d, 是否数组=%d\n",
-               localName.c_str(),
-               local->getType()->toString().c_str(),
-               local->getType()->isPointerType(),
-               local->getType()->isArrayType());
 
         bool isAllocaResult = false;
 
@@ -672,17 +661,12 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
         }
 
         if (isAllocaResult) {
-            printf("Debug: 跳过alloca结果变量 %s 在局部变量处理中\n", local->getName().c_str());
             continue;
         }
 
         // 对齐到4字节边界
         localVarOffset = (localVarOffset + 3) & ~3;
         local->setOffset(localVarOffset);
-        printf("Debug: allocStack variable %s: size=%d, offset=%ld\n",
-               local->getName().c_str(),
-               local->getType()->getSize(),
-               localVarOffset);
 
         localVarOffset += local->getType()->getSize();
     }
@@ -709,12 +693,6 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
             if (!inst->getMemoryAddr(&existing_base, &existing_offset)) {
                 // 只有当指令还没有内存地址时才设置
                 inst->setMemoryAddr(ARM64_SP_REG_NO, temp_offset);
-                printf("Debug: 设置临时变量 %s 内存地址: offset=%ld\n", inst->getIRName().c_str(), temp_offset);
-            } else {
-                printf("Debug: 跳过已有内存地址的指令 %s: base=%d, offset=%ld\n",
-                       inst->getIRName().c_str(),
-                       existing_base,
-                       existing_offset);
             }
         }
     }
