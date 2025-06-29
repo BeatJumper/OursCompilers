@@ -252,7 +252,7 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     adjustBinaryInsts(func);
 
     // 加完新指令后也该重新调整IR编号
-    func->renameIR();
+    func->renameIR(module);
 
     // 主要染色过程（不断尝试染色直至成功）
     while (true) {

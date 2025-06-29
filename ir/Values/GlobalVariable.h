@@ -17,8 +17,10 @@
 #pragma once
 
 #include "GlobalValue.h"
+#include "ArrayType.h"
 #include "IRConstant.h"
 #include "ConstFloat.h"
+#include "ConstInt.h"
 
 ///
 /// @brief 全局变量，寻址时通过符号名或变量名来寻址
@@ -90,33 +92,36 @@ public:
 
         // 处理初值列表
         if (!initValueList.empty()) {
-            str += " [";
-            for (size_t i = 0; i < initValueList.size(); ++i) {
-                if (i > 0)
-                    str += ", ";
-
-                // 根据实际类型输出正确的类型和值
-                if (ConstInt * constInt = dynamic_cast<ConstInt *>(initValueList[i])) {
-                    str += "i32 " + std::to_string(constInt->getVal());
-                } else if (ConstFloat * constFloat = dynamic_cast<ConstFloat *>(initValueList[i])) {
-                    str += "float " + constFloat->getIRName();
-                } else if (GlobalVariable * globalVar = dynamic_cast<GlobalVariable *>(initValueList[i])) {
-                    // 嵌套的全局常量数组，递归展开其内容而不是引用
-                    str += expandGlobalVariableContent(globalVar);
-                } else {
-                    str += "i32 0";
+            if (getType()->isArrayType()) {
+                ArrayType * arrayType = static_cast<ArrayType *>(getType());
+                auto result = formatArrayInitializer(arrayType, initValueList, 0);
+                str += " " + result.first;
+            } else {
+                // 非数组类型，简单输出
+                str += " [";
+                for (size_t i = 0; i < initValueList.size(); ++i) {
+                    if (i > 0)
+                        str += ", ";
+                    str += formatValue(initValueList[i]);
                 }
+                str += "]";
             }
-            str += "]";
         } else if (initValue) {
             // 处理单个初值
             if (ConstInt * constInt = dynamic_cast<ConstInt *>(initValue)) {
                 str += " " + std::to_string(constInt->getVal());
+            } else if (ConstFloat * constFloat = dynamic_cast<ConstFloat *>(initValue)) {
+                str += " " + constFloat->getIRName();
             } else {
                 str += " 0";
             }
         } else {
-            str += " 0";
+            // 没有初始化值时，根据类型选择合适的初始化方式
+            if (getType()->isArrayType()) {
+                str += " zeroinitializer";
+            } else {
+                str += " 0";
+            }
         }
 
         str += ", align " + std::to_string(getAlignment());
@@ -205,6 +210,19 @@ public:
     /// @param globalVar 要展开的全局变量
     /// @return 展开后的字符串表示
     static std::string expandGlobalVariableContent(GlobalVariable * globalVar);
+
+    /// @brief 格式化数组初始化器为正确的嵌套结构
+    /// @param arrayType 数组类型
+    /// @param values 扁平化的初始化值列表
+    /// @param startIndex 开始索引
+    /// @return 格式化后的字符串和消耗的元素个数
+    static std::pair<std::string, int>
+    formatArrayInitializer(ArrayType * arrayType, const std::vector<Value *> & values, int startIndex);
+
+    /// @brief 格式化单个值
+    /// @param value 要格式化的值
+    /// @return 格式化后的字符串
+    static std::string formatValue(Value * value);
 };
 
 /// @brief 递归展开全局变量内容的实现

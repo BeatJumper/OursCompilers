@@ -219,7 +219,6 @@ std::any MiniCCSTVisitor::visitBlockItemList(MiniCParser::BlockItemListContext *
             }
         } catch (const std::bad_any_cast & e) {
             // 如果转换失败，说明返回的不是ast_node*类型，跳过
-            std::cout << "Warning: Failed to cast blockItem to ast_node*, skipping..." << std::endl;
         }
     }
 
@@ -260,18 +259,14 @@ std::any MiniCCSTVisitor::visitStatement(MiniCParser::StatementContext * ctx)
     | T_BREAK T_SEMICOLON											# breakStatement
     | T_CONTINUE T_SEMICOLON										# continueStatement;
     */
-    // 打印当前访问的语句内容（调试用）
-    std::cout << "Visiting statement:" << ctx->getText() << std::endl;
 
     // 检查是否是 break 语句
     if (Instanceof(breakCtx, MiniCParser::BreakStatementContext *, ctx)) {
-        std::cout << "=== FOUND BREAK STATEMENT: " << ctx->getText() << " ===" << std::endl;
         return visitBreakStatement(breakCtx);
     }
 
     // 检查是否是 continue 语句
     if (Instanceof(continueCtx, MiniCParser::ContinueStatementContext *, ctx)) {
-        std::cout << "=== FOUND CONTINUE STATEMENT: " << ctx->getText() << " ===" << std::endl;
         return visitContinueStatement(continueCtx);
     }
 
@@ -414,8 +409,11 @@ std::any MiniCCSTVisitor::visitUnaryExp(MiniCParser::UnaryExpContext * ctx)
         return visitPrimaryExp(ctx->primaryExp());
     } else if (ctx->T_ID()) {
         // 函数调用
+        std::string funcName = ctx->T_ID()->getText();
+        int64_t lineNo = (int64_t) ctx->T_ID()->getSymbol()->getLine();
+
         // 创建函数调用名终结符节点
-        ast_node * funcname_node = ast_node::New(ctx->T_ID()->getText(), (int64_t) ctx->T_ID()->getSymbol()->getLine());
+        ast_node * funcname_node = ast_node::New(funcName, lineNo);
 
         // 实参列表
         ast_node * paramListNode = nullptr;
@@ -453,9 +451,6 @@ std::any MiniCCSTVisitor::visitPrimaryExp(MiniCParser::PrimaryExpContext * ctx)
         std::string digitText = ctx->T_DIGIT()->getText();
         int64_t lineNo = (int64_t) ctx->T_DIGIT()->getSymbol()->getLine();
 
-        // 添加调试信息
-        printf("Debug: Processing T_DIGIT: '%s' at line %ld\n", digitText.c_str(), lineNo);
-
         // 解析数字值用于设置 integer_val
         uint32_t val = 0;
         try {
@@ -470,7 +465,6 @@ std::any MiniCCSTVisitor::visitPrimaryExp(MiniCParser::PrimaryExpContext * ctx)
                 val = (uint32_t) std::stoull(digitText, nullptr, 10);
             }
         } catch (const std::exception & e) {
-            printf("Error: Failed to parse digit '%s' at line %ld: %s\n", digitText.c_str(), lineNo, e.what());
             return nullptr;
         }
 
@@ -478,8 +472,6 @@ std::any MiniCCSTVisitor::visitPrimaryExp(MiniCParser::PrimaryExpContext * ctx)
         node = ast_node::New(digitText, lineNo);
         node->integer_val = val;
         node->node_type = ast_operator_type::AST_OP_LEAF_LITERAL_UINT;
-
-        // printf("Debug: Created digit node: name='%s', value=%u\n", digitText.c_str(), val);
 
     } else if (ctx->T_FLOAT_DIGIT()) { // 新增浮点数字面量处理
         // 获取浮点数字面量文本
@@ -491,7 +483,6 @@ std::any MiniCCSTVisitor::visitPrimaryExp(MiniCParser::PrimaryExpContext * ctx)
         try {
             val = std::stof(floatText);
         } catch (const std::exception & e) {
-            printf("Error: Failed to parse float '%s' at line %ld: %s\n", floatText.c_str(), lineNo, e.what());
             return nullptr;
         }
 
@@ -607,7 +598,6 @@ std::any MiniCCSTVisitor::visitVarDef(MiniCParser::VarDefContext * ctx)
                 varTypeAttr.dimensions.push_back(dimNode->integer_val);
             } else {
                 // 如果不是常量，暂时使用-1表示动态大小（后续可以扩展）
-                printf("Warning: Non-constant array dimension at line %ld\n", lineNo);
                 varTypeAttr.dimensions.push_back(-1);
             }
 
@@ -1021,7 +1011,6 @@ std::any MiniCCSTVisitor::visitConstDef(MiniCParser::ConstDefContext * ctx)
                 constTypeAttr.dimensions.push_back(dimNode->integer_val);
             } else {
                 // 如果不是常量，暂时使用-1表示动态大小（后续可以扩展）
-                printf("Warning: Non-constant array dimension at line %ld\n", lineNo);
                 constTypeAttr.dimensions.push_back(-1);
             }
 

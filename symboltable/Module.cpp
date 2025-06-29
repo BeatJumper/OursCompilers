@@ -21,7 +21,7 @@
 #include "PointerType.h"
 #include "FloatType.h"
 
-Module::Module(std::string _name) : name(_name), globalLabelCounter(0)
+Module::Module(std::string _name) : name(_name), globalLabelCounter(0), globalIRNameCounter(0)
 {
     // 创建作用域栈
     scopeStack = new ScopeStack();
@@ -390,7 +390,7 @@ void Module::renameIR()
 
     // 遍历所有的函数，含局部变量名、形参、Label名、指令变量重命名
     for (auto func: funcVector) {
-        func->renameIR();
+        func->renameIR(this);
     }
 }
 
@@ -406,9 +406,23 @@ void Module::outputIR(const std::string & filePath)
         return;
     }
 
+    // 输出LLVM内置函数声明
+    printf("Debug: Outputting LLVM intrinsic function declarations...\n");
+    fprintf(fp, "; LLVM intrinsic function declarations\n");
+    fprintf(fp,
+            "declare void @llvm.memcpy.p0i8.p0i8.i64(i8* noalias nocapture writeonly, i8* noalias nocapture readonly, "
+            "i64, i1 immarg) #1\n");
+    fprintf(fp, "declare void @llvm.memset.p0i8.i64(i8* nocapture writeonly, i8, i64, i1 immarg) #1\n");
+    fprintf(fp, "\n");
+
     // 全局变量遍历输出对应的declare指令
     printf("Debug: Outputting global variables...\n");
     for (auto var: globalVariableVector) {
+        // 跳过临时的嵌套数组，这些数组只用于内部处理
+        if (var->getName().find("__nested_array_") == 0 || var->getName().find("__temp_array_") == 0) {
+            printf("Debug: Skipping temporary array: %s\n", var->getName().c_str());
+            continue;
+        }
 
         std::string str;
         var->toDeclareString(str);
@@ -551,5 +565,12 @@ ConstInt * Module::newConstInt(int64_t val, Type * type)
 /// @return 标签ID
 int32_t Module::getNextLabelId()
 {
-    return globalLabelCounter++;
+    return globalIRNameCounter++;
+}
+
+/// @brief 获取下一个全局唯一的IR名称ID
+/// @return IR名称ID
+int32_t Module::getNextIRNameId()
+{
+    return globalIRNameCounter++;
 }

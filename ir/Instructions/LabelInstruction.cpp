@@ -36,7 +36,11 @@ LabelInstruction::LabelInstruction(Function * _func, Module * _module)
 {
     // 使用全局标签计数器生成唯一标签名
     int32_t labelId = _module->getNextLabelId();
-    setIRName(std::to_string(labelId));
+
+    // 生成带函数名前缀的标签名：函数名_数字
+    std::string funcName = _func->getName();
+    std::string labelName = funcName + "_" + std::to_string(labelId);
+    setIRName(labelName);
 }
 
 /// @brief 转换成字符串

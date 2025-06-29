@@ -31,7 +31,7 @@ public:
     /// @brief 处理源代码中的#define宏定义
     /// @param sourceCode 输入的源代码
     /// @return 处理后的源代码（宏已被替换）
-    std::string process(const std::string& sourceCode);
+    std::string process(const std::string & sourceCode);
 
 private:
     /// @brief 宏定义表，存储宏名称和对应的值
@@ -40,12 +40,18 @@ private:
     /// @brief 解析#define指令
     /// @param line 包含#define的行
     /// @return 是否成功解析
-    bool parseDefine(const std::string& line);
+    bool parseDefine(const std::string & line);
 
     /// @brief 在文本中替换宏
     /// @param text 要处理的文本
     /// @return 替换后的文本
-    std::string replaceMacros(const std::string& text);
+    std::string replaceMacros(const std::string & text);
+
+    /// @brief 处理starttime()和stoptime()宏调用
+    /// @param line 要处理的行
+    /// @param lineNumber 当前行号
+    /// @return 处理后的行
+    std::string processTimingMacros(const std::string & line, int lineNumber);
 
     /// @brief 检查字符是否为标识符字符
     /// @param c 要检查的字符
