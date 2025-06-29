@@ -279,8 +279,9 @@ protected:
 private:
     /// @brief 计算常量表达式的值（用于数组维度计算）
     /// @param node AST节点
-    /// @return 计算结果，如果无法计算则返回-1
-    int evaluateConstantExpression(ast_node * node);
+    /// @param result 输出参数，存储计算结果
+    /// @return true：计算成功，false：无法计算
+    bool evaluateConstantExpression(ast_node * node, int & result);
 
     /// @brief 检查表达式是否有副作用
     /// @param node AST节点

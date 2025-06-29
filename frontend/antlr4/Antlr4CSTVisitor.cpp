@@ -598,10 +598,15 @@ std::any MiniCCSTVisitor::visitVarDef(MiniCParser::VarDefContext * ctx)
                 varTypeAttr.dimensions.push_back(dimNode->integer_val);
             } else {
                 // 尝试计算常量表达式（如 3 + 1）
-                int dimValue = evaluateConstantExpression(dimNode);
-                if (dimValue > 0) {
-                    varTypeAttr.dimensions.push_back(dimValue);
-                    printf("Debug: Evaluated array dimension expression to: %d\n", dimValue);
+                int dimValue;
+                if (evaluateConstantExpression(dimNode, dimValue)) {
+                    if (dimValue > 0) {
+                        varTypeAttr.dimensions.push_back(dimValue);
+                        printf("Debug: Evaluated array dimension expression to: %d\n", dimValue);
+                    } else {
+                        printf("Error: Array dimension must be positive, got: %d\n", dimValue);
+                        varTypeAttr.dimensions.push_back(-1);
+                    }
                 } else {
                     // 如果无法计算，使用-1表示动态大小
                     varTypeAttr.dimensions.push_back(-1);
@@ -1062,10 +1067,15 @@ std::any MiniCCSTVisitor::visitConstDef(MiniCParser::ConstDefContext * ctx)
                 constTypeAttr.dimensions.push_back(dimNode->integer_val);
             } else {
                 // 尝试计算常量表达式（如 3 + 1）
-                int dimValue = evaluateConstantExpression(dimNode);
-                if (dimValue > 0) {
-                    constTypeAttr.dimensions.push_back(dimValue);
-                    printf("Debug: Evaluated const array dimension expression to: %d\n", dimValue);
+                int dimValue;
+                if (evaluateConstantExpression(dimNode, dimValue)) {
+                    if (dimValue > 0) {
+                        constTypeAttr.dimensions.push_back(dimValue);
+                        printf("Debug: Evaluated const array dimension expression to: %d\n", dimValue);
+                    } else {
+                        printf("Error: Array dimension must be positive, got: %d\n", dimValue);
+                        constTypeAttr.dimensions.push_back(-1);
+                    }
                 } else {
                     // 如果无法计算，使用-1表示动态大小
                     constTypeAttr.dimensions.push_back(-1);
@@ -1148,25 +1158,28 @@ std::any MiniCCSTVisitor::visitInitVal(MiniCParser::InitValContext * ctx)
 
 /// @brief 计算常量表达式的值（用于数组维度计算）
 /// @param node AST节点
-/// @return 计算结果，如果无法计算则返回-1
-int MiniCCSTVisitor::evaluateConstantExpression(ast_node * node)
+/// @param result 输出参数，存储计算结果
+/// @return true：计算成功，false：无法计算
+bool MiniCCSTVisitor::evaluateConstantExpression(ast_node * node, int & result)
 {
     if (!node) {
-        return -1;
+        return false;
     }
 
     switch (node->node_type) {
         case ast_operator_type::AST_OP_LEAF_LITERAL_UINT:
             // 整数字面量
-            return static_cast<int>(node->integer_val);
+            result = static_cast<int>(node->integer_val);
+            return true;
 
         case ast_operator_type::AST_OP_ADD:
             // 加法运算
             if (node->sons.size() == 2) {
-                int left = evaluateConstantExpression(node->sons[0]);
-                int right = evaluateConstantExpression(node->sons[1]);
-                if (left >= 0 && right >= 0) {
-                    return left + right;
+                int left, right;
+                if (evaluateConstantExpression(node->sons[0], left) &&
+                    evaluateConstantExpression(node->sons[1], right)) {
+                    result = left + right;
+                    return true;
                 }
             }
             break;
@@ -1174,10 +1187,11 @@ int MiniCCSTVisitor::evaluateConstantExpression(ast_node * node)
         case ast_operator_type::AST_OP_SUB:
             // 减法运算
             if (node->sons.size() == 2) {
-                int left = evaluateConstantExpression(node->sons[0]);
-                int right = evaluateConstantExpression(node->sons[1]);
-                if (left >= 0 && right >= 0) {
-                    return left - right;
+                int left, right;
+                if (evaluateConstantExpression(node->sons[0], left) &&
+                    evaluateConstantExpression(node->sons[1], right)) {
+                    result = left - right;
+                    return true;
                 }
             }
             break;
@@ -1185,10 +1199,65 @@ int MiniCCSTVisitor::evaluateConstantExpression(ast_node * node)
         case ast_operator_type::AST_OP_MUL:
             // 乘法运算
             if (node->sons.size() == 2) {
-                int left = evaluateConstantExpression(node->sons[0]);
-                int right = evaluateConstantExpression(node->sons[1]);
-                if (left >= 0 && right >= 0) {
-                    return left * right;
+                int left, right;
+                if (evaluateConstantExpression(node->sons[0], left) &&
+                    evaluateConstantExpression(node->sons[1], right)) {
+                    result = left * right;
+                    return true;
+                }
+            }
+            break;
+
+        case ast_operator_type::AST_OP_DIV:
+            // 除法运算
+            if (node->sons.size() == 2) {
+                int left, right;
+                if (evaluateConstantExpression(node->sons[0], left) &&
+                    evaluateConstantExpression(node->sons[1], right)) {
+                    if (right == 0) {
+                        printf("Error: Division by zero in constant expression\n");
+                        return false;
+                    }
+                    result = left / right;
+                    return true;
+                }
+            }
+            break;
+
+        case ast_operator_type::AST_OP_MOD:
+            // 取余运算
+            if (node->sons.size() == 2) {
+                int left, right;
+                if (evaluateConstantExpression(node->sons[0], left) &&
+                    evaluateConstantExpression(node->sons[1], right)) {
+                    if (right == 0) {
+                        printf("Error: Modulo by zero in constant expression\n");
+                        return false;
+                    }
+                    result = left % right;
+                    return true;
+                }
+            }
+            break;
+
+        case ast_operator_type::AST_OP_NEGATIVE:
+            // 单目负号运算
+            if (node->sons.size() == 1) {
+                int operand;
+                if (evaluateConstantExpression(node->sons[0], operand)) {
+                    result = -operand;
+                    return true;
+                }
+            }
+            break;
+
+        case ast_operator_type::AST_OP_POSITIVE:
+            // 单目正号运算
+            if (node->sons.size() == 1) {
+                int operand;
+                if (evaluateConstantExpression(node->sons[0], operand)) {
+                    result = operand;
+                    return true;
                 }
             }
             break;
@@ -1198,7 +1267,7 @@ int MiniCCSTVisitor::evaluateConstantExpression(ast_node * node)
             break;
     }
 
-    return -1; // 无法计算
+    return false; // 无法计算
 }
 
 /// @brief 检查表达式是否有副作用
