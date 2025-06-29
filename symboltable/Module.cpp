@@ -415,6 +415,30 @@ void Module::outputIR(const std::string & filePath)
     fprintf(fp, "declare void @llvm.memset.p0i8.i64(i8* nocapture writeonly, i8, i64, i1 immarg) #1\n");
     fprintf(fp, "\n");
 
+    // 输出标准库函数声明
+    printf("Debug: Outputting standard library function declarations...\n");
+    fprintf(fp, "; Standard library function declarations\n");
+    for (auto func: funcVector) {
+        if (func->isBuiltin()) {
+            // 为内置函数生成声明
+            std::string declStr = "declare " + func->getReturnType()->toString() + " " + func->getIRName() + "(";
+
+            bool firstParam = true;
+            for (auto & param: func->getParams()) {
+                if (!firstParam) {
+                    declStr += ", ";
+                } else {
+                    firstParam = false;
+                }
+                declStr += param->getType()->toString();
+            }
+
+            declStr += ")\n";
+            fprintf(fp, "%s", declStr.c_str());
+        }
+    }
+    fprintf(fp, "\n");
+
     // 全局变量遍历输出对应的declare指令
     for (auto var: globalVariableVector) {
         // 只跳过局部临时数组，但保留嵌套数组（因为它们可能被引用）

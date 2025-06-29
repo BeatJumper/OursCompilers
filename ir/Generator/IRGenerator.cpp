@@ -285,7 +285,23 @@ bool IRGenerator::ir_function_define(ast_node * node)
     // 将函数体的指令直接添加到函数的IR中
     irCode.addInst(block_node->blockInsts);
 
-    // 添加函数出口标签
+    // 检查函数体的最后一条指令是否是终结指令
+    bool needsGotoToExit = true;
+    if (!irCode.getCode().empty()) {
+        Instruction * lastInst = irCode.getCode().back();
+        IRInstOperator op = lastInst->getOp();
+        if (op == IRInstOperator::IRINST_OP_GOTO || op == IRInstOperator::IRINST_OP_RET ||
+            op == IRInstOperator::IRINST_OP_BRANCH) {
+            needsGotoToExit = false;
+        }
+    }
+
+    if (needsGotoToExit) {
+        // 添加跳转到出口标签的指令
+        irCode.addInst(new GotoInstruction(newFunc, exitLabelInst));
+    }
+
+    // 总是添加函数出口标签（return语句可能会跳转到这里）
     irCode.addInst(exitLabelInst);
 
     // 添加函数返回指令
@@ -2205,10 +2221,11 @@ bool IRGenerator::ir_if_else(ast_node * node)
     if (!ir_visit_ast_node(thenNode)) {
         return false;
     }
-    node->blockInsts.addInst(thenNode->blockInsts);
-
     // 检查then分支本身是否已经有终结指令（如break、continue、return）
+    // 必须在addInst之前检查，因为addInst会清空原来的指令序列
     bool thenHasTerminator = hasTerminatorInstruction(thenNode->blockInsts);
+
+    node->blockInsts.addInst(thenNode->blockInsts);
     if (!thenHasTerminator) {
         // 只有在没有终结指令时才添加跳转到结束标签
         node->blockInsts.addInst(new GotoInstruction(currentFunc, endLabel));
@@ -2222,10 +2239,12 @@ bool IRGenerator::ir_if_else(ast_node * node)
         if (!ir_visit_ast_node(elseNode)) {
             return false;
         }
-        node->blockInsts.addInst(elseNode->blockInsts);
 
         // 检查else分支本身是否已经有终结指令
+        // 必须在addInst之前检查，因为addInst会清空原来的指令序列
         bool elseHasTerminator = hasTerminatorInstruction(elseNode->blockInsts);
+
+        node->blockInsts.addInst(elseNode->blockInsts);
         if (!elseHasTerminator) {
             // 只有在没有终结指令时才添加跳转到结束标签
             node->blockInsts.addInst(new GotoInstruction(currentFunc, endLabel));
@@ -3377,6 +3396,18 @@ bool IRGenerator::ir_global_const_array_declare(ast_node * node,
     // 设置节点值
     nameNode->val = globalArray;
     node->val = globalArray;
+
+    // 重要：在全局作用域中注册原始名称的别名，使得函数内部可以通过原始名称找到这个全局常量数组
+    // 使用newVarValue方法创建别名，这会自动注册到符号表中
+    Value * aliasVar = module->newVarValue(arrayType, nameNode->name);
+    if (aliasVar) {
+        GlobalVariable * aliasGlobalVar = static_cast<GlobalVariable *>(aliasVar);
+        aliasGlobalVar->setConstant(true);
+        aliasGlobalVar->setBSSSection(false);
+        aliasGlobalVar->setAlignment(16);
+        aliasGlobalVar->setInitValueList(globalArray->getInitValueList());
+        printf("Debug: Created alias variable '%s' for global constant array\n", nameNode->name.c_str());
+    }
 
     // 收集生成的IR指令
     node->blockInsts.addInst(initExprNode->blockInsts);
