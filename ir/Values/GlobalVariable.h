@@ -230,10 +230,8 @@ public:
 /// @return 展开后的字符串表示
 inline std::string GlobalVariable::expandGlobalVariableContent(GlobalVariable * globalVar)
 {
-    std::string result = globalVar->getType()->toString() + " ";
-
     if (!globalVar->getInitValueList().empty()) {
-        result += "[";
+        std::string result = "[";
         for (size_t i = 0; i < globalVar->getInitValueList().size(); ++i) {
             if (i > 0) {
                 result += ", ";
@@ -253,9 +251,24 @@ inline std::string GlobalVariable::expandGlobalVariableContent(GlobalVariable * 
             }
         }
         result += "]";
+        return result;
     } else {
-        result += "zeroinitializer";
-    }
+        // 对于空的嵌套数组，应该返回零值而不是zeroinitializer
+        // 因为在数组初始化列表中，每个元素都必须是具体的值
+        if (globalVar->getType()->isArrayType()) {
+            ArrayType * arrayType = static_cast<ArrayType *>(globalVar->getType());
+            Type * elementType = arrayType->getElementType();
 
-    return result;
+            // 返回适当的零值
+            if (elementType->isIntegerType()) {
+                return "i32 0";
+            } else if (elementType->isFloatType()) {
+                return "float 0.0";
+            } else {
+                return "i32 0";
+            }
+        } else {
+            return "i32 0";
+        }
+    }
 }

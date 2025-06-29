@@ -403,6 +403,20 @@ std::vector<Instruction *> DeadCodeElimination::removeUnreachableBlocks(const st
 
     for (const BasicBlock * block: blocks) {
         if (block->reachable) {
+            // 检查基本块是否为空（只有标签没有其他指令）
+            bool hasNonLabelInstructions = false;
+            for (Instruction * inst: block->instructions) {
+                if (!isLabelInstruction(inst)) {
+                    hasNonLabelInstructions = true;
+                    break;
+                }
+            }
+
+            // 如果基本块只有标签没有其他指令，跳过这个基本块
+            if (!hasNonLabelInstructions && block->instructions.size() == 1) {
+                continue;
+            }
+
             // 添加可达基本块的所有指令
             for (Instruction * inst: block->instructions) {
                 newInstructions.push_back(inst);
