@@ -665,13 +665,21 @@ std::any MiniCCSTVisitor::visitExpressionStatement(MiniCParser::ExpressionStatem
     if (ctx->expr()) {
         // 表达式语句
 
-        // 遍历expr非终结符，创建表达式节点后返回
-        return visitExpr(ctx->expr());
+        // 遍历expr非终结符，创建表达式节点
+        auto exprNode = std::any_cast<ast_node *>(visitExpr(ctx->expr()));
+
+        // 检查表达式是否有副作用，如果没有副作用则忽略
+        if (!hasSideEffects(exprNode)) {
+            printf("Warning: Expression statement without side effects ignored at line %ld\n", exprNode->line_no);
+            return std::any(static_cast<ast_node *>(nullptr)); // 返回包装的空指针
+        }
+
+        return std::any(exprNode);
     } else {
         // 空语句
 
-        // 直接返回空指针，需要再把语句加入到语句块时要注意判断，空语句不要加入
-        return nullptr;
+        // 直接返回包装的空指针，需要再把语句加入到语句块时要注意判断，空语句不要加入
+        return std::any(static_cast<ast_node *>(nullptr));
     }
 }
 
@@ -680,13 +688,36 @@ std::any MiniCCSTVisitor::visitIfElseStatement(MiniCParser::IfElseStatementConte
     // 遍历条件表达式
     auto condNode = std::any_cast<ast_node *>(visitCond(ctx->cond()));
 
-    // 遍历then分支
-    auto thenNode = std::any_cast<ast_node *>(visitStatement(ctx->statement(0)));
+    // 遍历then分支，安全地处理可能的nullptr
+    ast_node * thenNode = nullptr;
+    try {
+        auto thenResult = visitStatement(ctx->statement(0));
+        thenNode = std::any_cast<ast_node *>(thenResult);
+    } catch (const std::bad_any_cast & e) {
+        // 如果转换失败，使用nullptr
+        thenNode = nullptr;
+    }
+
+    // 如果then分支是nullptr（比如表达式语句没有副作用被忽略），创建一个空的语句块
+    if (thenNode == nullptr) {
+        thenNode = create_contain_node(ast_operator_type::AST_OP_BLOCK);
+    }
 
     // 遍历else分支（如果存在）
     ast_node * elseNode = nullptr;
     if (ctx->statement().size() > 1) {
-        elseNode = std::any_cast<ast_node *>(visitStatement(ctx->statement(1)));
+        try {
+            auto elseResult = visitStatement(ctx->statement(1));
+            elseNode = std::any_cast<ast_node *>(elseResult);
+        } catch (const std::bad_any_cast & e) {
+            // 如果转换失败，使用nullptr
+            elseNode = nullptr;
+        }
+
+        // 如果else分支是nullptr，也创建一个空的语句块
+        if (elseNode == nullptr) {
+            elseNode = create_contain_node(ast_operator_type::AST_OP_BLOCK);
+        }
     }
 
     // 创建if语句AST节点
@@ -698,8 +729,20 @@ std::any MiniCCSTVisitor::visitWhileStatement(MiniCParser::WhileStatementContext
     // 遍历条件表达式
     auto condNode = std::any_cast<ast_node *>(visitCond(ctx->cond()));
 
-    // 遍历循环体
-    auto bodyNode = std::any_cast<ast_node *>(visitStatement(ctx->statement()));
+    // 遍历循环体，安全地处理可能的nullptr
+    ast_node * bodyNode = nullptr;
+    try {
+        auto bodyResult = visitStatement(ctx->statement());
+        bodyNode = std::any_cast<ast_node *>(bodyResult);
+    } catch (const std::bad_any_cast & e) {
+        // 如果转换失败，使用nullptr
+        bodyNode = nullptr;
+    }
+
+    // 如果循环体是nullptr（比如表达式语句没有副作用被忽略），创建一个空的语句块
+    if (bodyNode == nullptr) {
+        bodyNode = create_contain_node(ast_operator_type::AST_OP_BLOCK);
+    }
 
     // 创建while语句AST节点
     return create_while_node(condNode, bodyNode);
@@ -1156,4 +1199,71 @@ int MiniCCSTVisitor::evaluateConstantExpression(ast_node * node)
     }
 
     return -1; // 无法计算
+}
+
+/// @brief 检查表达式是否有副作用
+/// @param node AST节点
+/// @return true：有副作用，false：无副作用
+bool MiniCCSTVisitor::hasSideEffects(ast_node * node)
+{
+    if (!node) {
+        return false;
+    }
+
+    switch (node->node_type) {
+        // 有副作用的操作
+        case ast_operator_type::AST_OP_ASSIGN:
+            // 赋值操作有副作用
+            return true;
+
+        case ast_operator_type::AST_OP_FUNC_CALL:
+            // 函数调用可能有副作用
+            return true;
+
+        // 无副作用的操作
+        case ast_operator_type::AST_OP_LEAF_LITERAL_UINT:
+        case ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT:
+        case ast_operator_type::AST_OP_LEAF_VAR_ID:
+            // 字面量和变量引用无副作用
+            return false;
+
+        case ast_operator_type::AST_OP_ADD:
+        case ast_operator_type::AST_OP_SUB:
+        case ast_operator_type::AST_OP_MUL:
+        case ast_operator_type::AST_OP_DIV:
+        case ast_operator_type::AST_OP_MOD:
+        case ast_operator_type::AST_OP_POSITIVE:
+        case ast_operator_type::AST_OP_NEGATIVE:
+        case ast_operator_type::AST_OP_NOT:
+        case ast_operator_type::AST_OP_LT:
+        case ast_operator_type::AST_OP_GT:
+        case ast_operator_type::AST_OP_LE:
+        case ast_operator_type::AST_OP_GE:
+        case ast_operator_type::AST_OP_EQ:
+        case ast_operator_type::AST_OP_NE:
+        case ast_operator_type::AST_OP_AND:
+        case ast_operator_type::AST_OP_OR:
+            // 算术和逻辑运算符本身无副作用，但需要检查操作数
+            for (auto child: node->sons) {
+                if (hasSideEffects(child)) {
+                    return true;
+                }
+            }
+            return false;
+
+        case ast_operator_type::AST_OP_ARRAY_ACCESS:
+            // 数组访问本身无副作用，但需要检查索引表达式
+            for (auto child: node->sons) {
+                if (hasSideEffects(child)) {
+                    return true;
+                }
+            }
+            return false;
+
+        default:
+            // 对于未知的节点类型，保守地认为有副作用
+            printf("Warning: Unknown node type %d in hasSideEffects, assuming has side effects\n",
+                   (int) node->node_type);
+            return true;
+    }
 }

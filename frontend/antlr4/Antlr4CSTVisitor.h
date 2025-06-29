@@ -281,4 +281,9 @@ private:
     /// @param node AST节点
     /// @return 计算结果，如果无法计算则返回-1
     int evaluateConstantExpression(ast_node * node);
+
+    /// @brief 检查表达式是否有副作用
+    /// @param node AST节点
+    /// @return true：有副作用，false：无副作用
+    bool hasSideEffects(ast_node * node);
 };
