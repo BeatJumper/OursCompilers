@@ -270,7 +270,8 @@
 		"optional": "cpp",
 		"variant": "cpp",
 		"regex": "cpp",
-		"stack": "cpp"
+		"stack": "cpp",
+		"std.h": "c"
 	},
 	"Codegeex.RepoIndex": true
 }

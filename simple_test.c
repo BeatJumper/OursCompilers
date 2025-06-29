@@ -1,10 +1,1 @@
-int main() {
-    int i = 0;
-    while (i < 5) {
-        if (i == 2) {
-            break;
-        }
-        i = i + 1;
-    }
-    return i;
-}
+int main() { int a = 1; int b = 2; putint(a + b); return 0; }

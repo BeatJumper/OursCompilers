@@ -4346,9 +4346,6 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
         return false;
     }
 
-    // 获取数组的总元素个数
-    int totalElements = arrayType->getTotalElements();
-
     // 检查是否是多维数组
     bool isMultiDim = arrayType->getElementType()->isArrayType();
 
@@ -4358,6 +4355,9 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
         const std::vector<int> & innerDims = innerArrayType->getDimensions();
         int innerSize = innerDims.empty() ? 1 : innerDims[0]; // 内层数组的大小
         int outerSize = dimensions[0];                        // 外层数组的大小
+
+        // 计算真正的总元素个数（递归计算所有嵌套维度）
+        int totalElements = outerSize * innerArrayType->getTotalElements();
 
         printf("Debug: Processing multi-dim array [%d][%d], total elements: %d\n", outerSize, innerSize, totalElements);
 
@@ -4422,6 +4422,7 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
         }
     } else {
         // 一维数组处理
+        int totalElements = arrayType->getTotalElements();
         printf("Debug: Processing 1D array, total elements: %d\n", totalElements);
 
         for (auto son: initNode->sons) {
