@@ -4901,13 +4901,16 @@ bool IRGenerator::handleDynamicInitialization(ast_node * node,
                     // 创建一个临时变量来存储数组值
                     static int tempArrayCounter = 0;
                     std::string tempArrayName = "__temp_array_" + std::to_string(tempArrayCounter++);
-                    Value * tempVar = module->newVarValue(elementValue->getType(), tempArrayName);
+
+                    // 临时数组变量的类型应该是指向数组类型的指针类型
+                    Type * arrayType = elementValue->getType();      // 数组类型（如[1 x i32]）
+                    Type * tempVarType = new PointerType(arrayType); // 变量类型（如[1 x i32]*）
+                    Value * tempVar = module->newVarValue(tempVarType, tempArrayName);
                     if (!tempVar) {
                         printf("Error: Failed to create temporary array variable\n");
                         return false;
                     }
-                    AllocaInstruction * tempArrayVar =
-                        new AllocaInstruction(currentFunc, tempVar, elementValue->getType(), 4);
+                    AllocaInstruction * tempArrayVar = new AllocaInstruction(currentFunc, tempVar, arrayType, 4);
                     node->blockInsts.addInst(tempArrayVar);
 
                     // 使用tempVar作为指针，而不是tempArrayVar
