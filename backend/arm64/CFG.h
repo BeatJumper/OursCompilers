@@ -15,11 +15,13 @@ class ControlFlowGraph;
 static void printval(Value * x)
 {
     std::cout << x->getIRName() << std::endl;
+    /*
     if (Instanceof(y, Instruction *, x)) {
         std::string s;
         y->toString(s);
         std::cout << s << std::endl;
     }
+    */
 }
 static void printset(std::set<Value *> & S)
 {

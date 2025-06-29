@@ -252,6 +252,7 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     printf("调整函数调用指令\n");
 
     adjustBinaryInsts(func);
+    printf("调整二元操作指令\n");
 
     // 主要染色过程（不断尝试染色直至成功）
     while (true) {
@@ -496,13 +497,13 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 // 引入赋值指令，把实参的值保存到内存变量上
                 Instruction * assignInst = new StoreInstruction(func, arg, newVal);
 
-                /*
-                 * 这里添加一个新的VoidValue的理由：
-                 * 为了形式化添加DEF和USE，之后翻译
-                 * 汇编时检测到void就不翻译即可。
-                 */
                 // 更换实参变量为内存变量
                 // callInst->setOperand(k, newVal);
+                /*
+                 * 这里添加一个新的VoidValue的理由：
+                 * 为了形式化添加DEF，之后翻译
+                 * 汇编时检测到void就不翻译即可。
+                 */
                 Value * voidvalue = new Value(VoidType::getType());
                 callInst->setOperand(k, voidvalue);
 
@@ -512,10 +513,10 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 printf("插入一条Store指令（给函数调用的第8个以后的参数）\n");
                 pIter++;
             }
-            for (int32_t k = argNum; k < 16; k++) {
+            for (int32_t k = argNum; k < PlatformArm64::CallerSaveRegNum; k++) {
                 /*
                  * 这里添加一个新的VoidValue的理由：
-                 * 为了形式化添加DEF和USE，之后翻译
+                 * 为了形式化添加DEF，之后翻译
                  * 汇编时检测到void就不翻译即可。
                  */
                 Value * voidvalue = new Value(VoidType::getType());
@@ -591,13 +592,16 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 */
             }
 
+            // 这段代码弃用，理由：不用再加临时的USE了
+            /*
             // 形式化表达函数调用指令对W0~W15产生的USE。
             Value * onlyval = new Value(VoidType::getType());
-            for (int index = 0; index < 16; index++) {
+            for (int index = 0; index < PlatformArm64::CallerSaveRegNum; index++) {
                 Value * val = callInst->getOperand(index);
                 MoveInstruction * movinst = new MoveInstruction(func, onlyval, val);
                 insts.insert(pIter + 1, movinst);
             }
+            */
         }
     }
 }

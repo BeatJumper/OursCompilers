@@ -22,6 +22,8 @@
 #include "LoadInstruction.h"
 #include "MoveInstruction.h"
 #include "FuncCallInstruction.h"
+#include "GetelementptrInstruction.h"
+#include "PlatformArm64.h"
 
 /// @brief 构造函数
 /// @param op
@@ -95,8 +97,8 @@ void Instruction::transfer()
             use_set.insert(source);
         }
     } else if (Instanceof(inst, FuncCallInstruction *, this)) {
-        // 在DEF集上，添加16个DEF，表示函数调用使得寄存器W0~W15都可能遭到修改
-        for (int index = 0; index < 16; index++) {
+        // 在DEF集上，添加18个DEF，表示函数调用使得寄存器W0~W17都可能遭到修改
+        for (int index = 0; index < PlatformArm64::CallerSaveRegNum; index++) {
             Value * val = inst->getOperand(index);
             val->setRegId(index);
             def_set.insert(val);
@@ -109,10 +111,8 @@ void Instruction::transfer()
             use_set.insert(inst->getOperand(index));
         }
         // 后8个数是仅仅在内存里的，不占寄存器，所以就不进USE了。
-
     } else if (Instanceof(inst, Instruction *, this)) {
         // printf("其它指令\n");
-        //  Instanceof(inst, Instruction *, this);
         if (inst->hasResultValue()) {
             def_set.insert(inst);
         }

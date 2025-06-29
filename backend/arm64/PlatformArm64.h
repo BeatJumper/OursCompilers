@@ -62,8 +62,11 @@ public:
     /// @brief 最大寄存器数目
     static const int maxRegNum = 63;
 
-    /// @brief 可使用的通用寄存器的个数x0-x10
-    static const int maxUsableRegNum = 29;
+    /// @brief 可使用的通用寄存器的个数(w0~w17以及w19~w28)
+    static const int maxUsableRegNum = 28;
+
+    /// @brief 目前可用的调用者保存的寄存器数目(w0~w17)
+    static const int CallerSaveRegNum = 18;
 
     /// @brief 通用寄存器的名字，x0-x31
     static const std::string regName[maxRegNum];

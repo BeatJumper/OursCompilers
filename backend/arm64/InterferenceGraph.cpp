@@ -56,9 +56,12 @@ InterferenceGraph::InterferenceGraph(Function * func)
     // 生成控制流图
     graph_cfg = new ControlFlowGraph(func);
 
+    /*
     // printf("已生成控制流图\n");
     //  用完基本块表之后就可以删了节省空间
     func->clearBasicBlocks();
+    printf("已删除不用的基本块表\n");
+    */
 
     // 加完新指令后也该重新调整IR编号
     func->renameIR();
@@ -98,7 +101,8 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
 
     // 扫描函数里每条指令，获取每个时刻的活跃变量集合
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
-        std::set<Value *> value_occupy = inst->get_livein();
+        std::set<Value *> value_occupy = inst->get_liveout();
+        merge_set(value_occupy, inst->get_def_set());
         // 这些不同的量两两之间都是互斥的，不能在同一寄存器
         FOR_EACH_PAIR_IN_SET(value_occupy)
         {
@@ -107,10 +111,6 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
                 continue;
             }
             // 因此在干涉图中连上一条边
-            printval(*it1);
-            printval(*it2);
-            assert(value_to_ig[*it1]);
-            assert(value_to_ig[*it2]);
             add_edge(value_to_ig[*it1], value_to_ig[*it2]);
             printf("干涉图内添加了一条边\n");
         }
@@ -276,9 +276,9 @@ bool InterferenceGraph::color_graph(InterferenceGraph * graph, int color_size)
 int InterferenceGraph::ColorToRegId(int color)
 {
     assert(color < PlatformArm64::maxUsableRegNum);
-    if (color <= 15) {
+    if (color < PlatformArm64::CallerSaveRegNum) {
         return color;
     } else {
-        return color + 3;
+        return color + 1;
     }
 }
