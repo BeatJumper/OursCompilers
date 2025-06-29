@@ -257,8 +257,10 @@ bool IRGenerator::ir_function_define(ast_node * node)
     // 为非void函数创建返回值变量
     LocalVariable * retValue = nullptr;
     if (!type_node->type->isVoidType()) {
-        retValue = static_cast<LocalVariable *>(module->newVarValue(type_node->type, "__ret"));
-        AllocaInstruction * allocaRet = new AllocaInstruction(newFunc, retValue, type_node->type, 4);
+        Type * retType = type_node->type;             // 返回值类型
+        Type * retVarType = new PointerType(retType); // 返回值变量类型（指针类型）
+        retValue = static_cast<LocalVariable *>(module->newVarValue(retVarType, "__ret"));
+        AllocaInstruction * allocaRet = new AllocaInstruction(newFunc, retValue, retType, 4);
         irCode.addInst(allocaRet);
 
         // 只有main函数初始化返回值为0
@@ -374,8 +376,20 @@ bool IRGenerator::ir_function_formal_params(ast_node * node)
         currentFunc->getParams().push_back(param);
 
         // 创建一个局部变量表示在函数体内使用的参数
-        // 函数参数的局部变量类型应该与参数类型相同，不是指针类型
-        Type * localVarType = typeNode->type;
+        Type * paramType = typeNode->type;
+        Type * allocaType;   // 要分配的类型
+        Type * localVarType; // 局部变量的类型
+
+        if (paramType->isPointerType()) {
+            // 数组参数：参数类型是i32*，需要分配i32*类型的空间，局部变量类型是i32**
+            allocaType = paramType;                    // 分配i32*类型的空间
+            localVarType = new PointerType(paramType); // 局部变量类型是i32**
+        } else {
+            // 普通参数：参数类型是i32，需要分配i32类型的空间，局部变量类型是i32*
+            allocaType = paramType;                    // 分配i32类型的空间
+            localVarType = new PointerType(paramType); // 局部变量类型是i32*
+        }
+
         Value * paramVar = module->newVarValue(localVarType, nameNode->name);
 
         if (!paramVar) {
@@ -386,9 +400,9 @@ bool IRGenerator::ir_function_formal_params(ast_node * node)
         // 转换为 LocalVariable 类型
         LocalVariable * localParamVar = static_cast<LocalVariable *>(paramVar);
 
-        // 创建 alloca 指令，分配参数类型的空间，使用4字节对齐（int类型）
-        uint32_t alignSize = localVarType->getSize();
-        AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, paramVar, localVarType, alignSize);
+        // 创建 alloca 指令，分配参数类型的空间
+        uint32_t alignSize = allocaType->getSize();
+        AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, paramVar, allocaType, alignSize);
         currentFunc->getInterCode().addInst(allocaInst);
 
         // 设置形参节点的值为创建的局部变量（函数体内使用这个变量）
@@ -1820,16 +1834,19 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
     }
 
     // 为变量分配Value和栈空间
-    Value * varValue = module->newVarValue(typeNode->type, varNode->name);
+    // 变量的类型应该是指向分配类型的指针类型
+    Type * allocaType = typeNode->type;           // 要分配的类型
+    Type * varType = new PointerType(allocaType); // 变量类型（指针类型）
+    Value * varValue = module->newVarValue(varType, varNode->name);
     if (!varValue) {
         printf("Error: Failed to allocate variable '%s' in ir_variable_declare.\n", varNode->name.c_str());
         return false;
     }
 
     // 计算对齐大小（基本类型使用类型大小，数组使用16字节对齐）
-    uint32_t alignSize = typeNode->type->isArrayType() ? 16 : typeNode->type->getSize();
+    uint32_t alignSize = allocaType->isArrayType() ? 16 : allocaType->getSize();
 
-    AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, varValue, typeNode->type, alignSize);
+    AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, varValue, allocaType, alignSize);
     node->blockInsts.addInst(allocaInst);
     varNode->val = varValue;
 

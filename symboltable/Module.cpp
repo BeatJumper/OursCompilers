@@ -327,7 +327,12 @@ Value * Module::findVarValue(std::string name)
 ///
 GlobalVariable * Module::newGlobalVariable(Type * type, std::string name)
 {
-    GlobalVariable * val = new GlobalVariable(type, name);
+    // 全局变量的类型应该是指向存储类型的指针类型
+    Type * globalVarType = new PointerType(type);
+    GlobalVariable * val = new GlobalVariable(globalVarType, name);
+
+    // 设置存储类型（用于LLVM IR生成）
+    val->setStorageType(type);
 
     insertGlobalValueDirectly(val);
 
