@@ -244,8 +244,6 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
     Value * arg1 = inst->getOperand(0);
     Value * arg2 = inst->getOperand(1);
 
-    printf("Debug: translate_two_operator - result=%p, arg1=%p, arg2=%p\n", result, arg1, arg2);
-
     if (!arg1 || !arg2) {
         printf("Error: translate_two_operator - null operand detected\n");
         return;
@@ -254,11 +252,6 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
     int32_t arg1_reg_no = arg1->getRegId();
     int32_t arg2_reg_no = arg2->getRegId();
     int32_t result_reg_no = result->getRegId();
-
-    printf("Debug: translate_two_operator - arg1_reg=%d, arg2_reg=%d, result_reg=%d\n",
-           arg1_reg_no,
-           arg2_reg_no,
-           result_reg_no);
 
     // 检查结果寄存器是否有效
     if (result_reg_no < 0 || result_reg_no >= PlatformArm64::maxRegNum) {
@@ -748,7 +741,7 @@ void InstSelectorArm64::translate_cmp(Instruction * inst)
 
         switch (op) {
             case IRInstOperator::IRINST_OP_LT:
-            case IRInstOperator::IRINST_OP_ICMP: // 假设 icmp slt
+            case IRInstOperator::IRINST_OP_ICMP:
                 condition = "lt";
                 break;
             case IRInstOperator::IRINST_OP_LE:
@@ -832,11 +825,6 @@ void InstSelectorArm64::translate_load(Instruction * inst)
     } else {
         // 若结果变量不是寄存器，分配一个新的寄存器来保存加载的结果
         // TODO 可能需要在寄存器分配前检查load指令结果变量是否为寄存器，若不是则插入赋值语句
-        // int32_t temp_regno = simpleRegisterAllocator.Allocate(result);
-        // iloc.load_var(temp_regno, arg1);
-        // result->setLoadRegId(temp_regno);
-        // 后续可以考虑将结果保存到合适的位置，这里暂时不做处理
-        // simpleRegisterAllocator.free(temp_regno);
     }
 }
 
@@ -918,7 +906,6 @@ void InstSelectorArm64::translate_store(Instruction * inst)
                       "[" + PlatformArm64::regName[dest_reg + 32] + ",#" + std::to_string(offset) + "]");
         }
 
-        printf("Debug: translate_store - completed array memcpy, copied %d words\n", words);
         return;
     }
 
@@ -994,10 +981,6 @@ void InstSelectorArm64::translate_store(Instruction * inst)
         if (dynamic_cast<ConstInt *>(arg1)) {
             // 其他整数常量情况
             // TODO 可能需要在寄存器分配前检查store指令源操作数是否为寄存器，若不是则插入赋值语句
-            // int32_t temp_regno = simpleRegisterAllocator.Allocate(arg1);
-            // iloc.load_var(temp_regno, arg1);
-            // iloc.store_var(temp_regno, arg2, ARM64_TMP_REG_NO);
-            // simpleRegisterAllocator.free(temp_regno);
         }
 
         // TODO浮点情况
@@ -1077,165 +1060,69 @@ void InstSelectorArm64::translate_sitofp(Instruction * inst)
 /// @param inst IR指令
 void InstSelectorArm64::translate_gep(Instruction * inst)
 {
-    Value * result = inst;
     Value * basePtr = inst->getOperand(0); // 基址指针
 
-    int32_t result_reg = result->getRegId();
+    // 对于数组访问，我们需要计算偏移量
+    // 这里简化处理：如果基址在内存中，我们计算其地址
+    int32_t base_reg_id;
+    int64_t base_offset;
 
-    // 如果结果需要在寄存器中，我们需要计算地址
-    if (result_reg != -1) {
-        // 对于数组访问，我们需要计算偏移量
-        // 这里简化处理：如果基址在内存中，我们计算其地址
-        int32_t base_reg_id;
-        int64_t base_offset;
+    if (basePtr->getMemoryAddr(&base_reg_id, &base_offset)) {
+        // 基址在栈上，计算其地址
+        // 实际的操作数数量，减去指令本身
+        int actual_operands = inst->getOperandsNum() - 1;
+        if (actual_operands == 3) {
+            Value * index = inst->getOperand(2);
+            ConstInt * constIdx = dynamic_cast<ConstInt *>(index);
+            if (constIdx) {
+                int64_t idx = constIdx->getVal();
 
-        if (basePtr->getMemoryAddr(&base_reg_id, &base_offset)) {
-            // 基址在栈上，计算其地址
-            if (inst->getOperandsNum() >= 3) {
-                // 有索引，需要计算偏移
-                // 简化处理：对于二维数组 arr[i][j]，偏移 = base_offset + i*sizeof(row) + j*sizeof(element)
-                // 这里我们暂时只处理常量索引
+                // 计算正确的元素大小
+                int64_t element_size = 4; // 默认int类型，4字节
 
-                // 检查实际的操作数数量（排除结果）
-                int actual_operands = inst->getOperandsNum();
-                // 如果最后一个操作数是指令本身的结果，则排除它
-                if (actual_operands > 0 && inst->getOperand(actual_operands - 1) == inst) {
-                    actual_operands--;
-                }
+                // 检查基址指针的类型来确定元素大小
+                Type * baseType = basePtr->getType();
+                if (baseType->isArrayType()) {
+                    printf("计算数组地址时检测到内部元素类型为数组类型\n");
+                    const ArrayType * arrayType = static_cast<const ArrayType *>(baseType);
+                    const std::vector<int> & dimensions = arrayType->getDimensions();
 
-                if (actual_operands == 3) {
-                    // 一维数组访问：arr[index]
-                    Value * index = inst->getOperand(2);
-                    ConstInt * constIdx = dynamic_cast<ConstInt *>(index);
-                    if (constIdx) {
-                        int64_t idx = constIdx->getVal();
-
-                        // 计算正确的元素大小
-                        int64_t element_size = 4; // 默认int类型，4字节
-
-                        // 检查基址指针的类型来确定元素大小
-                        Type * baseType = basePtr->getType();
-                        if (baseType->isArrayType()) {
-                            const ArrayType * arrayType = static_cast<const ArrayType *>(baseType);
-                            const std::vector<int> & dimensions = arrayType->getDimensions();
-
-                            if (dimensions.size() > 1) {
-                                // 多维数组：每个元素是一个子数组
-                                // 计算子数组的大小
-                                // TODO
-                                int sub_array_size = 1;
-                                for (size_t i = 1; i < dimensions.size(); i++) {
-                                    sub_array_size *= dimensions[i];
-                                }
-                                element_size = sub_array_size * arrayType->getElementType()->getSize();
-                            } else {
-                                // 一维数组：每个元素是基本类型
-                                element_size = arrayType->getElementType()->getSize();
-                            }
-                        } else if (baseType->isPointerType()) {
-                            const PointerType * ptrType = static_cast<const PointerType *>(baseType);
-                            const Type * pointeeType = ptrType->getPointeeType();
-                            if (pointeeType->isArrayType()) {
-                                const ArrayType * arrayType = static_cast<const ArrayType *>(pointeeType);
-                                element_size = arrayType->getElementType()->getSize();
-                            } else {
-                                element_size = pointeeType->getSize();
-                            }
+                    if (dimensions.size() > 1) {
+                        // 多维数组：每个元素是一个子数组
+                        // 计算子数组的大小
+                        int sub_array_size = 1;
+                        for (size_t i = 1; i < dimensions.size(); i++) {
+                            sub_array_size *= dimensions[i];
                         }
-
-                        int64_t element_offset = base_offset + (idx * element_size);
-
-                        // 只设置结果的内存地址信息，不生成地址计算指令
-                        // 地址计算将在load/store指令中进行
-                        inst->setMemoryAddr(base_reg_id, element_offset);
-                        return;
+                        element_size = sub_array_size * arrayType->getElementType()->getSize();
+                    } else {
+                        // 一维数组：每个元素是基本类型
+                        element_size = arrayType->getElementType()->getSize();
                     }
-                } else if (actual_operands >= 4) {
-                    // 获取行索引
-                    Value * index2 = inst->getOperand(2);
-                    if (inst->getOperandsNum() >= 5) {
-                        // 获取列索引
-                        Value * index3 = inst->getOperand(3);
-
-                        // 对于int[4][2]数组，每行8字节，每个元素4字节
-                        ConstInt * constIdx2 = dynamic_cast<ConstInt *>(index2);
-                        ConstInt * constIdx3 = dynamic_cast<ConstInt *>(index3);
-                        if (constIdx2 && constIdx3) {
-                            int64_t row_idx = constIdx2->getVal();
-                            int64_t col_idx = constIdx3->getVal();
-                            int64_t element_offset = base_offset + (row_idx * 8) + (col_idx * 4);
-
-                            // 只设置结果的内存地址信息，不生成地址计算指令
-                            // 地址计算将在load/store指令中进行
-                            inst->setMemoryAddr(base_reg_id, element_offset);
-                            return;
-                        }
-                    }
-                }
-            }
-
-            // 默认情况：只设置内存地址信息，不生成地址计算指令
-            // 地址计算将在load/store指令中进行
-            inst->setMemoryAddr(base_reg_id, base_offset);
-        } else {
-            // 检查是否是全局变量
-            if (auto globalVar = dynamic_cast<GlobalVariable *>(basePtr)) {
-                // 处理全局变量的GEP指令
-
-                // 获取索引值来计算偏移量
-                if (inst->getOperandsNum() >= 3) {
-                    Value * index1 = inst->getOperand(1); // 第一个索引（通常是0）
-                    Value * index2 = inst->getOperand(2); // 第二个索引（数组元素索引）
-
-                    ConstInt * constIdx1 = dynamic_cast<ConstInt *>(index1);
-                    ConstInt * constIdx2 = dynamic_cast<ConstInt *>(index2);
-
-                    if (constIdx1 && constIdx2) {
-                        int64_t idx1 = constIdx1->getVal();
-                        int64_t idx2 = constIdx2->getVal();
-
-                        // 对于一维数组 a[5]，偏移量 = idx2 * sizeof(element)
-                        // 假设是int数组，每个元素4字节
-                        int64_t element_offset = idx2 * 4;
-
-                        // 生成地址计算指令
-                        std::string result_reg_name = PlatformArm64::regName[result_reg];
-                        if (result_reg_name[0] == 'w') {
-                            result_reg_name[0] = 'x';
-                        }
-
-                        // 加载全局变量的基地址
-                        // adrp x_reg, symbol
-                        iloc.inst("adrp", result_reg_name, globalVar->getName());
-                        // add x_reg, x_reg, :lo12:symbol
-                        iloc.inst("add", result_reg_name, result_reg_name, ":lo12:" + globalVar->getName());
-
-                        // 如果有偏移量，添加偏移
-                        if (element_offset > 0) {
-                            iloc.inst("add", result_reg_name, result_reg_name, "#" + std::to_string(element_offset));
-                        }
-
-                        return;
+                } else if (baseType->isPointerType()) {
+                    printf("计算数组地址时检测到内部元素类型为指针类型\n");
+                    const PointerType * ptrType = static_cast<const PointerType *>(baseType);
+                    const Type * pointeeType = ptrType->getPointeeType();
+                    if (pointeeType->isArrayType()) {
+                        const ArrayType * arrayType = static_cast<const ArrayType *>(pointeeType);
+                        element_size = arrayType->getElementType()->getSize();
+                    } else {
+                        element_size = pointeeType->getSize();
                     }
                 }
 
-                // 如果没有索引或索引不是常量，只加载基地址
-                std::string result_reg_name = PlatformArm64::regName[result_reg];
-                if (result_reg_name[0] == 'w') {
-                    result_reg_name[0] = 'x';
-                }
-                // adrp x_reg, symbol
-                iloc.inst("adrp", result_reg_name, globalVar->getName());
-                // add x_reg, x_reg, :lo12:symbol
-                iloc.inst("add", result_reg_name, result_reg_name, ":lo12:" + globalVar->getName());
-            } else {
-                // 基址在寄存器中，直接复制
-                int32_t base_reg = basePtr->getRegId();
-                if (base_reg != -1 && base_reg != result_reg) {
-                    iloc.inst("mov", PlatformArm64::regName[result_reg], PlatformArm64::regName[base_reg]);
-                }
+                int64_t element_offset = base_offset + (idx * element_size);
+
+                // 只设置结果的内存地址信息，不生成地址计算指令
+                // 地址计算将在load/store指令中进行
+                inst->setMemoryAddr(base_reg_id, element_offset);
+                return;
             }
         }
+
+        // 默认情况：只设置内存地址信息，不生成地址计算指令
+        // 地址计算将在load/store指令中进行
+        inst->setMemoryAddr(base_reg_id, base_offset);
     }
 }
 
@@ -1253,123 +1140,61 @@ void InstSelectorArm64::translate_bitcast(Instruction * inst)
     int32_t result_reg = result->getRegId();
     int32_t source_reg = source->getRegId();
 
-    if (result_reg != -1) {
-        if (source_reg != -1) {
-            // 源和目标都在寄存器中
-            // 对于alloca指令，即使被分配了寄存器，也应该计算其栈地址
-            // 检查源是否有内存地址（这通常意味着它是alloca指令的结果或局部变量）
-            int32_t base_reg_id;
-            int64_t offset;
-            bool hasMemAddr = source->getMemoryAddr(&base_reg_id, &offset);
+    if (source_reg != -1) {
+        // 源和目标都在寄存器中，目标由于寄存器分配，不可能没有分配到寄存器
+        // 检查源是否有内存地址（alloca指令的结果或局部变量）
+        int32_t base_reg_id;
+        int64_t offset;
+        bool hasMemAddr = source->getMemoryAddr(&base_reg_id, &offset);
 
-            if (hasMemAddr && base_reg_id == 31) { // 31是SP寄存器
-                // 源在栈上，需要计算地址而不是移动寄存器值
-                // 源在栈上，计算栈地址
-                std::string result_reg_name = PlatformArm64::regName[result_reg];
-                std::string base_reg_name = PlatformArm64::regName[base_reg_id];
+        if (hasMemAddr) {
+            // 针对Alloca分配的变量的情况
+            // 源在栈上，需要计算地址而不是移动寄存器值
+            // 源在栈上，计算栈地址
+            std::string result_reg_name = PlatformArm64::regName[result_reg];
+            std::string base_reg_name = PlatformArm64::regName[base_reg_id];
 
-                // 确保使用64位寄存器
-                if (result_reg_name[0] == 'w') {
-                    result_reg_name[0] = 'x';
-                }
-                if (base_reg_name[0] == 'w') {
-                    base_reg_name[0] = 'x';
-                }
-
-                // 检查偏移量是否在add/sub指令的立即数范围内（0-4095）
-                if (offset >= 0 && offset <= 4095) {
-                    // 正偏移量在有效范围内，使用add指令
-                    iloc.inst("add", result_reg_name, base_reg_name, "#" + std::to_string(offset));
-                } else if (offset < 0 && (-offset) <= 4095) {
-                    // 负偏移量在有效范围内，使用sub指令
-                    iloc.inst("sub", result_reg_name, base_reg_name, "#" + std::to_string(-offset));
-                } else {
-                    // 偏移量超出范围，使用临时寄存器
-                    iloc.load_imm(ARM64_TMP_REG_NO, offset);
-                    iloc.inst("add", result_reg_name, base_reg_name, PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
-                }
-
-            } else if (result_reg != source_reg) {
-                // 非alloca指令的普通寄存器移动
-                std::string result_reg_name = PlatformArm64::regName[result_reg];
-                std::string source_reg_name = PlatformArm64::regName[source_reg];
-                if (result_reg_name[0] == 'w') {
-                    result_reg_name[0] = 'x';
-                }
-                if (source_reg_name[0] == 'w') {
-                    source_reg_name[0] = 'x';
-                }
-                iloc.inst("mov", result_reg_name, source_reg_name);
-            } else {
-                // 即使寄存器相同，对于数组类型的bitcast，我们也需要计算地址
-                // 检查源是否是数组类型的alloca结果
-                int32_t base_reg_id;
-                int64_t offset;
-                if (source->getMemoryAddr(&base_reg_id, &offset)) {
-                    // 源在栈上，需要计算地址
-                    std::string result_reg_name = PlatformArm64::regName[result_reg];
-                    std::string base_reg_name = PlatformArm64::regName[base_reg_id];
-
-                    // 确保使用64位寄存器
-                    if (result_reg_name[0] == 'w') {
-                        result_reg_name[0] = 'x';
-                    }
-                    if (base_reg_name[0] == 'w') {
-                        base_reg_name[0] = 'x';
-                    }
-
-                    if (offset >= 0) {
-                        iloc.inst("add", result_reg_name, base_reg_name, "#" + std::to_string(offset));
-                    } else {
-                        iloc.inst("sub", result_reg_name, base_reg_name, "#" + std::to_string(-offset));
-                    }
-                    printf("Debug: bitcast same register but calculated address: %s = %s + %ld\n",
-                           result_reg_name.c_str(),
-                           base_reg_name.c_str(),
-                           offset);
-                }
+            // 确保使用64位寄存器
+            if (result_reg_name[0] == 'w') {
+                result_reg_name[0] = 'x';
             }
-        } else {
-            // 源不在寄存器中，可能是全局变量、局部变量或alloca指令
-            if (auto globalVar = dynamic_cast<GlobalVariable *>(source)) {
-                // 加载全局变量地址
-                // adrp指令必须使用64位寄存器
-                std::string result_reg_name = PlatformArm64::regName[result_reg];
-                if (result_reg_name[0] == 'w') {
-                    result_reg_name[0] = 'x';
-                }
-                iloc.inst("adrp", result_reg_name, globalVar->getName());
-                iloc.inst("add", result_reg_name, result_reg_name, ":lo12:" + globalVar->getName());
-            } else {
-                // 其他情况，加载局部变量或alloca指令的地址
-                int32_t base_reg_id;
-                int64_t offset;
-                if (source->getMemoryAddr(&base_reg_id, &offset)) {
-                    // 计算地址：result_reg = base_reg + offset
-                    std::string result_reg_name = PlatformArm64::regName[result_reg];
-                    std::string base_reg_name = PlatformArm64::regName[base_reg_id];
-
-                    // 确保使用64位寄存器
-                    if (result_reg_name[0] == 'w') {
-                        result_reg_name[0] = 'x';
-                    }
-                    if (base_reg_name[0] == 'w') {
-                        base_reg_name[0] = 'x';
-                    }
-
-                    if (offset >= 0) {
-                        iloc.inst("add", result_reg_name, base_reg_name, "#" + std::to_string(offset));
-                    } else {
-                        iloc.inst("sub", result_reg_name, base_reg_name, "#" + std::to_string(-offset));
-                    }
-                    printf("Debug: bitcast calculated address: %s = %s + %ld\n",
-                           result_reg_name.c_str(),
-                           base_reg_name.c_str(),
-                           offset);
-                } else {
-                    printf("Error: bitcast source has no memory address\n");
-                }
+            if (base_reg_name[0] == 'w') {
+                base_reg_name[0] = 'x';
             }
+
+            // 检查偏移量是否在adds指令的立即数范围内（0-4095）
+            if (offset >= 0 && offset <= 4095) {
+                // 正偏移量在有效范围内，使用add指令
+                iloc.inst("add", result_reg_name, base_reg_name, "#" + std::to_string(offset));
+            } else {
+                // 偏移量超出范围，使用临时寄存器
+                iloc.load_imm(ARM64_TMP_REG_NO, offset);
+                iloc.inst("add", result_reg_name, base_reg_name, PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
+            }
+
+        } else if (result_reg != source_reg) {
+            // 非alloca指令的普通寄存器移动
+            std::string result_reg_name = PlatformArm64::regName[result_reg];
+            std::string source_reg_name = PlatformArm64::regName[source_reg];
+            if (result_reg_name[0] == 'w') {
+                result_reg_name[0] = 'x';
+            }
+            if (source_reg_name[0] == 'w') {
+                source_reg_name[0] = 'x';
+            }
+            iloc.inst("mov", result_reg_name, source_reg_name);
+        }
+    } else {
+        // 源不在寄存器中，可能是全局变量
+        if (auto globalVar = dynamic_cast<GlobalVariable *>(source)) {
+            // 加载全局变量地址
+            // adrp指令必须使用64位寄存器
+            std::string result_reg_name = PlatformArm64::regName[result_reg];
+            if (result_reg_name[0] == 'w') {
+                result_reg_name[0] = 'x';
+            }
+            iloc.inst("adrp", result_reg_name, globalVar->getName());
+            iloc.inst("add", result_reg_name, result_reg_name, ":lo12:" + globalVar->getName());
         }
     }
 }
@@ -1408,16 +1233,11 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
             // 检查偏移量是否在add/sub指令的立即数范围内（0-4095）
             if (base_offset >= 0 && base_offset <= 4095) {
                 iloc.inst("add", dest_reg_name, base_reg_name, "#" + std::to_string(base_offset));
-            } else if (base_offset < 0 && (-base_offset) <= 4095) {
-                iloc.inst("sub", dest_reg_name, base_reg_name, "#" + std::to_string(-base_offset));
             } else {
                 // 偏移量超出范围，使用临时寄存器
                 iloc.load_imm(ARM64_TMP_REG_NO + 1, base_offset); // 使用另一个临时寄存器
                 iloc.inst("add", dest_reg_name, base_reg_name, PlatformArm64::regName[ARM64_TMP_REG_NO + 1 + 32]);
             }
-        } else {
-            printf("Error: memcpy dest address calculation failed\n");
-            return;
         }
     }
 
@@ -1433,9 +1253,6 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
             // 加载全局变量地址
             iloc.inst("adrp", src_reg_name, globalVar->getName());
             iloc.inst("add", src_reg_name, src_reg_name, ":lo12:" + globalVar->getName());
-        } else {
-            printf("Error: memcpy src address calculation failed\n");
-            return;
         }
     }
 
@@ -1473,9 +1290,6 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
             // 存储到目标地址
             iloc.inst("str", temp_reg_name, "[" + dest_reg_name + ", #" + std::to_string(i * 4) + "]");
         }
-    } else {
-        // 动态大小的memcpy，暂时不实现
-        printf("Warning: Dynamic size memcpy not implemented\n");
     }
 }
 
@@ -1509,14 +1323,7 @@ void InstSelectorArm64::translate_memset(Instruction * inst)
             if (base_reg_name[0] == 'w')
                 base_reg_name[0] = 'x';
 
-            if (base_offset >= 0) {
-                iloc.inst("add", dest_reg_name, base_reg_name, "#" + std::to_string(base_offset));
-            } else {
-                iloc.inst("sub", dest_reg_name, base_reg_name, "#" + std::to_string(-base_offset));
-            }
-        } else {
-            printf("Error: memset dest address calculation failed\n");
-            return;
+            iloc.inst("add", dest_reg_name, base_reg_name, "#" + std::to_string(base_offset));
         }
     }
 

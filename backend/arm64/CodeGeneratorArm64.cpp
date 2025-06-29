@@ -608,10 +608,6 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
             // 注意：这里设置的是alloca指令本身的内存地址，
             // 在指令翻译时，lea_var会使用这个地址
             inst->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
-            printf("Debug: stackAlloc - alloca指令 %s 设置内存地址: offset=%ld, size=%ld\n",
-                   inst->getIRName().c_str(),
-                   sp_esp,
-                   size);
 
             // 为alloca指令的结果变量设置相同的内存地址
             if (inst->getOperandsNum() > 0) {

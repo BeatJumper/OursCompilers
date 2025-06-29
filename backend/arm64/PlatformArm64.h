@@ -22,7 +22,7 @@
 #include "StatusRegVariable.h"
 
 // 在操作过程中临时借助的寄存器为ARM64_TMP_REG_NO
-#define ARM64_TMP_REG_NO 10
+#define ARM64_TMP_REG_NO 17
 
 // 栈寄存器SP和FP
 #define ARM64_SP_REG_NO 31
