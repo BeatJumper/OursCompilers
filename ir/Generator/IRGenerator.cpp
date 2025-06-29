@@ -473,9 +473,9 @@ bool IRGenerator::ir_function_call(ast_node * node)
 
             Value * paramValue = nullptr;
 
-            // 检查参数是否是数组类型，如果是数组需要传递首地址
+            // 检查参数类型，处理数组到指针的转换
             if (temp->val->getType()->isArrayType()) {
-                // 数组参数：需要获取数组的首地址
+                // 直接的数组类型：需要获取数组的首地址
                 // 使用 getelementptr 获取数组首元素地址
                 ConstInt * zeroConst = module->newConstInt(0);
                 ConstInt * zeroConst2 = module->newConstInt(0);
@@ -484,6 +484,28 @@ bool IRGenerator::ir_function_call(ast_node * node)
                     new GetelementptrInstruction(currentFunc, temp->val, zeroConst, zeroConst2);
                 node->blockInsts.addInst(gepInst);
                 paramValue = gepInst;
+            } else if (temp->val->getType()->isPointerType()) {
+                // 检查是否是指向数组的指针（如数组访问的结果）
+                const PointerType * ptrType = static_cast<const PointerType *>(temp->val->getType());
+                if (ptrType->getPointeeType()->isArrayType()) {
+                    // 指向数组的指针：需要转换为指向元素的指针
+                    // 使用 getelementptr 获取数组首元素地址
+                    ConstInt * zeroConst = module->newConstInt(0);
+                    ConstInt * zeroConst2 = module->newConstInt(0);
+
+                    GetelementptrInstruction * gepInst =
+                        new GetelementptrInstruction(currentFunc, temp->val, zeroConst, zeroConst2);
+                    node->blockInsts.addInst(gepInst);
+                    paramValue = gepInst;
+                } else if (needsLoad(temp->val)) {
+                    // 普通变量（如局部变量），需要加载值
+                    LoadInstruction * loadParam = new LoadInstruction(currentFunc, temp->val, temp->val, 4);
+                    node->blockInsts.addInst(loadParam);
+                    paramValue = loadParam;
+                } else {
+                    // 其他指针类型（如函数参数），直接使用
+                    paramValue = temp->val;
+                }
             } else if (needsLoad(temp->val)) {
                 // 参数是变量，需要加载
                 LoadInstruction * loadParam = new LoadInstruction(currentFunc, temp->val, temp->val, 4);
