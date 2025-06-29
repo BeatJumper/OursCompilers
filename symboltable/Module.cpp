@@ -416,18 +416,15 @@ void Module::outputIR(const std::string & filePath)
     fprintf(fp, "\n");
 
     // 全局变量遍历输出对应的declare指令
-    printf("Debug: Outputting global variables...\n");
     for (auto var: globalVariableVector) {
-        // 跳过临时的嵌套数组，这些数组只用于内部处理
-        if (var->getName().find("__nested_array_") == 0 || var->getName().find("__temp_array_") == 0) {
-            printf("Debug: Skipping temporary array: %s\n", var->getName().c_str());
+        // 只跳过局部临时数组，但保留嵌套数组（因为它们可能被引用）
+        if (var->getName().find("__temp_array_") == 0) {
             continue;
         }
 
         std::string str;
         var->toDeclareString(str);
         fprintf(fp, "%s\n", str.c_str());
-        printf("Debug: Global Variable IR: %s\n", str.c_str());
     }
 
     // 遍历所有的线性IR指令，文本输出

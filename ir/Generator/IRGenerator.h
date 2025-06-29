@@ -297,6 +297,20 @@ private:
     /// @return true：包含终结指令，false：不包含
     bool hasTerminatorInstruction(const InterCode & blockInsts);
 
+    /// @brief 检查指令序列是否包含return指令
+    /// @param blockInsts 指令序列
+    /// @return true：包含return指令，false：不包含
+    bool hasReturnInstruction(const InterCode & blockInsts);
+
+    /// @brief 重新组织初始化值以匹配目标数组类型
+    /// @param flatValues 扁平化的初始化值
+    /// @param targetType 目标数组类型
+    /// @param reorganizedValues 输出的重新组织后的值
+    /// @return 是否成功
+    bool reorganizeInitValuesForTargetType(const std::vector<Value *> & flatValues,
+                                           ArrayType * targetType,
+                                           std::vector<Value *> & reorganizedValues);
+
     /// @brief 常量声明语句节点翻译
     /// @param node AST节点
     /// @return 翻译是否成功，true：成功，false：失败
