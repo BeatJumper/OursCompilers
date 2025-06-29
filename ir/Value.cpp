@@ -96,6 +96,29 @@ void Value::removeUse(Use * use)
 }
 
 ///
+/// @brief 获取所有使用该Value的Use边
+/// @return std::vector<Use *>& 所有使用边的引用
+///
+std::vector<Use *> & Value::getUses()
+{
+    return uses;
+}
+
+///
+/// @brief 替换所有使用该Value的地方为新的Value
+/// @param newValue 新的Value
+///
+void Value::replaceAllUsesWith(Value * newValue)
+{
+    // 创建一个副本，因为在遍历过程中uses会被修改
+    std::vector<Use *> usesCopy = uses;
+
+    for (Use * use: usesCopy) {
+        use->setUsee(newValue);
+    }
+}
+
+///
 /// @brief 取得变量所在的作用域层级
 /// @return int32_t 层级
 ///

@@ -57,13 +57,9 @@ protected:
     /// @param func 要处理的函数
     void adjustFormalParamInsts(Function * func);
 
-    /// @brief 寄存器分配后对乘法和除法操作数里的常量添加赋值
-    /// @param func 要处理的函数
-    void adjustBinaryInsts(Function * func);
-
     /// @brief 寄存器分配前对常数进行扫描，对一些常数提前追加MOV指令
     /// @param func 要处理的函数
-    void adjustMovInsts(Function * func);
+    void adjustSomeInsts(Function * func);
 
     ///
     /// @brief 获取IR变量相关信息字符串

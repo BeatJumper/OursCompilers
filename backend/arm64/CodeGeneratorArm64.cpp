@@ -104,19 +104,37 @@ void CodeGeneratorArm64::genDataSection()
                 float tempFloat = constFloat->getVal();
                 std::memcpy(&floatBits, &tempFloat, sizeof(float));
                 fprintf(fp, "	.word %u\n", floatBits);
-            } else if (var->getType()->isArrayType() && !var->getInitValueList().empty()) {
+            } else if (var->getType()->isArrayType()) {
                 // 处理数组类型全局变量的初始化值列表
-                auto & initValues = var->getInitValueList();
-                expandAndOutputInitValues(initValues);
+                printf("处理数组类型全局变量的初始化值列表\n");
+                if (!var->getInitValueList().empty()) {
+                    printf("数组初始化值列表非空\n");
+                    auto & initValues = var->getInitValueList();
+                    expandAndOutputInitValues(initValues);
 
-                // 计算实际输出的字节数：展开后的元素个数 * 4字节
-                int actualElements = countExpandedInitValues(initValues);
-                int actualSize = actualElements * 4;
-                fprintf(fp, ".size %s, %d\n", var->getName().c_str(), actualSize);
-            } else {
-                // 默认情况：输出单个0
-                fprintf(fp, "	.word 0\n");
-                fprintf(fp, ".size %s, %d\n", var->getName().c_str(), var->getType()->getSize());
+                    // 计算实际输出的字节数：展开后的元素个数 * 4字节
+                    int actualElements = countExpandedInitValues(initValues);
+                    int actualSize = actualElements * 4;
+                    fprintf(fp, ".size %s, %d\n", var->getName().c_str(), actualSize);
+                } else if (var->getInitValue()) {
+                    // 单个值情况
+                    int size = 0;
+                    if (ConstInt * value = dynamic_cast<ConstInt *>(var->getInitValue())) {
+                        size = 4;
+                        fprintf(fp, "	.word %d\n", value->getVal());
+                    } else if (ConstFloat * value = dynamic_cast<ConstFloat *>(var->getInitValue())) {
+                        size = 4;
+                        fprintf(fp, "	.word %f\n", value->getVal());
+                    }
+                    fprintf(fp, ".size %s, %d\n", var->getName().c_str(), size);
+                } else {
+                    // zeroinitializer处理
+                    ArrayType * nestedArrayType = static_cast<ArrayType *>(var->getType());
+                    int totalElements = nestedArrayType->getTotalElements();
+                    for (int i = 0; i < totalElements; i++) {
+                        fprintf(fp, "	.word 0\n");
+                    }
+                }
             }
         }
     }
@@ -239,8 +257,8 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     protectedRegNo.push_back(ARM64_LX_REG_NO);
     printf("寄存器分配中段\n");
 
-    // 给STORE用到的立即数添加MOV指令
-    adjustMovInsts(func);
+    // 给一些指令添加临时调整指令
+    adjustSomeInsts(func);
 
     // 调整函数调用指令，主要是前8个寄存器传值，后面用栈传递
     // 为了更好的进行寄存器分配，可以进行对函数调用的指令进行预处理
@@ -248,8 +266,6 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     // 当前函数的指令列表
     adjustFuncCallInsts(func);
     printf("调整函数调用指令\n");
-
-    adjustBinaryInsts(func);
 
     // 加完新指令后也该重新调整IR编号
     func->renameIR(module);
@@ -301,7 +317,7 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
 
 /// @brief 寄存器分配前对常数进行扫描，对一些常数提前追加MOV指令
 /// @param func
-void CodeGeneratorArm64::adjustMovInsts(Function * func)
+void CodeGeneratorArm64::adjustSomeInsts(Function * func)
 {
     auto & insts = func->getInterCode().getInsts();
     for (size_t i = 0; i < insts.size();) {
@@ -313,12 +329,9 @@ void CodeGeneratorArm64::adjustMovInsts(Function * func)
             //要存入的数
             Value * val = inst->getOperand(0);
             //检测要存入的数是否是constant
-            if (Instanceof(const_val, Constant *, val)) {
+            if (Instanceof(const_val, ConstInt *, val)) {
                 // 对于常量0，不需要创建MoveInstruction，ARM64有专门的零寄存器
-                ConstInt * constInt = dynamic_cast<ConstInt *>(const_val);
-                if (constInt && constInt->getVal() == 0) {
-                    // 常量0保持原样，在指令翻译时使用零寄存器
-                } else {
+                if (const_val->getVal() != 0) {
                     // 其他常量需要mov到寄存器
                     Value * newval = new Value(val->getType());
                     // 为constant创建mov指令
@@ -332,6 +345,78 @@ void CodeGeneratorArm64::adjustMovInsts(Function * func)
                     i++;
                 }
             }
+        }
+        if (Instanceof(binaryInst, BinaryInstruction *, inst)) {
+            printf("检测到两元指令\n");
+            if (binaryInst->getOp() == IRInstOperator::IRINST_OP_MUL_I ||
+                binaryInst->getOp() == IRInstOperator::IRINST_OP_DIV_I ||
+                binaryInst->getOp() == IRInstOperator::IRINST_OP_MOD_I) {
+                printf("检测到两元乘法除法指令\n");
+                Value * arg1 = binaryInst->getOperand(0);
+                Value * arg2 = binaryInst->getOperand(1);
+                if (dynamic_cast<ConstInt *>(arg1)) {
+                    printf("检测到操作数1为常量\n");
+                    Value * newval = new Value(arg1->getType());
+                    Instruction * assignInst = new MoveInstruction(func, newval, arg1);
+                    binaryInst->getOperands()[0] = new Use(newval, binaryInst);
+                    insts.insert(insts.begin() + i, (Instruction *) assignInst);
+                    printf("插入一条赋值指令\n");
+                    //插入后当前位置变为新插入的指令，故i额外+1
+                    i++;
+                }
+                if (dynamic_cast<ConstInt *>(arg2)) {
+                    printf("检测到操作数2为常量\n");
+                    Value * newval = new Value(arg2->getType());
+                    Instruction * assignInst = new MoveInstruction(func, newval, arg2);
+                    binaryInst->getOperands()[1] = new Use(newval, binaryInst);
+                    insts.insert(insts.begin() + i, (Instruction *) assignInst);
+                    printf("插入一条赋值指令\n");
+                    i++;
+                }
+            } else if (binaryInst->getOp() == IRInstOperator::IRINST_OP_ADD_I ||
+                       binaryInst->getOp() == IRInstOperator::IRINST_OP_SUB_I) {
+                printf("检测到两元加法减法指令\n");
+                Value * arg1 = binaryInst->getOperand(0);
+                if (dynamic_cast<ConstInt *>(arg1)) {
+                    printf("检测到操作数1为常量\n");
+                    Value * newval = new Value(arg1->getType());
+                    Instruction * assignInst = new MoveInstruction(func, newval, arg1);
+                    binaryInst->getOperands()[0] = new Use(newval, binaryInst);
+                    insts.insert(insts.begin() + i, (Instruction *) assignInst);
+                    printf("插入一条赋值指令\n");
+                    i++;
+                }
+            }
+        }
+        if (inst->getOp() == IRInstOperator::IRINST_OP_MOD_I) {
+            // 对于mod指令，将其转化成乘法除法和减法指令
+            // a % b => a - (a / b) * b
+            printf("检测到取余指令\n");
+            Value * arg1 = inst->getOperand(0);
+            Value * arg2 = inst->getOperand(1);
+
+            BinaryInstruction * divInst =
+                new BinaryInstruction(func, IRInstOperator::IRINST_OP_DIV_I, arg1, arg2, arg1->getType());
+            BinaryInstruction * mulInst =
+                new BinaryInstruction(func, IRInstOperator::IRINST_OP_MUL_I, divInst, arg2, arg1->getType());
+            BinaryInstruction * subInst =
+                new BinaryInstruction(func, IRInstOperator::IRINST_OP_SUB_I, arg1, mulInst, arg1->getType());
+
+            // 关键修复：在删除原指令之前，先替换所有对原指令的引用
+            printf("替换所有对mod指令结果的引用\n");
+            inst->replaceAllUsesWith(subInst);
+
+            // 删除原来的mod指令
+            printf("删除原来的mod指令\n");
+            insts.erase(insts.begin() + i);
+            // 替换成如下的指令序列
+            printf("替换成如下的指令序列\n");
+            insts.insert(insts.begin() + i, (Instruction *) divInst);
+            i++;
+            insts.insert(insts.begin() + i, (Instruction *) mulInst);
+            i++;
+            insts.insert(insts.begin() + i, (Instruction *) subInst);
+            i++;
         }
         i++;
     }
@@ -475,60 +560,6 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
     }
 }
 
-/// @brief 寄存器分配后对乘法和除法操作数里的常量添加赋值
-/// @param func 要处理的函数
-void CodeGeneratorArm64::adjustBinaryInsts(Function * func)
-{
-    // 当前函数的指令列表
-    auto & insts = func->getInterCode().getInsts();
-
-    // 函数返回值用x0寄存器，若函数调用有返回值，则赋值x0到对应寄存器
-    // 通过栈传递的实参，采用SP + 偏移的方式殉职，偏移肯定非负。
-    for (auto pIter = insts.begin(); pIter != insts.end(); pIter++) {
-        if (Instanceof(binaryInst, BinaryInstruction *, *pIter)) {
-            if (binaryInst->getOp() == IRInstOperator::IRINST_OP_MUL_I ||
-                binaryInst->getOp() == IRInstOperator::IRINST_OP_DIV_I ||
-                binaryInst->getOp() == IRInstOperator::IRINST_OP_MOD_I) {
-                printf("检测到两元乘法除法指令\n");
-                Value * arg1 = binaryInst->getOperand(0);
-                Value * arg2 = binaryInst->getOperand(1);
-                if (dynamic_cast<ConstInt *>(arg1)) {
-                    printf("检测到操作数1为常量\n");
-                    Value * newval = new Value(arg1->getType());
-                    Instruction * assignInst = new MoveInstruction(func, newval, arg1);
-                    binaryInst->getOperands()[0] = new Use(newval, binaryInst);
-                    pIter = insts.insert(pIter, assignInst);
-                    printf("插入一条赋值指令\n");
-                    pIter++;
-                }
-                if (dynamic_cast<ConstInt *>(arg2)) {
-                    printf("检测到操作数2为常量\n");
-                    Value * newval = new Value(arg2->getType());
-                    Instruction * assignInst = new MoveInstruction(func, newval, arg2);
-                    binaryInst->getOperands()[1] = new Use(newval, binaryInst);
-                    pIter = insts.insert(pIter, assignInst);
-                    printf("插入一条赋值指令\n");
-                    pIter++;
-                }
-            }
-            if (binaryInst->getOp() == IRInstOperator::IRINST_OP_ADD_I ||
-                binaryInst->getOp() == IRInstOperator::IRINST_OP_SUB_I) {
-                printf("检测到两元加法减法指令\n");
-                Value * arg1 = binaryInst->getOperand(0);
-                if (dynamic_cast<ConstInt *>(arg1)) {
-                    printf("检测到操作数1为常量\n");
-                    Value * newval = new Value(arg1->getType());
-                    Instruction * assignInst = new MoveInstruction(func, newval, arg1);
-                    binaryInst->getOperands()[0] = new Use(newval, binaryInst);
-                    pIter = insts.insert(pIter, assignInst);
-                    printf("插入一条赋值指令\n");
-                    pIter++;
-                }
-            }
-        }
-    }
-}
-
 /// @brief 栈空间分配
 /// @param func 要处理的函数
 void CodeGeneratorArm64::stackAlloc(Function * func)
@@ -657,6 +688,7 @@ void CodeGeneratorArm64::expandAndOutputInitValues(const std::vector<Value *> & 
 {
     for (auto element: initValues) {
         if (auto constIntElement = dynamic_cast<ConstInt *>(element)) {
+            printf("检测到整数元素\n");
             fprintf(fp, "	.word %d\n", constIntElement->getVal());
         } else if (auto constFloatElement = dynamic_cast<ConstFloat *>(element)) {
             uint32_t floatBits;
@@ -665,18 +697,22 @@ void CodeGeneratorArm64::expandAndOutputInitValues(const std::vector<Value *> & 
             fprintf(fp, "	.word %u\n", floatBits);
         } else if (auto globalVarElement = dynamic_cast<GlobalVariable *>(element)) {
             // 递归处理嵌套的全局变量（嵌套数组）
+            printf("检测到嵌套数组元素\n");
             if (!globalVarElement->getInitValueList().empty()) {
                 expandAndOutputInitValues(globalVarElement->getInitValueList());
             } else {
-                // 如果嵌套数组没有初始化值，输出零
+                // 如果嵌套数组没有初始化值, 对应zeroinitializer处理
                 if (globalVarElement->getType()->isArrayType()) {
                     ArrayType * nestedArrayType = static_cast<ArrayType *>(globalVarElement->getType());
+
+                    printf("Debug: Element type: %s\n", nestedArrayType->getElementType()->toString().c_str());
+
                     int totalElements = nestedArrayType->getTotalElements();
+                    printf("Debug: zeroinitializer对应的数组元素个数:%d\n", totalElements);
+
                     for (int i = 0; i < totalElements; i++) {
                         fprintf(fp, "	.word 0\n");
                     }
-                } else {
-                    fprintf(fp, "	.word 0\n");
                 }
             }
         } else {
