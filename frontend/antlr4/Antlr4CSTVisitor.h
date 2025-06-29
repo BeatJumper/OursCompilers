@@ -275,4 +275,10 @@ protected:
     /// @param ctx CST上下文
     /// @return std::any AST的节点
     std::any visitInitVal(MiniCParser::InitValContext * ctx) override;
+
+private:
+    /// @brief 计算常量表达式的值（用于数组维度计算）
+    /// @param node AST节点
+    /// @return 计算结果，如果无法计算则返回-1
+    int evaluateConstantExpression(ast_node * node);
 };

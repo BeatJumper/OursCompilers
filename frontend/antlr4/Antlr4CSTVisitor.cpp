@@ -597,8 +597,16 @@ std::any MiniCCSTVisitor::visitVarDef(MiniCParser::VarDefContext * ctx)
             if (dimNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
                 varTypeAttr.dimensions.push_back(dimNode->integer_val);
             } else {
-                // 如果不是常量，暂时使用-1表示动态大小（后续可以扩展）
-                varTypeAttr.dimensions.push_back(-1);
+                // 尝试计算常量表达式（如 3 + 1）
+                int dimValue = evaluateConstantExpression(dimNode);
+                if (dimValue > 0) {
+                    varTypeAttr.dimensions.push_back(dimValue);
+                    printf("Debug: Evaluated array dimension expression to: %d\n", dimValue);
+                } else {
+                    // 如果无法计算，使用-1表示动态大小
+                    varTypeAttr.dimensions.push_back(-1);
+                    printf("Warning: Could not evaluate array dimension expression, using -1\n");
+                }
             }
 
             // 将维度节点作为变量节点的子节点保存（用于后续处理）
@@ -1010,8 +1018,16 @@ std::any MiniCCSTVisitor::visitConstDef(MiniCParser::ConstDefContext * ctx)
             if (dimNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
                 constTypeAttr.dimensions.push_back(dimNode->integer_val);
             } else {
-                // 如果不是常量，暂时使用-1表示动态大小（后续可以扩展）
-                constTypeAttr.dimensions.push_back(-1);
+                // 尝试计算常量表达式（如 3 + 1）
+                int dimValue = evaluateConstantExpression(dimNode);
+                if (dimValue > 0) {
+                    constTypeAttr.dimensions.push_back(dimValue);
+                    printf("Debug: Evaluated const array dimension expression to: %d\n", dimValue);
+                } else {
+                    // 如果无法计算，使用-1表示动态大小
+                    constTypeAttr.dimensions.push_back(-1);
+                    printf("Warning: Could not evaluate const array dimension expression, using -1\n");
+                }
             }
 
             // 将维度节点作为常量节点的子节点保存（用于后续处理）
@@ -1085,4 +1101,59 @@ std::any MiniCCSTVisitor::visitInitVal(MiniCParser::InitValContext * ctx)
 
         return initListNode;
     }
+}
+
+/// @brief 计算常量表达式的值（用于数组维度计算）
+/// @param node AST节点
+/// @return 计算结果，如果无法计算则返回-1
+int MiniCCSTVisitor::evaluateConstantExpression(ast_node * node)
+{
+    if (!node) {
+        return -1;
+    }
+
+    switch (node->node_type) {
+        case ast_operator_type::AST_OP_LEAF_LITERAL_UINT:
+            // 整数字面量
+            return static_cast<int>(node->integer_val);
+
+        case ast_operator_type::AST_OP_ADD:
+            // 加法运算
+            if (node->sons.size() == 2) {
+                int left = evaluateConstantExpression(node->sons[0]);
+                int right = evaluateConstantExpression(node->sons[1]);
+                if (left >= 0 && right >= 0) {
+                    return left + right;
+                }
+            }
+            break;
+
+        case ast_operator_type::AST_OP_SUB:
+            // 减法运算
+            if (node->sons.size() == 2) {
+                int left = evaluateConstantExpression(node->sons[0]);
+                int right = evaluateConstantExpression(node->sons[1]);
+                if (left >= 0 && right >= 0) {
+                    return left - right;
+                }
+            }
+            break;
+
+        case ast_operator_type::AST_OP_MUL:
+            // 乘法运算
+            if (node->sons.size() == 2) {
+                int left = evaluateConstantExpression(node->sons[0]);
+                int right = evaluateConstantExpression(node->sons[1]);
+                if (left >= 0 && right >= 0) {
+                    return left * right;
+                }
+            }
+            break;
+
+        default:
+            // 其他类型暂不支持
+            break;
+    }
+
+    return -1; // 无法计算
 }

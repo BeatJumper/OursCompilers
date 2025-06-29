@@ -43,6 +43,16 @@ void ScopeStack::insertValue(Value * value)
 }
 
 ///
+/// @brief 向当前的作用域中加入变量（使用自定义名称）
+/// @param name 自定义变量名
+/// @param value 变量
+///
+void ScopeStack::insertValue(const std::string & name, Value * value)
+{
+    valueStack.back().insert(make_pair(name, value));
+}
+
+///
 /// @brief 从当前的作用域中查找指定的变量名
 /// @param  name 变量名
 /// @return Value* 变量对象，若没有，则返回空指针
