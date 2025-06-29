@@ -3495,14 +3495,17 @@ bool IRGenerator::ir_local_const_declare(ast_node * node,
     }
 
     // 局部常量按照只读变量处理（生成 alloca + store）
-    Value * constVar = module->newVarValue(typeNode->type, nameNode->name);
+    // 常量变量的类型应该是指向常量类型的指针类型
+    Type * constType = typeNode->type;                // 常量类型
+    Type * constVarType = new PointerType(constType); // 常量变量类型（指针类型）
+    Value * constVar = module->newVarValue(constVarType, nameNode->name);
     if (!constVar) {
         printf("Error: Failed to create constant variable '%s'.\n", nameNode->name.c_str());
         return false;
     }
 
     // 创建alloca指令
-    AllocaInstruction * allocaInst = new AllocaInstruction(module->getCurrentFunction(), constVar, typeNode->type, 4);
+    AllocaInstruction * allocaInst = new AllocaInstruction(module->getCurrentFunction(), constVar, constType, 4);
     node->blockInsts.addInst(allocaInst);
 
     // 创建store指令
