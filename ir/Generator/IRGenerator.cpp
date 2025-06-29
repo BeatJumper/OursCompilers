@@ -4111,13 +4111,10 @@ bool IRGenerator::ir_array_init(ast_node * node)
                arrayType->toString().c_str());
         GlobalVariable * constArray = module->newGlobalConstArray(arrayType, globalArrayName);
 
-        // 对于空初始化列表，需要填充零值
+        // 对于空初始化列表，不填充零值，让GlobalVariable的toString处理
         if (initValues.empty() && arrayType) {
-            int totalElements = arrayType->getTotalElements();
-            for (int i = 0; i < totalElements; ++i) {
-                initValues.push_back(module->newConstInt(0));
-            }
-            printf("Debug: Filled empty initializer with %d zero values\n", totalElements);
+            printf("Debug: Empty initializer detected, will use zeroinitializer in LLVM IR\n");
+            // 不填充零值，保持initValues为空，这样GlobalVariable会输出zeroinitializer
         }
 
         // 对于2D数组，需要重新组织扁平化的初始化值
@@ -4435,14 +4432,24 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
             }
         }
 
-        // 补零到指定大小
-        while (static_cast<int>(initValues.size()) < totalElements) {
-            if (arrayType->getElementType()->isIntegerType()) {
-                initValues.push_back(module->newConstInt(0));
-            } else if (arrayType->getElementType()->isFloatType()) {
-                initValues.push_back(module->newConstFloat(0.0f));
+        // 对于大数组，避免生成过多的零值
+        if (initValues.empty()) {
+            // 完全空的初始化列表，不填充零值，使用zeroinitializer
+            printf("Debug: Empty initialization list, will use zeroinitializer\n");
+        } else if (static_cast<int>(initValues.size()) < totalElements) {
+            // 部分初始化，只有在数组不太大时才填充零值
+            if (totalElements <= 10000) { // 限制填充的最大元素数
+                while (static_cast<int>(initValues.size()) < totalElements) {
+                    if (arrayType->getElementType()->isIntegerType()) {
+                        initValues.push_back(module->newConstInt(0));
+                    } else if (arrayType->getElementType()->isFloatType()) {
+                        initValues.push_back(module->newConstFloat(0.0f));
+                    } else {
+                        initValues.push_back(module->newConstInt(0));
+                    }
+                }
             } else {
-                initValues.push_back(module->newConstInt(0));
+                printf("Warning: Array too large (%d elements), partial initialization not supported\n", totalElements);
             }
         }
     }
