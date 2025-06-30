@@ -130,5 +130,5 @@ bool Value::getMemoryAddr(int32_t * regId, int64_t * offset)
 void Value::setRegId(int32_t _regId)
 {
     regId = _regId;
-    std::cout << "setRegId " << regId << std::endl;
+    // std::cout << "setRegId " << regId << std::endl;
 }

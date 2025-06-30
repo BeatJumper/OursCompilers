@@ -254,6 +254,11 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     adjustBinaryInsts(func);
     printf("调整二元操作指令\n");
 
+    // 函数形参要求前8个寄存器分配，后面的参数采用栈传递，实现实参的值传递给形参
+    // 这一步是必须的
+    adjustFormalParamInsts(func);
+    printf("函数形参\n");
+
     // 主要染色过程（不断尝试染色直至成功）
     while (true) {
         // 创建干涉图
@@ -270,11 +275,14 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
             for (node_IG * node: graph_ig->node_set) {
                 // assert(node->color != -1);
                 // std::cout << InterferenceGraph::ColorToRegId(node->color) << std::endl;
+                // printval(func->getParams()[0]);
+                printval(node->val);
                 node->val->setRegId(InterferenceGraph::ColorToRegId(node->color));
                 // std::cout << node->val->getRegId() << std::endl;
             }
             break;
         } else {
+            assert(false);
             printf("溢出\n");
             // 完成变量溢出的工作
             auto x = graph_ig->uncolored_node_set.end();
@@ -375,11 +383,6 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     // 为局部变量和临时变量，以及被保护寄存器在栈内分配空间，指定偏移，进行栈空间的分配
     stackAlloc(func);
     printf("为局部变量和临时变量在栈内分配空间\n");
-
-    // 函数形参要求前8个寄存器分配，后面的参数采用栈传递，实现实参的值传递给形参
-    // 这一步是必须的
-    adjustFormalParamInsts(func);
-    printf("函数形参\n");
     // GenBasicBlocks(func);
     // printf("基本块划分成功\n");
 

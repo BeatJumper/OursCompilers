@@ -91,19 +91,31 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
         value_to_ig[val] = newnode;
         node_set.insert(newnode);
         // 已经提前指定了寄存器的Value对应的干涉图节点应该预先染色
+        // printf("当前变量：");
+        // printval(val);
+        // printf("寄存器ID：%d\n", val->getRegId());
         newnode->color = val->getRegId();
         // printf("newnode->color = val->getRegId(); %d\n", val->getRegId());
         if (newnode->color == -1) {
             uncolored_node_set.insert(newnode);
         }
     }
+    printf("所有干涉节点创建完成\n");
     // std::cout <<　uncolored_node_set.size() << std::endl;
 
     // 扫描函数里每条指令，获取每个时刻的活跃变量集合
+    int i = 1;
+    printf("size of insts:%d\n", graph->get_func()->getInterCode().getCode().size());
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
         std::set<Value *> value_occupy = inst->get_liveout();
         merge_set(value_occupy, inst->get_def_set());
-        // 这些不同的量两两之间都是互斥的，不能在同一寄存器
+        printf("第%d次获取DEF、SET集合\n", i++);
+        /*
+        if (i == 2) {
+            break;
+        }
+        */
+        //  这些不同的量两两之间都是互斥的，不能在同一寄存器
         FOR_EACH_PAIR_IN_SET(value_occupy)
         {
             // assert(it1 != it2);
@@ -112,7 +124,6 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
             }
             // 因此在干涉图中连上一条边
             add_edge(value_to_ig[*it1], value_to_ig[*it2]);
-            printf("干涉图内添加了一条边\n");
         }
         // std::cout << "干涉边添加完毕" << std::endl;
     }
@@ -156,13 +167,17 @@ void InterferenceGraph::GenBasicBlocks(Function * func)
 
 static int least_color_for_node(node_IG * node, int color_size)
 {
+    /*
     bool used[color_size];
     for (int i = 0; i < color_size; i++) {
         used[i] = false;
     }
-    // std::vector<bool> used(color_size, false);
+    */
+    std::vector<bool> used(color_size, false);
     for (node_IG * neighbor: node->neighbors) {
-        used[neighbor->color] = true;
+        if (neighbor->color != -1) {
+            used.at(neighbor->color) = true;
+        }
     }
     for (int color = 0; color < color_size; color++) {
         // printf("%d\n", color);
