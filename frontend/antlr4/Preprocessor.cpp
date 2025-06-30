@@ -43,6 +43,9 @@ std::string Preprocessor::process(const std::string & sourceCode)
         // 处理starttime()和stoptime()宏调用
         line = processTimingMacros(line, lineNumber);
 
+        // 处理数组定义中的单个{0}初始化
+        line = processArrayZeroInitialization(line);
+
         // 保留处理后的行
         oss << line << "\n";
         lineNumber++;
@@ -130,6 +133,32 @@ std::string Preprocessor::processTimingMacros(const std::string & line, int line
     result = std::regex_replace(result, stoptimeRegex, stoptimeReplacement);
 
     return result;
+}
+
+/// @brief 处理数组定义中的单个{0}初始化
+/// @param line 要处理的行
+/// @return 处理后的行
+std::string Preprocessor::processArrayZeroInitialization(const std::string & line)
+{
+    // 使用正则表达式匹配数组定义中只有单个{0}的初始化
+    // 匹配模式：类型 变量名[维度]... = {0};
+    // 注意：只处理等号右边恰好是{0}的情况，不处理复杂的嵌套初始化
+
+    std::regex arrayZeroInitRegex(
+        R"(^(\s*(?:int|float|const\s+int|const\s+float)\s+[a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])+)\s*=\s*\{0\}\s*;(.*)$)");
+
+    std::smatch match;
+    if (std::regex_match(line, match, arrayZeroInitRegex)) {
+        // 找到匹配的数组定义，移除 = {0} 部分
+        std::string arrayDecl = match[1].str();  // 数组声明部分
+        std::string restOfLine = match[2].str(); // 行的其余部分（如果有的话）
+
+        // 重新组合，去掉 = {0}
+        return arrayDecl + ";" + restOfLine;
+    }
+
+    // 如果没有匹配，返回原行
+    return line;
 }
 
 /// @brief 检查字符是否为标识符字符
