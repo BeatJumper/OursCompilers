@@ -35,12 +35,8 @@ public:
     ///
     explicit GlobalVariable(Type * _type, std::string _name) : GlobalValue(_type, _name)
     {
-        // 设置对齐大小：数组类型使用16字节对齐，其他类型使用4字节对齐
-        if (_type->isArrayType()) {
-            setAlignment(16);
-        } else {
-            setAlignment(4);
-        }
+        // ARM64架构下统一使用4字节对齐
+        setAlignment(4);
     }
 
     ///
@@ -190,12 +186,8 @@ public:
     void setStorageType(Type * type)
     {
         storageType = type;
-        // 根据存储类型重新设置对齐：数组类型使用16字节对齐，其他类型使用4字节对齐
-        if (type && type->isArrayType()) {
-            setAlignment(16);
-        } else {
-            setAlignment(4);
-        }
+        // 根据存储类型重新设置对齐：ARM64架构下统一使用4字节对齐
+        setAlignment(4);
     }
 
     ///
