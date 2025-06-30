@@ -2078,8 +2078,36 @@ bool IRGenerator::ir_global_variable_declare(ast_node * node, ast_node * typeNod
             } else {
                 initValue = module->newConstFloat(initExprNode->float_val);
             }
+        } else if (initExprNode->node_type == ast_operator_type::AST_OP_NEGATIVE) {
+            // 处理负数，如 int a = -1;
+            if (initExprNode->sons.size() == 1) {
+                ast_node * operandNode = initExprNode->sons[0];
+                if (operandNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+                    int32_t negativeValue = -static_cast<int32_t>(operandNode->integer_val);
+                    if (typeNode->type->isFloatType()) {
+                        initValue = module->newConstFloat(static_cast<float>(negativeValue));
+                    } else {
+                        initValue = module->newConstInt(negativeValue);
+                    }
+                } else if (operandNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
+                    float negativeValue = -operandNode->float_val;
+                    if (typeNode->type->isIntegerType()) {
+                        initValue = module->newConstInt(static_cast<int32_t>(negativeValue));
+                    } else {
+                        initValue = module->newConstFloat(negativeValue);
+                    }
+                } else {
+                    printf("Error: Global variable initialization with negative operator only supports literal "
+                           "operands.\n");
+                    return false;
+                }
+            } else {
+                printf("Error: Invalid negative operator in global variable initialization.\n");
+                return false;
+            }
         } else {
-            printf("Error: Global variable initialization only supports constants and arrays.\n");
+            printf("Error: Global variable initialization only supports constants and arrays. Got node type: %d\n",
+                   static_cast<int>(initExprNode->node_type));
             return false;
         }
 
