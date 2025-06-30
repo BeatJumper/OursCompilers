@@ -16,6 +16,7 @@
 ///
 
 #include <string>
+#include <cmath>
 
 #include "Antlr4CSTVisitor.h"
 #include "AST.h"
@@ -481,8 +482,19 @@ std::any MiniCCSTVisitor::visitPrimaryExp(MiniCParser::PrimaryExpContext * ctx)
         // 解析浮点数值
         float val = 0.0f;
         try {
-            val = std::stof(floatText);
+            if (floatText.size() >= 2 && (floatText.substr(0, 2) == "0x" || floatText.substr(0, 2) == "0X")) {
+                // 十六进制浮点数解析
+                val = parseHexFloat(floatText);
+            } else if (floatText.size() >= 2 && floatText[0] == '0' && floatText[1] >= '0' && floatText[1] <= '7' &&
+                       floatText.find('.') != std::string::npos) {
+                // 八进制浮点数解析
+                val = parseOctalFloat(floatText);
+            } else {
+                // 标准十进制浮点数
+                val = std::stof(floatText);
+            }
         } catch (const std::exception & e) {
+            printf("Error: Failed to parse float '%s' at line %ld: %s\n", floatText.c_str(), lineNo, e.what());
             return nullptr;
         }
 
@@ -1335,4 +1347,109 @@ bool MiniCCSTVisitor::hasSideEffects(ast_node * node)
                    (int) node->node_type);
             return true;
     }
+}
+
+/// @brief 解析十六进制浮点数
+/// @param hexFloatStr 十六进制浮点数字符串
+/// @return 解析后的浮点数值
+float MiniCCSTVisitor::parseHexFloat(const std::string & hexFloatStr)
+{
+    // 十六进制浮点数格式：0x[整数部分].[小数部分]p[指数]
+    // 例如：0x1.921fb6p+1 = 1.921fb6 * 2^1 = 3.14159...
+
+    std::string str = hexFloatStr;
+
+    // 移除0x前缀
+    if (str.size() >= 2 && (str.substr(0, 2) == "0x" || str.substr(0, 2) == "0X")) {
+        str = str.substr(2);
+    }
+
+    // 查找小数点和指数部分
+    size_t dotPos = str.find('.');
+    size_t expPos = str.find_first_of("pP");
+
+    double result = 0.0;
+
+    // 解析整数部分
+    if (dotPos != std::string::npos) {
+        if (dotPos > 0) {
+            std::string intPart = str.substr(0, dotPos);
+            result += std::stoll(intPart, nullptr, 16);
+        }
+
+        // 解析小数部分
+        size_t fracEnd = (expPos != std::string::npos) ? expPos : str.length();
+        if (fracEnd > dotPos + 1) {
+            std::string fracPart = str.substr(dotPos + 1, fracEnd - dotPos - 1);
+            double fracValue = 0.0;
+            for (size_t i = 0; i < fracPart.length(); ++i) {
+                char c = fracPart[i];
+                int digit = 0;
+                if (c >= '0' && c <= '9') {
+                    digit = c - '0';
+                } else if (c >= 'a' && c <= 'f') {
+                    digit = c - 'a' + 10;
+                } else if (c >= 'A' && c <= 'F') {
+                    digit = c - 'A' + 10;
+                }
+                fracValue += digit * std::pow(16.0, -(int) (i + 1));
+            }
+            result += fracValue;
+        }
+    } else if (expPos != std::string::npos) {
+        // 没有小数点，只有整数部分和指数
+        std::string intPart = str.substr(0, expPos);
+        result = std::stoll(intPart, nullptr, 16);
+    }
+
+    // 解析指数部分
+    if (expPos != std::string::npos) {
+        std::string expPart = str.substr(expPos + 1);
+        int exponent = std::stoi(expPart);
+        result *= std::pow(2.0, exponent);
+    }
+
+    return static_cast<float>(result);
+}
+
+/// @brief 解析八进制浮点数
+/// @param octalFloatStr 八进制浮点数字符串
+/// @return 解析后的浮点数值
+float MiniCCSTVisitor::parseOctalFloat(const std::string & octalFloatStr)
+{
+    // 八进制浮点数格式：0[八进制数字].[小数部分][e指数]
+    // 例如：03.141592653589793
+
+    std::string str = octalFloatStr;
+
+    // 查找小数点和指数部分
+    size_t dotPos = str.find('.');
+    size_t expPos = str.find_first_of("eE");
+
+    double result = 0.0;
+
+    // 解析整数部分（八进制）
+    if (dotPos != std::string::npos) {
+        if (dotPos > 0) {
+            std::string intPart = str.substr(0, dotPos);
+            result += std::stoll(intPart, nullptr, 8);
+        }
+
+        // 解析小数部分（十进制，因为八进制小数部分通常按十进制处理）
+        size_t fracEnd = (expPos != std::string::npos) ? expPos : str.length();
+        if (fracEnd > dotPos + 1) {
+            std::string fracPart = str.substr(dotPos + 1, fracEnd - dotPos - 1);
+            double fracValue = std::stod("0." + fracPart);
+            result += fracValue;
+        }
+    }
+
+    // 解析指数部分
+    if (expPos != std::string::npos) {
+        std::string expPart = str.substr(expPos + 1);
+        int exponent = std::stoi(expPart);
+        result *= std::pow(10.0, exponent);
+    }
+
+    return static_cast<float>(result);
 }

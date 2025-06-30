@@ -287,4 +287,14 @@ private:
     /// @param node AST节点
     /// @return true：有副作用，false：无副作用
     bool hasSideEffects(ast_node * node);
+
+    /// @brief 解析十六进制浮点数
+    /// @param hexFloatStr 十六进制浮点数字符串
+    /// @return 解析后的浮点数值
+    float parseHexFloat(const std::string & hexFloatStr);
+
+    /// @brief 解析八进制浮点数
+    /// @param octalFloatStr 八进制浮点数字符串
+    /// @return 解析后的浮点数值
+    float parseOctalFloat(const std::string & octalFloatStr);
 };

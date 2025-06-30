@@ -2948,8 +2948,231 @@ bool IRGenerator::evaluate_const_expr(ast_node * node, Value *& result)
             return false;
         }
 
+        case ast_operator_type::AST_OP_LEAF_VAR_ID: {
+            // 变量引用：查找全局常量
+            Value * varValue = module->findVarValue(node->name);
+            GlobalVariable * globalVar = dynamic_cast<GlobalVariable *>(varValue);
+
+            if (globalVar && globalVar->getConstant()) {
+                // 这是一个全局常量，获取其初值
+                Value * initValue = globalVar->getInitValue();
+                if (initValue) {
+                    result = initValue;
+                    printf("Debug: Evaluated global constant '%s' to value\n", node->name.c_str());
+                    return true;
+                }
+            }
+
+            printf("Debug: Variable '%s' is not a global constant\n", node->name.c_str());
+            return false;
+        }
+
+        case ast_operator_type::AST_OP_ADD: {
+            // 加法运算：递归计算操作数
+            if (node->sons.size() != 2) {
+                return false;
+            }
+
+            Value * leftResult = nullptr;
+            Value * rightResult = nullptr;
+
+            if (!evaluate_const_expr(node->sons[0], leftResult) || !evaluate_const_expr(node->sons[1], rightResult)) {
+                return false;
+            }
+
+            // 执行常量折叠
+            ConstInt * leftConstInt = dynamic_cast<ConstInt *>(leftResult);
+            ConstInt * rightConstInt = dynamic_cast<ConstInt *>(rightResult);
+            ConstFloat * leftConstFloat = dynamic_cast<ConstFloat *>(leftResult);
+            ConstFloat * rightConstFloat = dynamic_cast<ConstFloat *>(rightResult);
+
+            if ((leftConstInt || leftConstFloat) && (rightConstInt || rightConstFloat)) {
+                if (leftConstFloat || rightConstFloat) {
+                    // 浮点数运算
+                    float leftVal =
+                        leftConstFloat ? leftConstFloat->getVal() : static_cast<float>(leftConstInt->getVal());
+                    float rightVal =
+                        rightConstFloat ? rightConstFloat->getVal() : static_cast<float>(rightConstInt->getVal());
+                    result = module->newConstFloat(leftVal + rightVal);
+                } else {
+                    // 整数运算
+                    int32_t leftVal = leftConstInt->getVal();
+                    int32_t rightVal = rightConstInt->getVal();
+                    result = module->newConstInt(leftVal + rightVal);
+                }
+                return true;
+            }
+
+            return false;
+        }
+
+        case ast_operator_type::AST_OP_SUB: {
+            // 减法运算：递归计算操作数
+            if (node->sons.size() != 2) {
+                return false;
+            }
+
+            Value * leftResult = nullptr;
+            Value * rightResult = nullptr;
+
+            if (!evaluate_const_expr(node->sons[0], leftResult) || !evaluate_const_expr(node->sons[1], rightResult)) {
+                return false;
+            }
+
+            // 执行常量折叠
+            ConstInt * leftConstInt = dynamic_cast<ConstInt *>(leftResult);
+            ConstInt * rightConstInt = dynamic_cast<ConstInt *>(rightResult);
+            ConstFloat * leftConstFloat = dynamic_cast<ConstFloat *>(leftResult);
+            ConstFloat * rightConstFloat = dynamic_cast<ConstFloat *>(rightResult);
+
+            if ((leftConstInt || leftConstFloat) && (rightConstInt || rightConstFloat)) {
+                if (leftConstFloat || rightConstFloat) {
+                    // 浮点数运算
+                    float leftVal =
+                        leftConstFloat ? leftConstFloat->getVal() : static_cast<float>(leftConstInt->getVal());
+                    float rightVal =
+                        rightConstFloat ? rightConstFloat->getVal() : static_cast<float>(rightConstInt->getVal());
+                    result = module->newConstFloat(leftVal - rightVal);
+                } else {
+                    // 整数运算
+                    int32_t leftVal = leftConstInt->getVal();
+                    int32_t rightVal = rightConstInt->getVal();
+                    result = module->newConstInt(leftVal - rightVal);
+                }
+                return true;
+            }
+
+            return false;
+        }
+
+        case ast_operator_type::AST_OP_MUL: {
+            // 乘法运算：递归计算操作数
+            if (node->sons.size() != 2) {
+                return false;
+            }
+
+            Value * leftResult = nullptr;
+            Value * rightResult = nullptr;
+
+            if (!evaluate_const_expr(node->sons[0], leftResult) || !evaluate_const_expr(node->sons[1], rightResult)) {
+                return false;
+            }
+
+            // 执行常量折叠
+            ConstInt * leftConstInt = dynamic_cast<ConstInt *>(leftResult);
+            ConstInt * rightConstInt = dynamic_cast<ConstInt *>(rightResult);
+            ConstFloat * leftConstFloat = dynamic_cast<ConstFloat *>(leftResult);
+            ConstFloat * rightConstFloat = dynamic_cast<ConstFloat *>(rightResult);
+
+            if ((leftConstInt || leftConstFloat) && (rightConstInt || rightConstFloat)) {
+                if (leftConstFloat || rightConstFloat) {
+                    // 浮点数运算
+                    float leftVal =
+                        leftConstFloat ? leftConstFloat->getVal() : static_cast<float>(leftConstInt->getVal());
+                    float rightVal =
+                        rightConstFloat ? rightConstFloat->getVal() : static_cast<float>(rightConstInt->getVal());
+                    result = module->newConstFloat(leftVal * rightVal);
+                } else {
+                    // 整数运算
+                    int32_t leftVal = leftConstInt->getVal();
+                    int32_t rightVal = rightConstInt->getVal();
+                    result = module->newConstInt(leftVal * rightVal);
+                }
+                return true;
+            }
+
+            return false;
+        }
+
+        case ast_operator_type::AST_OP_DIV: {
+            // 除法运算：递归计算操作数
+            if (node->sons.size() != 2) {
+                return false;
+            }
+
+            Value * leftResult = nullptr;
+            Value * rightResult = nullptr;
+
+            if (!evaluate_const_expr(node->sons[0], leftResult) || !evaluate_const_expr(node->sons[1], rightResult)) {
+                return false;
+            }
+
+            // 执行常量折叠
+            ConstInt * leftConstInt = dynamic_cast<ConstInt *>(leftResult);
+            ConstInt * rightConstInt = dynamic_cast<ConstInt *>(rightResult);
+            ConstFloat * leftConstFloat = dynamic_cast<ConstFloat *>(leftResult);
+            ConstFloat * rightConstFloat = dynamic_cast<ConstFloat *>(rightResult);
+
+            if ((leftConstInt || leftConstFloat) && (rightConstInt || rightConstFloat)) {
+                // 检查除零
+                if ((rightConstInt && rightConstInt->getVal() == 0) ||
+                    (rightConstFloat && rightConstFloat->getVal() == 0.0f)) {
+                    printf("Error: Division by zero in constant expression\n");
+                    return false;
+                }
+
+                if (leftConstFloat || rightConstFloat) {
+                    // 浮点数运算
+                    float leftVal =
+                        leftConstFloat ? leftConstFloat->getVal() : static_cast<float>(leftConstInt->getVal());
+                    float rightVal =
+                        rightConstFloat ? rightConstFloat->getVal() : static_cast<float>(rightConstInt->getVal());
+                    result = module->newConstFloat(leftVal / rightVal);
+                } else {
+                    // 整数运算
+                    int32_t leftVal = leftConstInt->getVal();
+                    int32_t rightVal = rightConstInt->getVal();
+                    result = module->newConstInt(leftVal / rightVal);
+                }
+                return true;
+            }
+
+            return false;
+        }
+
+        case ast_operator_type::AST_OP_NEGATIVE: {
+            // 负号运算：递归计算操作数
+            if (node->sons.size() != 1) {
+                return false;
+            }
+
+            Value * operandResult = nullptr;
+            if (!evaluate_const_expr(node->sons[0], operandResult)) {
+                return false;
+            }
+
+            ConstInt * constInt = dynamic_cast<ConstInt *>(operandResult);
+            ConstFloat * constFloat = dynamic_cast<ConstFloat *>(operandResult);
+
+            if (constFloat) {
+                result = module->newConstFloat(-constFloat->getVal());
+                return true;
+            } else if (constInt) {
+                result = module->newConstInt(-constInt->getVal());
+                return true;
+            }
+
+            return false;
+        }
+
+        case ast_operator_type::AST_OP_POSITIVE: {
+            // 正号运算：递归计算操作数
+            if (node->sons.size() != 1) {
+                return false;
+            }
+
+            Value * operandResult = nullptr;
+            if (!evaluate_const_expr(node->sons[0], operandResult)) {
+                return false;
+            }
+
+            result = operandResult; // 正号不改变值
+            return true;
+        }
+
         default:
             // 其他类型的表达式暂不支持
+            printf("Debug: Unsupported expression type %d in evaluate_const_expr\n", (int) node->node_type);
             return false;
     }
 }
@@ -2972,8 +3195,16 @@ Value * IRGenerator::convertToI1(Value * val, Function * func, InterCode & block
         }
     }
 
-    // 如果是i32类型，转换为i1
-    ConstInt * zeroConst = module->newConstInt(0);
+    // 根据输入值的类型选择合适的零常量
+    Value * zeroConst = nullptr;
+    if (val->getType()->isFloatType()) {
+        // 浮点数类型，使用浮点数零常量
+        zeroConst = module->newConstFloat(0.0f);
+    } else {
+        // 整数类型，使用整数零常量
+        zeroConst = module->newConstInt(0);
+    }
+
     RelInstruction * toBoolInst =
         new RelInstruction(func, IRInstOperator::IRINST_OP_NE, val, zeroConst, IntegerType::getTypeBool());
     blockInsts.addInst(toBoolInst);
@@ -3392,8 +3623,62 @@ bool IRGenerator::ir_global_const_declare(ast_node * node,
         // 处理数组初始化
         return ir_global_const_array_declare(node, typeNode, nameNode, initExprNode);
     } else {
-        printf("Error: Global constant must be initialized with literal value or array initializer.\n");
-        return false;
+        // 尝试计算常量表达式
+        Value * constValue = nullptr;
+        if (evaluate_const_expr(initExprNode, constValue)) {
+            // 成功计算出常量值，创建一个临时的字面量节点
+            ast_node * tempLiteralNode = ast_node::New("", initExprNode->line_no);
+
+            // 根据目标类型进行适当的类型转换
+            if (typeNode->type->isIntegerType()) {
+                // 目标是整数类型
+                if (ConstInt * constInt = dynamic_cast<ConstInt *>(constValue)) {
+                    tempLiteralNode->node_type = ast_operator_type::AST_OP_LEAF_LITERAL_UINT;
+                    tempLiteralNode->integer_val = constInt->getVal();
+                } else if (ConstFloat * constFloat = dynamic_cast<ConstFloat *>(constValue)) {
+                    // 浮点数转整数
+                    tempLiteralNode->node_type = ast_operator_type::AST_OP_LEAF_LITERAL_UINT;
+                    tempLiteralNode->integer_val = static_cast<int32_t>(constFloat->getVal());
+                    printf("Debug: Converting float constant %f to integer %d\n",
+                           constFloat->getVal(),
+                           tempLiteralNode->integer_val);
+                } else {
+                    printf("Error: Constant expression evaluation returned non-constant value.\n");
+                    return false;
+                }
+            } else if (typeNode->type->isFloatType()) {
+                // 目标是浮点数类型
+                if (ConstFloat * constFloat = dynamic_cast<ConstFloat *>(constValue)) {
+                    tempLiteralNode->node_type = ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT;
+                    tempLiteralNode->float_val = constFloat->getVal();
+                } else if (ConstInt * constInt = dynamic_cast<ConstInt *>(constValue)) {
+                    // 整数转浮点数
+                    tempLiteralNode->node_type = ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT;
+                    tempLiteralNode->float_val = static_cast<float>(constInt->getVal());
+                    printf("Debug: Converting integer constant %d to float %f\n",
+                           constInt->getVal(),
+                           tempLiteralNode->float_val);
+                } else {
+                    printf("Error: Constant expression evaluation returned non-constant value.\n");
+                    return false;
+                }
+            } else {
+                printf("Error: Unsupported target type for constant expression.\n");
+                return false;
+            }
+
+            // 使用临时字面量节点进行标量声明
+            bool result = ir_global_const_scalar_declare(node, typeNode, nameNode, tempLiteralNode);
+
+            // 清理临时节点
+            delete tempLiteralNode;
+
+            return result;
+        } else {
+            printf("Error: Global constant must be initialized with literal value, array initializer, or constant "
+                   "expression.\n");
+            return false;
+        }
     }
 }
 
@@ -3416,32 +3701,14 @@ bool IRGenerator::ir_global_const_scalar_declare(ast_node * node,
 
     // 根据初始化表达式的类型创建相应的常量值
     if (initExprNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
-        // 整数字面量
-        std::string numStr = initExprNode->name;
-        int32_t intValue = 0;
-
-        try {
-            if (numStr.size() >= 2 && (numStr.substr(0, 2) == "0x" || numStr.substr(0, 2) == "0X")) {
-                // 十六进制数字
-                uint64_t temp = std::stoull(numStr, nullptr, 16);
-                intValue = static_cast<int32_t>(static_cast<uint32_t>(temp));
-            } else if (numStr.size() >= 2 && numStr[0] == '0' && numStr[1] >= '0' && numStr[1] <= '7') {
-                // 八进制数字
-                uint64_t temp = std::stoull(numStr, nullptr, 8);
-                intValue = static_cast<int32_t>(static_cast<uint32_t>(temp));
-            } else {
-                // 十进制数字
-                uint64_t temp = std::stoull(numStr, nullptr, 10);
-                intValue = static_cast<int32_t>(static_cast<uint32_t>(temp));
-            }
-        } catch (const std::exception & e) {
-            printf("Error: Failed to parse integer constant '%s': %s\n", numStr.c_str(), e.what());
-            return false;
-        }
+        // 整数字面量 - 直接使用已解析的值
+        int32_t intValue = static_cast<int32_t>(initExprNode->integer_val);
+        printf("Debug: Processing integer literal with value: %d\n", intValue);
 
         if (typeNode->type->isFloatType()) {
             // 目标类型是浮点数，进行类型转换
             constValue = module->newConstFloat(static_cast<float>(intValue));
+            printf("Debug: Converting integer %d to float %f\n", intValue, static_cast<float>(intValue));
         } else {
             // 目标类型是整数
             constValue = module->newConstInt(intValue);
@@ -3901,9 +4168,32 @@ bool IRGenerator::ir_array_init(ast_node * node)
 
         Value * initVal = son->val;
 
-        // 对于常量值，不需要load
+        // 对于常量值，不需要load，但需要类型转换
         if (dynamic_cast<ConstInt *>(initVal) || dynamic_cast<ConstFloat *>(initVal)) {
-            initValues.push_back(initVal);
+            // 检查是否需要类型转换
+            Value * convertedVal = initVal;
+            if (innerElementType) {
+                if (innerElementType->isFloatType() && !initVal->getType()->isFloatType()) {
+                    // 目标是浮点数，源是整数，需要转换
+                    ConstInt * constInt = dynamic_cast<ConstInt *>(initVal);
+                    if (constInt) {
+                        convertedVal = module->newConstFloat(static_cast<float>(constInt->getVal()));
+                        printf("Debug: Converting array init value from int %d to float %f\n",
+                               constInt->getVal(),
+                               static_cast<float>(constInt->getVal()));
+                    }
+                } else if (innerElementType->isIntegerType() && !initVal->getType()->isIntegerType()) {
+                    // 目标是整数，源是浮点数，需要转换
+                    ConstFloat * constFloat = dynamic_cast<ConstFloat *>(initVal);
+                    if (constFloat) {
+                        convertedVal = module->newConstInt(static_cast<int32_t>(constFloat->getVal()));
+                        printf("Debug: Converting array init value from float %f to int %d\n",
+                               constFloat->getVal(),
+                               static_cast<int32_t>(constFloat->getVal()));
+                    }
+                }
+            }
+            initValues.push_back(convertedVal);
         } else if (dynamic_cast<GlobalVariable *>(initVal)) {
             // 这是嵌套数组的全局常量，需要展开其初始化值
             GlobalVariable * nestedArray = static_cast<GlobalVariable *>(initVal);
@@ -4066,7 +4356,11 @@ bool IRGenerator::ir_array_init(ast_node * node)
 
             // 如果初始化值不足，用零填充
             while (initValues.size() < static_cast<size_t>(expectedElements)) {
-                initValues.push_back(module->newConstInt(0));
+                if (innerElementType && innerElementType->isFloatType()) {
+                    initValues.push_back(module->newConstFloat(0.0f));
+                } else {
+                    initValues.push_back(module->newConstInt(0));
+                }
             }
             printf("Debug: Filled array with zeros to %zu elements\n", initValues.size());
         }
@@ -4107,7 +4401,11 @@ bool IRGenerator::ir_array_init(ast_node * node)
 
             // 如果初始化值不足，用零填充
             while (initValues.size() < static_cast<size_t>(expectedElements)) {
-                initValues.push_back(module->newConstInt(0));
+                if (innerElementType && innerElementType->isFloatType()) {
+                    initValues.push_back(module->newConstFloat(0.0f));
+                } else {
+                    initValues.push_back(module->newConstInt(0));
+                }
             }
             // 如果初始化值过多，截断
             if (initValues.size() > static_cast<size_t>(expectedElements)) {
@@ -4367,7 +4665,11 @@ bool IRGenerator::ir_array_init(ast_node * node)
 
                         // 确保flatValues有足够的空间到当前行
                         while (flatValues.size() < static_cast<size_t>(rowStart)) {
-                            flatValues.push_back(module->newConstInt(0));
+                            if (arrayType->getElementType()->isFloatType()) {
+                                flatValues.push_back(module->newConstFloat(0.0f));
+                            } else {
+                                flatValues.push_back(module->newConstInt(0));
+                            }
                         }
 
                         // 处理嵌套数组的元素
@@ -4384,14 +4686,22 @@ bool IRGenerator::ir_array_init(ast_node * node)
                             } else if (grandson->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
                                 flatValues.push_back(module->newConstFloat(grandson->float_val));
                             } else {
-                                flatValues.push_back(module->newConstInt(0));
+                                if (arrayType->getElementType()->isFloatType()) {
+                                    flatValues.push_back(module->newConstFloat(0.0f));
+                                } else {
+                                    flatValues.push_back(module->newConstInt(0));
+                                }
                             }
                             elementsInRow++;
                         }
 
                         // 用零填充当前行的剩余位置
                         while (elementsInRow < rowSize) {
-                            flatValues.push_back(module->newConstInt(0));
+                            if (arrayType->getElementType()->isFloatType()) {
+                                flatValues.push_back(module->newConstFloat(0.0f));
+                            } else {
+                                flatValues.push_back(module->newConstInt(0));
+                            }
                             elementsInRow++;
                         }
 
@@ -4416,7 +4726,11 @@ bool IRGenerator::ir_array_init(ast_node * node)
 
             // 用零填充不足的元素，但不超过总元素数
             while (flatValues.size() < static_cast<size_t>(totalElements)) {
-                flatValues.push_back(module->newConstInt(0));
+                if (arrayType->getElementType()->isFloatType()) {
+                    flatValues.push_back(module->newConstFloat(0.0f));
+                } else {
+                    flatValues.push_back(module->newConstInt(0));
+                }
             }
 
             // 确保不超过总元素数
@@ -4469,7 +4783,11 @@ bool IRGenerator::ir_array_init(ast_node * node)
 
             // 用零填充不足的元素
             while (flatValues.size() < static_cast<size_t>(totalElements)) {
-                flatValues.push_back(module->newConstInt(0));
+                if (arrayType->getElementType()->isFloatType()) {
+                    flatValues.push_back(module->newConstFloat(0.0f));
+                } else {
+                    flatValues.push_back(module->newConstInt(0));
+                }
             }
 
             // 创建一个临时的全局变量来存储嵌套数组的值
@@ -4536,7 +4854,13 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
         printf("Debug: Processing multi-dim array [%d][%d], total elements: %d\n", outerSize, innerSize, totalElements);
 
         // 初始化结果数组，全部填零
-        initValues.resize(totalElements, module->newConstInt(0));
+        Value * zeroValue = nullptr;
+        if (arrayType->getElementType()->isFloatType()) {
+            zeroValue = module->newConstFloat(0.0f);
+        } else {
+            zeroValue = module->newConstInt(0);
+        }
+        initValues.resize(totalElements, zeroValue);
 
         int currentPos = 0; // 当前在扁平化数组中的位置
 
@@ -4672,7 +4996,11 @@ bool IRGenerator::reorganizeInitValuesForTargetType(const std::vector<Value *> &
 
         // 如果值不足，用零填充
         while (static_cast<int>(reorganizedValues.size()) < totalElements) {
-            reorganizedValues.push_back(module->newConstInt(0));
+            if (targetType->getElementType()->isFloatType()) {
+                reorganizedValues.push_back(module->newConstFloat(0.0f));
+            } else {
+                reorganizedValues.push_back(module->newConstInt(0));
+            }
         }
 
         return true;
