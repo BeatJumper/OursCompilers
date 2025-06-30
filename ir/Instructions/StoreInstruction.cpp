@@ -22,6 +22,11 @@ void StoreInstruction::toString(std::string & str)
     std::string valueTypeStr = value->getType()->toString();
     std::string ptrTypeStr = ptr->getType()->toString();
 
+    // 确保指针类型正确显示星号
+    if (ptrTypeStr.find('*') == std::string::npos) {
+        ptrTypeStr += "*";
+    }
+
     // LLVM IR store指令格式：store <ty> <value>, <ty>* <pointer>, align <alignment>
     // 其中<ty>*表示指向<ty>类型的指针
     // 例如：store i32 %0, i32* %1, align 4

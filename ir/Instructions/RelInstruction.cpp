@@ -86,6 +86,14 @@ void RelInstruction::toString(std::string & str)
         }
     }
 
-    str = getIRName() + " = " + cmpInst + " " + condStr + " " + left->getType()->toString() + " " + left->getIRName() +
-          ", " + right->getIRName();
+    // 确保两个操作数使用相同的类型
+    std::string leftType = left->getType()->toString();
+
+    // 如果是浮点数比较，确保两个操作数都使用浮点数类型
+    if (isFloatComparison) {
+        str = getIRName() + " = " + cmpInst + " " + condStr + " float " + left->getIRName() + ", " + right->getIRName();
+    } else {
+        str = getIRName() + " = " + cmpInst + " " + condStr + " " + leftType + " " + left->getIRName() + ", " +
+              right->getIRName();
+    }
 }

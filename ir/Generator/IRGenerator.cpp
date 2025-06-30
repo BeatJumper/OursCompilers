@@ -516,6 +516,28 @@ bool IRGenerator::ir_function_call(ast_node * node)
                 paramValue = temp->val;
             }
 
+            // 参数类型转换：确保参数类型与函数期望的类型匹配
+            if (loadedParams.size() < calledFunction->getParams().size()) {
+                Type * expectedType = calledFunction->getParams()[loadedParams.size()]->getType();
+
+                // 如果期望的是浮点数类型，但传入的是整数类型，进行转换
+                if (expectedType->isFloatType() && paramValue->getType()->isIntegerType()) {
+                    paramValue = convertToFloat(paramValue, currentFunc, node->blockInsts);
+                    if (!paramValue) {
+                        printf("Error: Failed to convert parameter to float type in function call.\n");
+                        return false;
+                    }
+                }
+                // 如果期望的是整数类型，但传入的是浮点数类型，进行转换
+                else if (expectedType->isIntegerType() && paramValue->getType()->isFloatType()) {
+                    paramValue = convertToInt(paramValue, currentFunc, node->blockInsts);
+                    if (!paramValue) {
+                        printf("Error: Failed to convert parameter to integer type in function call.\n");
+                        return false;
+                    }
+                }
+            }
+
             // 将参数值添加到参数列表
             loadedParams.push_back(paramValue);
         }
@@ -2158,6 +2180,38 @@ bool IRGenerator::ir_rel_exp(ast_node * node)
         rightValue = rightNode->val;
     }
 
+    // 类型转换：如果任一操作数是浮点数，将另一个操作数也转换为浮点数
+    Type * leftType = leftValue->getType();
+    Type * rightType = rightValue->getType();
+
+    if (leftType->isFloatType() || rightType->isFloatType()) {
+        // 确保两个操作数都是浮点数类型
+        if (!leftValue->getType()->isFloatType()) {
+            // 特殊处理常量：如果是整数常量，直接创建对应的浮点常量
+            if (ConstInt * constInt = dynamic_cast<ConstInt *>(leftValue)) {
+                leftValue = module->newConstFloat(static_cast<float>(constInt->getVal()));
+            } else {
+                leftValue = convertToFloat(leftValue, module->getCurrentFunction(), node->blockInsts);
+                if (!leftValue) {
+                    printf("Error: Failed to convert left operand to float type in comparison.\n");
+                    return false;
+                }
+            }
+        }
+        if (!rightValue->getType()->isFloatType()) {
+            // 特殊处理常量：如果是整数常量，直接创建对应的浮点常量
+            if (ConstInt * constInt = dynamic_cast<ConstInt *>(rightValue)) {
+                rightValue = module->newConstFloat(static_cast<float>(constInt->getVal()));
+            } else {
+                rightValue = convertToFloat(rightValue, module->getCurrentFunction(), node->blockInsts);
+                if (!rightValue) {
+                    printf("Error: Failed to convert right operand to float type in comparison.\n");
+                    return false;
+                }
+            }
+        }
+    }
+
     // 创建关系表达式指令
     auto * relInst =
         new RelInstruction(module->getCurrentFunction(), op, leftValue, rightValue, IntegerType::getTypeBool());
@@ -2508,6 +2562,16 @@ bool IRGenerator::ir_negative(ast_node * node)
                                                             zeroForNeg,
                                                             loadInt,
                                                             IntegerType::getTypeInt());
+        node->blockInsts.addInst(negInst);
+        node->val = negInst;
+    } else if (operandType->isFloatType()) {
+        // 对于float类型，生成浮点数负号指令：0.0 - operand
+        ConstFloat * zeroFloatConst = module->newConstFloat(0.0f);
+        BinaryInstruction * negInst = new BinaryInstruction(module->getCurrentFunction(),
+                                                            IRInstOperator::IRINST_OP_SUB_F,
+                                                            zeroFloatConst,
+                                                            operandValue,
+                                                            FloatType::getTypeFloat());
         node->blockInsts.addInst(negInst);
         node->val = negInst;
     } else {
@@ -3096,6 +3160,38 @@ bool IRGenerator::ir_rel_exp_with_labels(ast_node * node, LabelInstruction * tru
         // 右操作数是常量或表达式结果，直接使用
         node->blockInsts.addInst(rightNode->blockInsts);
         rightValue = rightNode->val;
+    }
+
+    // 类型转换：如果任一操作数是浮点数，将另一个操作数也转换为浮点数
+    Type * leftType = leftValue->getType();
+    Type * rightType = rightValue->getType();
+
+    if (leftType->isFloatType() || rightType->isFloatType()) {
+        // 确保两个操作数都是浮点数类型
+        if (!leftValue->getType()->isFloatType()) {
+            // 特殊处理常量：如果是整数常量，直接创建对应的浮点常量
+            if (ConstInt * constInt = dynamic_cast<ConstInt *>(leftValue)) {
+                leftValue = module->newConstFloat(static_cast<float>(constInt->getVal()));
+            } else {
+                leftValue = convertToFloat(leftValue, module->getCurrentFunction(), node->blockInsts);
+                if (!leftValue) {
+                    printf("Error: Failed to convert left operand to float type in comparison with labels.\n");
+                    return false;
+                }
+            }
+        }
+        if (!rightValue->getType()->isFloatType()) {
+            // 特殊处理常量：如果是整数常量，直接创建对应的浮点常量
+            if (ConstInt * constInt = dynamic_cast<ConstInt *>(rightValue)) {
+                rightValue = module->newConstFloat(static_cast<float>(constInt->getVal()));
+            } else {
+                rightValue = convertToFloat(rightValue, module->getCurrentFunction(), node->blockInsts);
+                if (!rightValue) {
+                    printf("Error: Failed to convert right operand to float type in comparison with labels.\n");
+                    return false;
+                }
+            }
+        }
     }
 
     // 创建关系表达式指令

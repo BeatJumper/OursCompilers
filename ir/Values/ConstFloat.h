@@ -65,11 +65,11 @@ private:
     {
         char buffer[32];
         // 使用十六进制格式，这是LLVM IR要求的IEEE 754表示
-        // 对于32位float，LLVM期望16位十六进制数字（64位表示）
-        uint32_t bits = *reinterpret_cast<uint32_t *>(&val);
-        // 将32位float值放在64位表示的高32位
-        uint64_t extended_bits = static_cast<uint64_t>(bits) << 32;
-        snprintf(buffer, sizeof(buffer), "0x%016" PRIx64, extended_bits);
+        // LLVM IR要求所有浮点常量使用64位十六进制表示
+        // 对于32位float，需要转换为double然后格式化
+        double doubleVal = static_cast<double>(val);
+        uint64_t bits = *reinterpret_cast<uint64_t *>(&doubleVal);
+        snprintf(buffer, sizeof(buffer), "0x%016" PRIx64, bits);
         return buffer;
     }
 

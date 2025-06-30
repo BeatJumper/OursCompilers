@@ -17,7 +17,7 @@ declare void @putf(i8*)
 declare void @_sysy_starttime(i32)
 declare void @_sysy_stoptime(i32)
 
-@arr = private unnamed_addr global [2 x [3 x i32]] [[3 x i32] [i32 1, i32 2, i32 0], [3 x i32] [i32 0, i32 0, i32 0]], align 4
+@arr = private unnamed_addr global [2 x [3 x i32]] [[3 x i32] [i32 1, i32 2, i32 3], [3 x i32] [i32 4, i32 5, i32 6]], align 4
 define dso_local i32 @main() #0 {
 main_L0:
 	%0 = alloca i32, align 4 ; __ret
