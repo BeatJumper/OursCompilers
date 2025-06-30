@@ -291,7 +291,6 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     protectedRegNo.push_back(ARM64_LX_REG_NO);
     printf("寄存器分配中段\n");
 
-    stackAlloc(func);
     // 给一些指令添加临时调整指令
     adjustSomeInsts(func);
 
@@ -307,10 +306,6 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
 
     // 主要染色过程（不断尝试染色直至成功）
     while (true) {
-        // 为局部变量和临时变量在栈内分配空间，指定偏移，进行栈空间的分配
-        stackAlloc(func);
-        printf("为局部变量和临时变量在栈内分配空间\n");
-
         // 创建干涉图
         InterferenceGraph * graph_ig = new InterferenceGraph(func);
 
@@ -334,6 +329,10 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
             assert(false);
         }
     }
+
+    // 为局部变量和临时变量在栈内分配空间，指定偏移，进行栈空间的分配
+    stackAlloc(func);
+    printf("为局部变量和临时变量在栈内分配空间\n");
 
     // 函数形参要求前8个寄存器分配，后面的参数采用栈传递，实现实参的值传递给形参
     // 这一步是必须的
@@ -363,10 +362,10 @@ void CodeGeneratorArm64::adjustSomeInsts(Function * func)
         if (dynamic_cast<StoreInstruction *>(inst)) {
             //要存入的数
             Value * val1 = inst->getOperand(0);
-            Value * val2 = inst->getOperand(1);
-            int32_t dest_baseRegId = -1;
-            int64_t dest_offset = -1;
-            val2->getMemoryAddr(&dest_baseRegId, &dest_offset);
+            // Value * val2 = inst->getOperand(1);
+            //  int32_t dest_baseRegId = -1;
+            //  int64_t dest_offset = -1;
+            //  val2->getMemoryAddr(&dest_baseRegId, &dest_offset);
             //检测要存入的数是否是constant
             if (Instanceof(const_val, ConstInt *, val1)) {
                 // 对于常量0，不需要创建MoveInstruction，ARM64有专门的零寄存器

@@ -537,17 +537,21 @@ void InstSelectorArm64::translate_br(Instruction * inst)
     int32_t cond_reg_no = cond->getRegId();
     printf("Debug: br instruction cond_reg_no = %d\n", cond_reg_no);
 
-    if (cond_reg_no == -1) {
-        printf("Error: Condition operand not allocated to register\n");
-        return;
-    }
-
     // 生成符合标准的标签格式
     std::string trueLabel = ".L" + iftrue->getIRName();
     std::string falseLabel = ".L" + iffalse->getIRName();
     printf("Debug: trueLabel = %s, falseLabel = %s\n", trueLabel.c_str(), falseLabel.c_str());
 
-    iloc.inst("cmp", PlatformArm64::regName[cond_reg_no], "#0");
+    if (cond_reg_no == -1) {
+        // 条件操作数在栈上，需要先加载到临时寄存器
+        printf("Debug: Condition operand in memory, loading to temp register\n");
+        iloc.load_var(ARM64_TMP_REG_NO, cond);
+        iloc.inst("cmp", PlatformArm64::regName[ARM64_TMP_REG_NO], "#0");
+    } else {
+        // 条件操作数在寄存器中
+        iloc.inst("cmp", PlatformArm64::regName[cond_reg_no], "#0");
+    }
+
     iloc.inst("b.ne", trueLabel); // 使用标准标签格式
     iloc.jump(falseLabel); // 使用标准标签格式                         // 条件为0,跳转到iffalse标签
 }
@@ -627,11 +631,23 @@ void InstSelectorArm64::translate_cmp(Instruction * inst)
         }
     } else {
         // 整数比较使用通用寄存器名称
-        arg1_str = PlatformArm64::regName[arg1_reg_no];
+        if (arg1_reg_no == -1) {
+            // 第一个操作数在栈上，需要先加载到临时寄存器
+            iloc.load_var(ARM64_TMP_REG_NO, arg1);
+            arg1_str = PlatformArm64::regName[ARM64_TMP_REG_NO];
+        } else {
+            arg1_str = PlatformArm64::regName[arg1_reg_no];
+        }
 
         if (Instanceof(constVal, ConstInt *, arg2)) {
             // 第二个操作数是常量
             arg2_str = "#" + std::to_string(constVal->getVal());
+        } else if (arg2_reg_no == -1) {
+            // 第二个操作数在栈上，需要先加载到临时寄存器
+            int temp_reg =
+                (arg1_str == PlatformArm64::regName[ARM64_TMP_REG_NO]) ? ARM64_TMP_REG_NO + 1 : ARM64_TMP_REG_NO;
+            iloc.load_var(temp_reg, arg2);
+            arg2_str = PlatformArm64::regName[temp_reg];
         } else {
             arg2_str = PlatformArm64::regName[arg2_reg_no];
         }
