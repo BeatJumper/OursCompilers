@@ -60,12 +60,21 @@ void CodeGeneratorArm64::genDataSection()
 
     // 全局变量分两种情况：初始化的全局变量和未初始化的全局变量
     for (auto var: module->getGlobalVariables()) {
-        if (var->isInBSSSection() && var->getInitValueList().empty() && !var->getInitValue()) {
+        printf("Debug: Processing global variable '%s', isInBSSSection=%d, initValueList.size()=%zu, hasInitValue=%d\n",
+               var->getName().c_str(),
+               var->isInBSSSection(),
+               var->getInitValueList().size(),
+               var->getInitValue() != nullptr);
+        // 检查变量是否真的应该放在BSS段（没有任何初始化值）
+        bool shouldBeInBSS = var->isInBSSSection() && var->getInitValueList().empty() && !var->getInitValue();
+
+        if (shouldBeInBSS) {
             // 在BSS段的全局变量（没有初始化值）
             fprintf(fp, ".type %s, @object\n", var->getName().c_str());
             if (!bssStarted) {
                 fprintf(fp, ".bss\n");
                 bssStarted = true;
+                dataStarted = false; // 重置data段标志
             }
 
             fprintf(fp, ".global %s\n", var->getName().c_str());
@@ -73,23 +82,30 @@ void CodeGeneratorArm64::genDataSection()
             fprintf(fp, "%s:\n", var->getName().c_str());
 
             // 对于数组类型，需要分配足够的空间
-            if (var->getType()->isArrayType()) {
-                int totalSize = var->getType()->getSize();
+            // 使用存储类型来获取正确的大小信息
+            Type * actualType = var->getStorageType() ? var->getStorageType() : var->getType();
+
+            if (actualType->isArrayType()) {
+                printf("Debug: BSS段数组 %s，实际类型: %s\n", var->getName().c_str(), actualType->toString().c_str());
+                int totalSize = actualType->getSize();
                 int wordCount = (totalSize + 3) / 4; // 向上取整到字边界
+                printf("Debug: 总大小: %d字节，需要 %d 个word\n", totalSize, wordCount);
                 for (int i = 0; i < wordCount; i++) {
                     fprintf(fp, "	.word 0\n");
                 }
+                fprintf(fp, ".size %s, %d\n", var->getName().c_str(), totalSize);
             } else {
                 fprintf(fp, "	.word 0\n");
+                fprintf(fp, ".size %s, %d\n", var->getName().c_str(), actualType->getSize());
             }
-            fprintf(fp, ".size %s, %d\n", var->getName().c_str(), var->getType()->getSize());
             //, var->getType()->getSize(), var->getAlignment()
         } else {
-            // 有初值的全局变量
+            // 有初值的全局变量（应该放在data段）
             fprintf(fp, ".type %s, @object\n", var->getName().c_str());
             if (!dataStarted) {
                 fprintf(fp, ".data\n");
                 dataStarted = true;
+                bssStarted = false; // 重置bss段标志
             }
 
             fprintf(fp, ".global %s\n", var->getName().c_str());
@@ -104,36 +120,54 @@ void CodeGeneratorArm64::genDataSection()
                 float tempFloat = constFloat->getVal();
                 std::memcpy(&floatBits, &tempFloat, sizeof(float));
                 fprintf(fp, "	.word %u\n", floatBits);
-            } else if (var->getType()->isArrayType()) {
-                // 处理数组类型全局变量的初始化值列表
-                printf("处理数组类型全局变量的初始化值列表\n");
-                if (!var->getInitValueList().empty()) {
-                    printf("数组初始化值列表非空\n");
-                    auto & initValues = var->getInitValueList();
-                    expandAndOutputInitValues(initValues);
+            } else {
+                // 检查存储类型是否是数组类型，或者直接检查初始化值列表
+                Type * storageType = var->getStorageType();
+                bool isArrayType = (storageType && storageType->isArrayType()) || var->getType()->isArrayType();
 
-                    // 计算实际输出的字节数：展开后的元素个数 * 4字节
-                    int actualElements = countExpandedInitValues(initValues);
-                    int actualSize = actualElements * 4;
-                    fprintf(fp, ".size %s, %d\n", var->getName().c_str(), actualSize);
-                } else if (var->getInitValue()) {
-                    // 单个值情况
-                    int size = 0;
-                    if (ConstInt * value = dynamic_cast<ConstInt *>(var->getInitValue())) {
-                        size = 4;
-                        fprintf(fp, "	.word %d\n", value->getVal());
-                    } else if (ConstFloat * value = dynamic_cast<ConstFloat *>(var->getInitValue())) {
-                        size = 4;
-                        fprintf(fp, "	.word %f\n", value->getVal());
+                if (isArrayType || !var->getInitValueList().empty()) {
+                    // 处理数组类型全局变量的初始化值列表
+                    printf("处理数组类型全局变量的初始化值列表\n");
+                    if (!var->getInitValueList().empty()) {
+                        printf("数组初始化值列表非空\n");
+                        auto & initValues = var->getInitValueList();
+                        expandAndOutputInitValues(initValues);
+
+                        // 计算实际输出的字节数：展开后的元素个数 * 4字节
+                        int actualElements = countExpandedInitValues(initValues);
+                        int actualSize = actualElements * 4;
+                        fprintf(fp, ".size %s, %d\n", var->getName().c_str(), actualSize);
+                    } else if (var->getInitValue()) {
+                        // 单个值情况
+                        int size = 0;
+                        if (ConstInt * value = dynamic_cast<ConstInt *>(var->getInitValue())) {
+                            size = 4;
+                            fprintf(fp, "	.word %d\n", value->getVal());
+                        } else if (ConstFloat * value = dynamic_cast<ConstFloat *>(var->getInitValue())) {
+                            size = 4;
+                            fprintf(fp, "	.word %f\n", value->getVal());
+                        }
+                        fprintf(fp, ".size %s, %d\n", var->getName().c_str(), size);
+                    } else {
+                        // zeroinitializer处理
+                        if (storageType && storageType->isArrayType()) {
+                            ArrayType * arrayType = static_cast<ArrayType *>(storageType);
+                            int totalElements = arrayType->getTotalElements();
+                            for (int i = 0; i < totalElements; i++) {
+                                fprintf(fp, "	.word 0\n");
+                            }
+                        } else if (var->getType()->isArrayType()) {
+                            ArrayType * arrayType = static_cast<ArrayType *>(var->getType());
+                            int totalElements = arrayType->getTotalElements();
+                            for (int i = 0; i < totalElements; i++) {
+                                fprintf(fp, "	.word 0\n");
+                            }
+                        }
                     }
-                    fprintf(fp, ".size %s, %d\n", var->getName().c_str(), size);
                 } else {
-                    // zeroinitializer处理
-                    ArrayType * nestedArrayType = static_cast<ArrayType *>(var->getType());
-                    int totalElements = nestedArrayType->getTotalElements();
-                    for (int i = 0; i < totalElements; i++) {
-                        fprintf(fp, "	.word 0\n");
-                    }
+                    // 非数组类型的其他情况
+                    fprintf(fp, "	.word 0\n");
+                    fprintf(fp, ".size %s, %d\n", var->getName().c_str(), var->getType()->getSize());
                 }
             }
         }

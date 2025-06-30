@@ -377,6 +377,16 @@ private:
     /// @return 翻译是否成功，true：成功，false：失败
     bool ir_array_init(ast_node * node);
 
+    /// @brief 计算数组类型的总基础元素个数（递归计算所有嵌套维度）
+    /// @param arrayType 数组类型
+    /// @return 总基础元素个数
+    int calculateTotalBaseElements(ArrayType * arrayType);
+
+    /// @brief 计算数组类型的总维度数
+    /// @param arrayType 数组类型
+    /// @return 总维度数
+    int calculateTotalDimensions(ArrayType * arrayType);
+
     /// @brief 递归处理数组初始化，用于全局常量数组
     /// @param initNode 数组初始化节点
     /// @param arrayType 数组类型

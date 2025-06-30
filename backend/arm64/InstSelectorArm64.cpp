@@ -716,14 +716,17 @@ void InstSelectorArm64::translate_load(Instruction * inst)
         // 检查arg1是否是getelementptr的结果，需要重新计算地址
         if (GetelementptrInstruction * gepResult = dynamic_cast<GetelementptrInstruction *>(arg1)) {
             printf("Debug: 加载gep指令的结果\n");
-            int32_t base_reg_id;
-            int64_t base_offset;
-            gepResult->getMemoryAddr(&base_reg_id, &base_offset);
-            std::string s = ",#" + std::to_string(base_offset);
 
-            iloc.inst("ldr", PlatformArm64::regName[result_regId], "[" + PlatformArm64::regName[base_reg_id] + s + "]");
+            // getelementptr的结果在内存中，使用内存地址信息
+            printf("Debug: getelementptr结果在内存中\n");
+            int32_t base_reg_id = -1;
+            int64_t base_offset = -1;
+            if (gepResult->getMemoryAddr(&base_reg_id, &base_offset)) {
+                iloc.inst("ldr",
+                          PlatformArm64::regName[result_regId],
+                          "[" + PlatformArm64::regName[base_reg_id] + ",#" + std::to_string(base_offset) + "]");
+            }
         }
-
         // 内存变量 => 寄存器
         else {
             iloc.load_var(result_regId, arg1);
@@ -923,6 +926,58 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
 {
     Value * basePtr = inst->getOperand(0); // 基址指针
 
+    if (GetelementptrInstruction * gepBase = dynamic_cast<GetelementptrInstruction *>(basePtr)) {
+        // basePtr是另一个getelementptr的结果
+        int32_t base_reg_id = -1;
+        int64_t base_offset = -1;
+        gepBase->getMemoryAddr(&base_reg_id, &base_offset);
+        printf("gep源是另一个gep的结果\n");
+
+        // 计算第二维的偏移
+        Value * index = inst->getOperand(2);
+        ConstInt * constIdx = dynamic_cast<ConstInt *>(index);
+        if (constIdx) {
+            int64_t idx = constIdx->getVal();
+            int64_t element_size = 4; // 基本元素大小
+                                      // 检查gep源的类型来确定元素大小
+            Type * baseType = basePtr->getType();
+            if (baseType->isArrayType()) {
+                printf("计算数组地址时检测到内部元素类型为数组类型\n");
+                const ArrayType * arrayType = static_cast<const ArrayType *>(baseType);
+                const std::vector<int> & dimensions = arrayType->getDimensions();
+
+                if (dimensions.size() > 1) {
+                    // 多维数组：每个元素是一个子数组
+                    // 计算子数组的大小
+                    int sub_array_size = 1;
+                    for (size_t i = 1; i < dimensions.size(); i++) {
+                        sub_array_size *= dimensions[i];
+                    }
+                    element_size = sub_array_size * arrayType->getElementType()->getSize();
+                } else {
+                    // 一维数组：每个元素是基本类型
+                    element_size = arrayType->getElementType()->getSize();
+                }
+            } else if (baseType->isPointerType()) {
+                printf("计算数组地址时检测到内部元素类型为指针类型\n");
+                const PointerType * ptrType = static_cast<const PointerType *>(baseType);
+                const Type * pointeeType = ptrType->getPointeeType();
+                if (pointeeType->isArrayType()) {
+                    const ArrayType * arrayType = static_cast<const ArrayType *>(pointeeType);
+                    element_size = arrayType->getElementType()->getSize();
+                } else {
+                    element_size = pointeeType->getSize();
+                }
+            }
+
+            // 计算偏移并添加到基地址
+            int64_t offset = idx * element_size;
+            base_offset += offset;
+            inst->setMemoryAddr(base_reg_id, base_offset);
+            return;
+        }
+    }
+
     // 对于数组访问，我们需要计算偏移量
     // 这里简化处理：如果基址在内存中，我们计算其地址
     int32_t base_reg_id;
@@ -939,7 +994,7 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             // 计算正确的元素大小
             int64_t element_size = 4; // 默认int/float类型，4字节
 
-            // 检查基址指针的类型来确定元素大小
+            // 检查gep源的类型来确定元素大小
             Type * baseType = basePtr->getType();
             if (baseType->isArrayType()) {
                 printf("计算数组地址时检测到内部元素类型为数组类型\n");
@@ -983,19 +1038,48 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
         inst->setMemoryAddr(base_reg_id, base_offset);
     } else if (auto * globalArr = dynamic_cast<GlobalVariable *>(basePtr)) {
         // gep源是全局数组
+        printf("gep源是全局数组: %s\n", globalArr->getName().c_str());
         int res_reg_id = inst->getRegId();
+        if (res_reg_id == -1) {
+            printf("Error: getelementptr instruction has no register assigned\n");
+            return;
+        }
+
+        // 加载全局数组的基地址
         iloc.inst("adrp", PlatformArm64::regName[res_reg_id + 32], globalArr->getName());
         iloc.inst("add",
                   PlatformArm64::regName[res_reg_id + 32],
                   PlatformArm64::regName[res_reg_id + 32],
                   ":lo12:" + globalArr->getName());
+
+        // 计算索引偏移
         Value * index = inst->getOperand(2);
         ConstInt * constVal = dynamic_cast<ConstInt *>(index);
-        int off = constVal->getVal() * constVal->getType()->getSize();
-        iloc.inst("add",
-                  PlatformArm64::regName[res_reg_id + 32],
-                  PlatformArm64::regName[res_reg_id + 32],
-                  "#" + std::to_string(off));
+        if (constVal) {
+            int64_t idx = constVal->getVal();
+            int64_t element_size = 4; // 默认元素大小
+
+            // 检查全局数组的类型来确定正确的元素大小
+            Type * globalType = globalArr->getStorageType() ? globalArr->getStorageType() : globalArr->getType();
+            if (globalType->isArrayType()) {
+                const ArrayType * arrayType = static_cast<const ArrayType *>(globalType);
+                Type * elementType = arrayType->getElementType();
+                if (elementType->isArrayType()) {
+                    // 多维数组：第一个gep计算行偏移，元素大小是整行的大小
+                    element_size = elementType->getSize();
+                    printf("Debug: 多维数组第一个gep，行大小: %ld 字节\n", element_size);
+                } else {
+                    // 一维数组：元素大小是基本类型大小
+                    element_size = elementType->getSize();
+                }
+            }
+
+            int64_t off = idx * element_size;
+            inst->setMemoryAddr(res_reg_id + 32, off);
+        } else {
+            printf("Warning: non-constant index in getelementptr\n");
+        }
+        printf("Debug: getelementptr设置寄存器ID为 %d\n", res_reg_id);
     }
 }
 
@@ -1035,15 +1119,7 @@ void InstSelectorArm64::translate_bitcast(Instruction * inst)
                 base_reg_name[0] = 'x';
             }
 
-            // 检查偏移量是否在adds指令的立即数范围内（0-4095）
-            if (offset >= 0 && offset <= 4095) {
-                // 正偏移量在有效范围内，使用add指令
-                iloc.inst("add", result_reg_name, base_reg_name, "#" + std::to_string(offset));
-            } else {
-                // 偏移量超出范围，使用临时寄存器
-                iloc.load_imm(ARM64_TMP_REG_NO, offset);
-                iloc.inst("add", result_reg_name, base_reg_name, PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
-            }
+            iloc.inst("add", result_reg_name, base_reg_name, "#" + std::to_string(offset));
 
         } else if (result_reg != source_reg) {
             // 非alloca指令的普通寄存器移动

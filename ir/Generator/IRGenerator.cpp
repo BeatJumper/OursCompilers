@@ -4326,6 +4326,50 @@ bool IRGenerator::ir_array_init(ast_node * node)
     return true;
 }
 
+/// @brief 计算数组类型的总基础元素个数（递归计算所有嵌套维度）
+/// @param arrayType 数组类型
+/// @return 总基础元素个数
+int IRGenerator::calculateTotalBaseElements(ArrayType * arrayType)
+{
+    if (!arrayType)
+        return 0;
+
+    const std::vector<int> & dimensions = arrayType->getDimensions();
+    if (dimensions.empty())
+        return 0;
+
+    int currentLevelElements = dimensions[0];
+
+    if (arrayType->getElementType()->isArrayType()) {
+        // 递归计算内层数组的基础元素个数
+        ArrayType * innerArrayType = static_cast<ArrayType *>(arrayType->getElementType());
+        int innerBaseElements = calculateTotalBaseElements(innerArrayType);
+        return currentLevelElements * innerBaseElements;
+    } else {
+        // 已经到达基础类型
+        return currentLevelElements;
+    }
+}
+
+/// @brief 计算数组类型的总维度数
+/// @param arrayType 数组类型
+/// @return 总维度数
+int IRGenerator::calculateTotalDimensions(ArrayType * arrayType)
+{
+    if (!arrayType)
+        return 0;
+
+    int dimensions = 1; // 当前层的维度
+
+    if (arrayType->getElementType()->isArrayType()) {
+        // 递归计算内层数组的维度数
+        ArrayType * innerArrayType = static_cast<ArrayType *>(arrayType->getElementType());
+        dimensions += calculateTotalDimensions(innerArrayType);
+    }
+
+    return dimensions;
+}
+
 /// @brief 递归处理数组初始化，用于全局常量数组
 /// @param initNode 数组初始化节点
 /// @param arrayType 数组类型
@@ -4352,14 +4396,140 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
     if (isMultiDim) {
         // 多维数组处理
         ArrayType * innerArrayType = static_cast<ArrayType *>(arrayType->getElementType());
-        const std::vector<int> & innerDims = innerArrayType->getDimensions();
-        int innerSize = innerDims.empty() ? 1 : innerDims[0]; // 内层数组的大小
-        int outerSize = dimensions[0];                        // 外层数组的大小
 
-        // 计算真正的总元素个数（递归计算所有嵌套维度）
-        int totalElements = outerSize * innerArrayType->getTotalElements();
+        // 计算真正的总基础元素个数（递归计算所有嵌套维度）
+        int totalElements = calculateTotalBaseElements(arrayType);
 
-        printf("Debug: Processing multi-dim array [%d][%d], total elements: %d\n", outerSize, innerSize, totalElements);
+        // 计算最内层数组的大小（用于行优先布局）
+        int innerMostSize = 1;
+        ArrayType * currentType = arrayType;
+        while (currentType->getElementType()->isArrayType()) {
+            currentType = static_cast<ArrayType *>(currentType->getElementType());
+        }
+        if (!currentType->getDimensions().empty()) {
+            innerMostSize = currentType->getDimensions()[0];
+        }
+
+        // 计算总维度数
+        int totalDimensions = calculateTotalDimensions(arrayType);
+
+        printf(
+            "Debug: Processing multi-dim array with %d total dimensions, total base elements: %d, innermost size: %d\n",
+            totalDimensions,
+            totalElements,
+            innerMostSize);
+
+        // 检查是否是扁平化初始化（所有子节点都是字面量，没有嵌套数组）
+        bool isFlatInit = true;
+        bool hasMixedInit = false;
+        int nestedArrayCount = 0;
+
+        for (auto son: initNode->sons) {
+            if (son->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
+                nestedArrayCount++;
+                isFlatInit = false;
+            }
+        }
+
+        // 检查是否是混合初始化（既有嵌套数组又有单个元素）
+        if (nestedArrayCount > 0 && nestedArrayCount < static_cast<int>(initNode->sons.size())) {
+            hasMixedInit = true;
+            printf("Debug: Detected mixed initialization (nested + flat elements)\n");
+        }
+
+        if (isFlatInit || hasMixedInit) {
+            if (isFlatInit) {
+                printf("Debug: Detected flat initialization for multi-dim array\n");
+
+                // 纯扁平化初始化：按顺序处理所有元素
+                for (auto son: initNode->sons) {
+                    if (!ir_visit_ast_node(son)) {
+                        return false;
+                    }
+
+                    Value * initVal = son->val;
+                    if (dynamic_cast<ConstInt *>(initVal) || dynamic_cast<ConstFloat *>(initVal)) {
+                        initValues.push_back(initVal);
+                    } else {
+                        initValues.push_back(module->newConstInt(0));
+                    }
+                }
+            } else {
+                printf("Debug: Processing mixed initialization for multi-dim array\n");
+
+                // 混合初始化：按照C语言规则处理
+                // 需要正确处理嵌套数组和单个元素的混合
+                initValues.resize(totalElements, module->newConstInt(0)); // 先全部初始化为0
+
+                int currentPos = 0; // 当前填充位置
+
+                for (auto son: initNode->sons) {
+                    if (son->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
+                        // 嵌套数组：跳到下一个子数组的开始位置
+                        int currentSubArray = currentPos / innerMostSize;
+                        if (currentPos % innerMostSize != 0) {
+                            currentSubArray++; // 如果不在子数组首，跳到下一个子数组
+                        }
+                        int subArrayStart = currentSubArray * innerMostSize;
+
+                        printf("Debug: Processing nested array at subarray %d (position %d)\n",
+                               currentSubArray,
+                               subArrayStart);
+
+                        // 处理嵌套数组的元素
+                        int elementIndex = 0;
+                        for (auto grandson: son->sons) {
+                            if (subArrayStart + elementIndex >= totalElements)
+                                break;
+
+                            if (!ir_visit_ast_node(grandson)) {
+                                return false;
+                            }
+
+                            Value * initVal = grandson->val;
+                            if (dynamic_cast<ConstInt *>(initVal) || dynamic_cast<ConstFloat *>(initVal)) {
+                                initValues[subArrayStart + elementIndex] = initVal;
+                                printf("Debug: Set nested element at position %d = %s\n",
+                                       subArrayStart + elementIndex,
+                                       dynamic_cast<ConstInt *>(initVal)
+                                           ? std::to_string(dynamic_cast<ConstInt *>(initVal)->getVal()).c_str()
+                                           : "float");
+                            }
+                            elementIndex++;
+                        }
+
+                        currentPos = subArrayStart + innerMostSize; // 移动到下一个子数组
+                    } else {
+                        // 单个元素：在当前位置填充
+                        if (currentPos >= totalElements)
+                            break;
+
+                        if (!ir_visit_ast_node(son)) {
+                            return false;
+                        }
+
+                        Value * initVal = son->val;
+                        if (dynamic_cast<ConstInt *>(initVal) || dynamic_cast<ConstFloat *>(initVal)) {
+                            initValues[currentPos] = initVal;
+                            printf("Debug: Set flat element at position %d = %s\n",
+                                   currentPos,
+                                   dynamic_cast<ConstInt *>(initVal)
+                                       ? std::to_string(dynamic_cast<ConstInt *>(initVal)->getVal()).c_str()
+                                       : "float");
+                        }
+                        currentPos++;
+                    }
+                }
+            }
+
+            // 填充不足的元素
+            while (static_cast<int>(initValues.size()) < totalElements) {
+                initValues.push_back(module->newConstInt(0));
+            }
+
+            printf("Debug: Flat/mixed initialization completed with %zu values\n", initValues.size());
+            return true;
+        }
 
         // 初始化结果数组，全部填零
         initValues.resize(totalElements, module->newConstInt(0));
@@ -4370,11 +4540,11 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
             if (son->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
                 // 单个整数字面量 - 需要考虑是否应该开始新行
                 if (currentPos < totalElements) {
-                    // 如果当前位置不在行首且前面有嵌套数组，移动到下一行
-                    if (currentPos % innerSize != 0) {
-                        int nextRowStart = ((currentPos / innerSize) + 1) * innerSize;
-                        if (nextRowStart < totalElements) {
-                            currentPos = nextRowStart;
+                    // 如果当前位置不在子数组首且前面有嵌套数组，移动到下一个子数组
+                    if (currentPos % innerMostSize != 0) {
+                        int nextSubArrayStart = ((currentPos / innerMostSize) + 1) * innerMostSize;
+                        if (nextSubArrayStart < totalElements) {
+                            currentPos = nextSubArrayStart;
                         }
                     }
 
@@ -4386,11 +4556,11 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
             } else if (son->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
                 // 单个浮点数字面量 - 需要考虑是否应该开始新行
                 if (currentPos < totalElements) {
-                    // 如果当前位置不在行首且前面有嵌套数组，移动到下一行
-                    if (currentPos % innerSize != 0) {
-                        int nextRowStart = ((currentPos / innerSize) + 1) * innerSize;
-                        if (nextRowStart < totalElements) {
-                            currentPos = nextRowStart;
+                    // 如果当前位置不在子数组首且前面有嵌套数组，移动到下一个子数组
+                    if (currentPos % innerMostSize != 0) {
+                        int nextSubArrayStart = ((currentPos / innerMostSize) + 1) * innerMostSize;
+                        if (nextSubArrayStart < totalElements) {
+                            currentPos = nextSubArrayStart;
                         }
                     }
 
@@ -4400,11 +4570,11 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
                     }
                 }
             } else if (son->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
-                // 嵌套数组初始化 - 填充一整行
-                int rowStart = (currentPos / innerSize) * innerSize; // 当前行的起始位置
-                if (currentPos % innerSize != 0) {
-                    // 如果当前位置不在行首，移动到下一行
-                    rowStart += innerSize;
+                // 嵌套数组初始化 - 填充一个子数组
+                int subArrayStart = (currentPos / innerMostSize) * innerMostSize; // 当前子数组的起始位置
+                if (currentPos % innerMostSize != 0) {
+                    // 如果当前位置不在子数组首，移动到下一个子数组
+                    subArrayStart += innerMostSize;
                 }
 
                 std::vector<Value *> nestedValues;
@@ -4412,12 +4582,13 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
                     return false;
                 }
 
-                // 将嵌套数组的值复制到对应的行
-                for (size_t i = 0; i < nestedValues.size() && rowStart + i < static_cast<size_t>(totalElements); ++i) {
-                    initValues[rowStart + i] = nestedValues[i];
+                // 将嵌套数组的值复制到对应的子数组
+                for (size_t i = 0; i < nestedValues.size() && subArrayStart + i < static_cast<size_t>(totalElements);
+                     ++i) {
+                    initValues[subArrayStart + i] = nestedValues[i];
                 }
 
-                currentPos = rowStart + innerSize; // 移动到下一行
+                currentPos = subArrayStart + innerMostSize; // 移动到下一个子数组
             }
         }
     } else {

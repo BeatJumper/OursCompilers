@@ -558,38 +558,48 @@ void ILocArm64::leaStack(int rs_reg_no, int base_reg_no, int64_t off)
 void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 {
     // 重新计算栈帧大小，确保所有alloca指令的空间都被正确计算
-    int64_t allocaSize = 0;
-    int64_t localVarSize = 0;
-    int64_t tempVarSize = 0;
 
-    // 计算所有alloca指令的空间需求
+    // 重新计算实际需要的栈帧大小
+    // 先计算所有变量和临时值需要的最大偏移量
+    int64_t maxOffset = 0;
+
+    // 检查alloca指令的最大偏移
     for (auto inst: func->getInterCode().getInsts()) {
         if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
-            Type * allocatedType = inst->getType();
-            int64_t size = allocatedType ? allocatedType->getSize() : 8;
-            size = (size + 7) & ~7; // 对齐到8字节
-            allocaSize += size;
+            int32_t base;
+            int64_t offset;
+            if (inst->getMemoryAddr(&base, &offset)) {
+                Type * allocatedType = inst->getType();
+                int64_t size = allocatedType ? allocatedType->getSize() : 8;
+                size = (size + 7) & ~7; // 对齐到8字节
+                maxOffset = std::max(maxOffset, offset + size);
+            }
         }
     }
 
-    // 计算局部变量的空间需求（非数组类型）
+    // 检查局部变量的最大偏移
     for (auto & local: func->getVarValues()) {
-        if (!local->getType()->isArrayType()) {
-            localVarSize += local->getType()->getSize();
+        int32_t base;
+        int64_t offset;
+        if (local->getMemoryAddr(&base, &offset)) {
+            maxOffset = std::max(maxOffset, offset + local->getType()->getSize());
         }
     }
 
-    // 计算临时变量的空间需求
+    // 检查临时变量的最大偏移
     for (auto inst: func->getInterCode().getInsts()) {
-        if (inst->hasResultValue() && inst->getOp() != IRInstOperator::IRINST_OP_ALLOCA && inst->getRegId() == -1) {
-            int32_t size = inst->getType()->getSize();
-            size += (4 - size % 4) % 4; // 对齐到4字节
-            tempVarSize += size;
+        if (inst->hasResultValue() && inst->getOp() != IRInstOperator::IRINST_OP_ALLOCA) {
+            int32_t base;
+            int64_t offset;
+            if (inst->getMemoryAddr(&base, &offset)) {
+                int32_t size = inst->getType()->getSize();
+                size += (4 - size % 4) % 4; // 对齐到4字节
+                maxOffset = std::max(maxOffset, offset + size);
+            }
         }
     }
 
-    // 计算总的栈帧大小
-    int totalSize = allocaSize + localVarSize + tempVarSize;
+    int totalSize = maxOffset;
     int protectedRegNum = 0;
 
     // 保存寄存器空间
@@ -681,18 +691,15 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
             int32_t size = inst->getType()->getSize();
             // 按照4字节的大小整数倍分配
             size += (4 - size % 4) % 4;
-            temp_offset -= size;
-            // 确保偏移量不小于0
-            if (temp_offset < 0) {
-                temp_offset = 0;
-            }
 
             // 检查是否已经有内存地址（可能是alloca指令的结果）
             int32_t existing_base;
             int64_t existing_offset;
             if (!inst->getMemoryAddr(&existing_base, &existing_offset)) {
                 // 只有当指令还没有内存地址时才设置
+                // 修复：应该递增偏移量，而不是递减
                 inst->setMemoryAddr(ARM64_SP_REG_NO, temp_offset);
+                temp_offset += size;
             }
         }
     }
