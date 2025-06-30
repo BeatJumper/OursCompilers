@@ -8,6 +8,7 @@ tools/
 .git/
 thirdparty/
 .vscode/
+arm64-test/
 
 # 忽略doxygen产生的文件夹
 doc/html/

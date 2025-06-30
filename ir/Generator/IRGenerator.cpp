@@ -1150,7 +1150,14 @@ bool IRGenerator::ir_add_processed(ast_node * node, ast_node * left, ast_node * 
         int loadSize = 4; // 默认4字节
         if (left->val->getType()->isPointerType()) {
             const PointerType * ptrType = static_cast<const PointerType *>(left->val->getType());
-            loadSize = ptrType->getPointeeType()->getSize();
+            const Type * pointeeType = ptrType->getPointeeType();
+            if (pointeeType->isFloatType()) {
+                loadSize = 4; // float 类型使用 4 字节对齐
+            } else if (pointeeType->isIntegerType()) {
+                loadSize = 4; // int 类型使用 4 字节对齐
+            } else {
+                loadSize = 4; // 其他类型也使用 4 字节对齐
+            }
         }
         LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, loadSize);
         node->blockInsts.addInst(loadLeft);
@@ -1165,7 +1172,14 @@ bool IRGenerator::ir_add_processed(ast_node * node, ast_node * left, ast_node * 
         int loadSize = 4; // 默认4字节
         if (right->val->getType()->isPointerType()) {
             const PointerType * ptrType = static_cast<const PointerType *>(right->val->getType());
-            loadSize = ptrType->getPointeeType()->getSize();
+            const Type * pointeeType = ptrType->getPointeeType();
+            if (pointeeType->isFloatType()) {
+                loadSize = 4; // float 类型使用 4 字节对齐
+            } else if (pointeeType->isIntegerType()) {
+                loadSize = 4; // int 类型使用 4 字节对齐
+            } else {
+                loadSize = 4; // 其他类型也使用 4 字节对齐
+            }
         }
         LoadInstruction * loadRight =
             new LoadInstruction(module->getCurrentFunction(), right->val, right->val, loadSize);
@@ -1656,8 +1670,23 @@ bool IRGenerator::ir_return(ast_node * node)
         if (right->val) {
             // 检查是否需要加载返回值
             if (needsLoad(right->val)) {
-                LoadInstruction * loadRight =
-                    new LoadInstruction(currentFunc, right->val, right->val, right->val->getType()->getSize());
+                // 对于需要加载的值，使用固定的对齐方式
+                int alignment = 4; // 默认对齐方式
+
+                // 如果是指针类型，获取指向的类型来确定对齐方式
+                if (right->val->getType()->isPointerType()) {
+                    const PointerType * ptrType = static_cast<const PointerType *>(right->val->getType());
+                    const Type * pointeeType = ptrType->getPointeeType();
+                    if (pointeeType->isFloatType()) {
+                        alignment = 4; // float 类型使用 4 字节对齐
+                    } else if (pointeeType->isIntegerType()) {
+                        alignment = 4; // int 类型使用 4 字节对齐
+                    } else {
+                        alignment = 4; // 其他类型也使用 4 字节对齐
+                    }
+                }
+
+                LoadInstruction * loadRight = new LoadInstruction(currentFunc, right->val, right->val, alignment);
                 node->blockInsts.addInst(loadRight);
                 returnValue = loadRight;
             } else {
@@ -1955,17 +1984,37 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
                 return false;
             }
 
+            // 对于基础类型，使用固定的对齐方式
+            int alignment = 4; // 默认对齐方式
+            if (elementType->isFloatType()) {
+                alignment = 4; // float 类型使用 4 字节对齐
+            } else if (elementType->isIntegerType()) {
+                alignment = 4; // int 类型使用 4 字节对齐
+            }
+
             LoadInstruction * loadInit =
-                new LoadInstruction(currentFunc, initExprNode->val, initExprNode->val, elementType->getSize());
+                new LoadInstruction(currentFunc, initExprNode->val, initExprNode->val, alignment);
             node->blockInsts.addInst(loadInit);
             initValue = loadInit;
         }
         // 处理需要加载的情况
         else if (needsLoad(initExprNode->val)) {
-            LoadInstruction * loadInit = new LoadInstruction(currentFunc,
-                                                             initExprNode->val,
-                                                             initExprNode->val,
-                                                             initExprNode->val->getType()->getSize());
+            // 对于需要加载的值，使用固定的对齐方式
+            int alignment = 4; // 默认对齐方式
+
+            // 如果是指针类型，获取指向的类型来确定对齐方式
+            if (initExprNode->val->getType()->isPointerType()) {
+                const PointerType * ptrType = static_cast<const PointerType *>(initExprNode->val->getType());
+                const Type * pointeeType = ptrType->getPointeeType();
+                if (pointeeType->isFloatType()) {
+                    alignment = 4; // float 类型使用 4 字节对齐
+                } else if (pointeeType->isIntegerType()) {
+                    alignment = 4; // int 类型使用 4 字节对齐
+                }
+            }
+
+            LoadInstruction * loadInit =
+                new LoadInstruction(currentFunc, initExprNode->val, initExprNode->val, alignment);
             node->blockInsts.addInst(initExprNode->blockInsts);
             node->blockInsts.addInst(loadInit);
             initValue = loadInit;
@@ -6226,11 +6275,41 @@ bool IRGenerator::handleOneDimensionalDynamicInit(ast_node * node,
         printf("Debug: Generated store for element %zu\n", i);
     }
 
-    // 如果初始化元素少于数组大小，剩余元素保持未初始化（或者可以选择初始化为0）
+    // 如果初始化元素少于数组大小，剩余元素需要初始化为0
     if (initExprNode->sons.size() < static_cast<size_t>(arraySize)) {
-        printf("Debug: Array has %d elements but only %zu initialization values provided\n",
+        printf("Debug: Array has %d elements but only %zu initialization values provided, initializing remaining "
+               "elements to 0\n",
                arraySize,
                initExprNode->sons.size());
+
+        // 初始化剩余元素为0
+        for (size_t i = initExprNode->sons.size(); i < static_cast<size_t>(arraySize); ++i) {
+            // 生成GEP指令获取数组元素地址
+            Value * firstIndex = module->newConstInt(0);                    // 第一个索引总是0（数组基址）
+            Value * secondIndex = module->newConstInt(static_cast<int>(i)); // 元素索引
+
+            GetelementptrInstruction * gepInst =
+                new GetelementptrInstruction(currentFunc, arrayVar, firstIndex, secondIndex);
+            node->blockInsts.addInst(gepInst);
+
+            // 根据数组元素类型生成相应的0值
+            Value * zeroValue = nullptr;
+            Type * elementType = arrayType->getElementType();
+            if (elementType->isIntegerType()) {
+                zeroValue = module->newConstInt(0);
+            } else if (elementType->isFloatType()) {
+                zeroValue = module->newConstFloat(0.0f);
+            } else {
+                printf("Error: Unsupported element type for zero initialization\n");
+                return false;
+            }
+
+            // 生成store指令将0值存储到数组元素
+            StoreInstruction * storeInst = new StoreInstruction(currentFunc, zeroValue, gepInst);
+            node->blockInsts.addInst(storeInst);
+
+            printf("Debug: Initialized element %zu to 0\n", i);
+        }
     }
 
     printf("Debug: Completed 1D array dynamic initialization\n");

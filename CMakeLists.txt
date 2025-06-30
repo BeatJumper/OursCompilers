@@ -323,6 +323,7 @@ set(CPACK_SOURCE_IGNORE_FILES
 	"/.vs/;" # visual studio
 	"/.vscode/;" # vscode
 	"/.cache/;" # cache
+	"/arm64-test/"
 )
 
 # 二进制打包
