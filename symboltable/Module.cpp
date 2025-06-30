@@ -319,6 +319,28 @@ Value * Module::findVarValue(std::string name)
     return tempValue;
 }
 
+/// @brief 将已存在的变量注册到当前作用域（用于预分配变量的作用域管理）
+/// @param name 变量名
+/// @param value 变量值
+/// @return 注册是否成功
+bool Module::registerVariableToCurrentScope(const std::string & name, Value * value)
+{
+    // 检查当前作用域是否已有同名变量
+    Value * existingVar = scopeStack->findCurrentScope(name);
+    if (existingVar) {
+        // 当前作用域已有同名变量，这在预分配模式下是错误的
+        // 因为每个变量声明都应该对应一个唯一的预分配变量
+        printf("Error: Variable '%s' already registered in current scope (duplicate declaration)\n", name.c_str());
+        return false;
+    }
+
+    // 将变量注册到当前作用域
+    // 注意：这里允许遮蔽外层作用域的同名变量，这是正确的作用域行为
+    scopeStack->insertValue(name, value);
+    printf("Debug: Registered variable '%s' to current scope (may shadow outer scope)\n", name.c_str());
+    return true;
+}
+
 ///
 /// @brief 新建全局变量，要求name必须有效，并且加入到全局符号表中。不检查是否现有的符号表中是否存在。
 /// @param type 类型

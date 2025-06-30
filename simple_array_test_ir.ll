@@ -1,0 +1,192 @@
+; ModuleID = './simple_array_test.c'
+source_filename = "./simple_array_test.c"
+target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-pc-linux-gnu"
+
+@__const.main.matrix = private unnamed_addr constant [2 x [3 x i32]] [[3 x i32] [i32 1, i32 2, i32 3], [3 x i32] [i32 4, i32 5, i32 6]], align 16
+@__const.main.cube = private unnamed_addr constant [2 x [2 x [3 x i32]]] [[2 x [3 x i32]] [[3 x i32] [i32 1, i32 2, i32 3], [3 x i32] [i32 4, i32 5, i32 6]], [2 x [3 x i32]] [[3 x i32] [i32 7, i32 8, i32 9], [3 x i32] [i32 10, i32 11, i32 12]]], align 16
+
+; Function Attrs: noinline nounwind optnone uwtable
+define dso_local i32 @sum_2d([3 x i32]* noundef %0, i32 noundef %1) #0 {
+  %3 = alloca [3 x i32]*, align 8
+  %4 = alloca i32, align 4
+  %5 = alloca i32, align 4
+  %6 = alloca i32, align 4
+  %7 = alloca i32, align 4
+  store [3 x i32]* %0, [3 x i32]** %3, align 8
+  store i32 %1, i32* %4, align 4
+  store i32 0, i32* %5, align 4
+  store i32 0, i32* %6, align 4
+  br label %8
+
+8:                                                ; preds = %29, %2
+  %9 = load i32, i32* %6, align 4
+  %10 = load i32, i32* %4, align 4
+  %11 = icmp slt i32 %9, %10
+  br i1 %11, label %12, label %32
+
+12:                                               ; preds = %8
+  store i32 0, i32* %7, align 4
+  br label %13
+
+13:                                               ; preds = %16, %12
+  %14 = load i32, i32* %7, align 4
+  %15 = icmp slt i32 %14, 3
+  br i1 %15, label %16, label %29
+
+16:                                               ; preds = %13
+  %17 = load i32, i32* %5, align 4
+  %18 = load [3 x i32]*, [3 x i32]** %3, align 8
+  %19 = load i32, i32* %6, align 4
+  %20 = sext i32 %19 to i64
+  %21 = getelementptr inbounds [3 x i32], [3 x i32]* %18, i64 %20
+  %22 = load i32, i32* %7, align 4
+  %23 = sext i32 %22 to i64
+  %24 = getelementptr inbounds [3 x i32], [3 x i32]* %21, i64 0, i64 %23
+  %25 = load i32, i32* %24, align 4
+  %26 = add nsw i32 %17, %25
+  store i32 %26, i32* %5, align 4
+  %27 = load i32, i32* %7, align 4
+  %28 = add nsw i32 %27, 1
+  store i32 %28, i32* %7, align 4
+  br label %13, !llvm.loop !6
+
+29:                                               ; preds = %13
+  %30 = load i32, i32* %6, align 4
+  %31 = add nsw i32 %30, 1
+  store i32 %31, i32* %6, align 4
+  br label %8, !llvm.loop !8
+
+32:                                               ; preds = %8
+  %33 = load i32, i32* %5, align 4
+  ret i32 %33
+}
+
+; Function Attrs: noinline nounwind optnone uwtable
+define dso_local i32 @sum_3d([2 x [3 x i32]]* noundef %0, i32 noundef %1) #0 {
+  %3 = alloca [2 x [3 x i32]]*, align 8
+  %4 = alloca i32, align 4
+  %5 = alloca i32, align 4
+  %6 = alloca i32, align 4
+  %7 = alloca i32, align 4
+  %8 = alloca i32, align 4
+  store [2 x [3 x i32]]* %0, [2 x [3 x i32]]** %3, align 8
+  store i32 %1, i32* %4, align 4
+  store i32 0, i32* %5, align 4
+  store i32 0, i32* %6, align 4
+  br label %9
+
+9:                                                ; preds = %40, %2
+  %10 = load i32, i32* %6, align 4
+  %11 = load i32, i32* %4, align 4
+  %12 = icmp slt i32 %10, %11
+  br i1 %12, label %13, label %43
+
+13:                                               ; preds = %9
+  store i32 0, i32* %7, align 4
+  br label %14
+
+14:                                               ; preds = %37, %13
+  %15 = load i32, i32* %7, align 4
+  %16 = icmp slt i32 %15, 2
+  br i1 %16, label %17, label %40
+
+17:                                               ; preds = %14
+  store i32 0, i32* %8, align 4
+  br label %18
+
+18:                                               ; preds = %21, %17
+  %19 = load i32, i32* %8, align 4
+  %20 = icmp slt i32 %19, 3
+  br i1 %20, label %21, label %37
+
+21:                                               ; preds = %18
+  %22 = load i32, i32* %5, align 4
+  %23 = load [2 x [3 x i32]]*, [2 x [3 x i32]]** %3, align 8
+  %24 = load i32, i32* %6, align 4
+  %25 = sext i32 %24 to i64
+  %26 = getelementptr inbounds [2 x [3 x i32]], [2 x [3 x i32]]* %23, i64 %25
+  %27 = load i32, i32* %7, align 4
+  %28 = sext i32 %27 to i64
+  %29 = getelementptr inbounds [2 x [3 x i32]], [2 x [3 x i32]]* %26, i64 0, i64 %28
+  %30 = load i32, i32* %8, align 4
+  %31 = sext i32 %30 to i64
+  %32 = getelementptr inbounds [3 x i32], [3 x i32]* %29, i64 0, i64 %31
+  %33 = load i32, i32* %32, align 4
+  %34 = add nsw i32 %22, %33
+  store i32 %34, i32* %5, align 4
+  %35 = load i32, i32* %8, align 4
+  %36 = add nsw i32 %35, 1
+  store i32 %36, i32* %8, align 4
+  br label %18, !llvm.loop !9
+
+37:                                               ; preds = %18
+  %38 = load i32, i32* %7, align 4
+  %39 = add nsw i32 %38, 1
+  store i32 %39, i32* %7, align 4
+  br label %14, !llvm.loop !10
+
+40:                                               ; preds = %14
+  %41 = load i32, i32* %6, align 4
+  %42 = add nsw i32 %41, 1
+  store i32 %42, i32* %6, align 4
+  br label %9, !llvm.loop !11
+
+43:                                               ; preds = %9
+  %44 = load i32, i32* %5, align 4
+  ret i32 %44
+}
+
+; Function Attrs: noinline nounwind optnone uwtable
+define dso_local i32 @main() #0 {
+  %1 = alloca i32, align 4
+  %2 = alloca [2 x [3 x i32]], align 16
+  %3 = alloca [2 x [2 x [3 x i32]]], align 16
+  %4 = alloca i32, align 4
+  %5 = alloca i32, align 4
+  store i32 0, i32* %1, align 4
+  %6 = bitcast [2 x [3 x i32]]* %2 to i8*
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 16 %6, i8* align 16 bitcast ([2 x [3 x i32]]* @__const.main.matrix to i8*), i64 24, i1 false)
+  %7 = bitcast [2 x [2 x [3 x i32]]]* %3 to i8*
+  call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 16 %7, i8* align 16 bitcast ([2 x [2 x [3 x i32]]]* @__const.main.cube to i8*), i64 48, i1 false)
+  %8 = getelementptr inbounds [2 x [3 x i32]], [2 x [3 x i32]]* %2, i64 0, i64 0
+  %9 = call i32 @sum_2d([3 x i32]* noundef %8, i32 noundef 2)
+  store i32 %9, i32* %4, align 4
+  %10 = load i32, i32* %4, align 4
+  %11 = call i32 (i32, ...) bitcast (i32 (...)* @putint to i32 (i32, ...)*)(i32 noundef %10)
+  %12 = call i32 (i32, ...) bitcast (i32 (...)* @putch to i32 (i32, ...)*)(i32 noundef 10)
+  %13 = getelementptr inbounds [2 x [2 x [3 x i32]]], [2 x [2 x [3 x i32]]]* %3, i64 0, i64 0
+  %14 = call i32 @sum_3d([2 x [3 x i32]]* noundef %13, i32 noundef 2)
+  store i32 %14, i32* %5, align 4
+  %15 = load i32, i32* %5, align 4
+  %16 = call i32 (i32, ...) bitcast (i32 (...)* @putint to i32 (i32, ...)*)(i32 noundef %15)
+  %17 = call i32 (i32, ...) bitcast (i32 (...)* @putch to i32 (i32, ...)*)(i32 noundef 10)
+  ret i32 0
+}
+
+; Function Attrs: argmemonly nofree nounwind willreturn
+declare void @llvm.memcpy.p0i8.p0i8.i64(i8* noalias nocapture writeonly, i8* noalias nocapture readonly, i64, i1 immarg) #1
+
+declare i32 @putint(...) #2
+
+declare i32 @putch(...) #2
+
+attributes #0 = { noinline nounwind optnone uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
+attributes #1 = { argmemonly nofree nounwind willreturn }
+attributes #2 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="x86-64" "target-features"="+cx8,+fxsr,+mmx,+sse,+sse2,+x87" "tune-cpu"="generic" }
+
+!llvm.module.flags = !{!0, !1, !2, !3, !4}
+!llvm.ident = !{!5}
+
+!0 = !{i32 1, !"wchar_size", i32 4}
+!1 = !{i32 7, !"PIC Level", i32 2}
+!2 = !{i32 7, !"PIE Level", i32 2}
+!3 = !{i32 7, !"uwtable", i32 1}
+!4 = !{i32 7, !"frame-pointer", i32 2}
+!5 = !{!"Ubuntu clang version 14.0.0-1ubuntu1.1"}
+!6 = distinct !{!6, !7}
+!7 = !{!"llvm.loop.mustprogress"}
+!8 = distinct !{!8, !7}
+!9 = distinct !{!9, !7}
+!10 = distinct !{!10, !7}
+!11 = distinct !{!11, !7}

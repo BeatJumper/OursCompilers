@@ -277,6 +277,22 @@ bool IRGenerator::ir_function_define(ast_node * node)
     }
     newFunc->setReturnValue(retValue);
 
+    // 预收集函数体中的所有局部变量
+    // 预扫描所有作用域，收集所有变量声明（包括同名变量）
+    std::vector<LocalVarInfo> localVars;
+    if (!collectLocalVariables(block_node, localVars)) {
+        printf("Error: Failed to collect local variables in function '%s'.\n", name_node->name.c_str());
+        return false;
+    }
+
+    // 在函数开始时生成所有局部变量的alloca指令
+    if (!generateAllocaInstructions(localVars, irCode)) {
+        printf("Error: Failed to generate alloca instructions in function '%s'.\n", name_node->name.c_str());
+        return false;
+    }
+
+    printf("Debug: Generated %zu alloca instructions for function '%s'\n", localVars.size(), name_node->name.c_str());
+
     // 处理函数体（不需要新的作用域，因为函数本身就是一个作用域）
     block_node->needScope = false;
     if (!ir_block(block_node)) {
@@ -1877,22 +1893,37 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
         return ir_array_variable_declare_with_init(node, typeNode, varNode, initExprNode);
     }
 
-    // 为变量分配Value和栈空间
-    // 变量的类型应该是指向分配类型的指针类型
-    Type * allocaType = typeNode->type;           // 要分配的类型
-    Type * varType = new PointerType(allocaType); // 变量类型（指针类型）
-    Value * varValue = module->newVarValue(varType, varNode->name);
-    if (!varValue) {
-        printf("Error: Failed to allocate variable '%s' in ir_variable_declare.\n", varNode->name.c_str());
-        return false;
+    // 检查变量是否已经在函数开始时预分配
+    Value * varValue = varNode->val; // 应该在generateAllocaInstructions中已经设置
+    if (varValue) {
+        // 变量已经预分配，现在需要将其注册到当前作用域
+        printf("Debug: Using pre-allocated variable '%s', registering to current scope\n", varNode->name.c_str());
+
+        // 将预分配的变量注册到当前作用域
+        // 这会覆盖同名的外层变量，实现正确的作用域遮蔽
+        if (!registerVariableToCurrentScope(varNode->name, varValue)) {
+            printf("Error: Failed to register pre-allocated variable '%s' to current scope\n", varNode->name.c_str());
+            return false;
+        }
+    } else {
+        // 变量未预分配，按原来的方式创建（用于全局变量等）
+        Type * allocaType = typeNode->type;           // 要分配的类型
+        Type * varType = new PointerType(allocaType); // 变量类型（指针类型）
+        varValue = module->newVarValue(varType, varNode->name);
+        if (!varValue) {
+            printf("Error: Failed to allocate variable '%s' in ir_variable_declare.\n", varNode->name.c_str());
+            return false;
+        }
+
+        // 计算对齐大小（基本类型使用类型大小，数组使用16字节对齐）
+        uint32_t alignSize = allocaType->isArrayType() ? 16 : allocaType->getSize();
+
+        AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, varValue, allocaType, alignSize);
+        node->blockInsts.addInst(allocaInst);
+        varNode->val = varValue;
+
+        printf("Debug: Created new variable '%s' with alloca\n", varNode->name.c_str());
     }
-
-    // 计算对齐大小（基本类型使用类型大小，数组使用16字节对齐）
-    uint32_t alignSize = allocaType->isArrayType() ? 16 : allocaType->getSize();
-
-    AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, varValue, allocaType, alignSize);
-    node->blockInsts.addInst(allocaInst);
-    varNode->val = varValue;
 
     // 处理初始化部分
     if (initExprNode) {
@@ -3783,9 +3814,32 @@ bool IRGenerator::ir_array_access(ast_node * node)
         const Type * pointeeType = ptrType->getPointeeType();
 
         if (pointeeType->isArrayType()) {
-            // 指向数组的指针：需要两个索引 [0][index]
-            ConstInt * zeroConst = module->newConstInt(0);
-            gepInst = new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, zeroConst, indexValue);
+            // 指向数组的指针：需要区分函数参数和中间结果
+            bool isFunctionParameter = false;
+
+            // 检查是否是函数参数：通过检查变量名和当前访问模式
+            if (arrayNode->node_type == ast_operator_type::AST_OP_LEAF_VAR_ID) {
+                // 检查变量是否是函数参数
+                Function * currentFunc = module->getCurrentFunction();
+                if (currentFunc) {
+                    const std::vector<FormalParam *> & params = currentFunc->getParams();
+                    for (FormalParam * param: params) {
+                        if (param->getName() == arrayNode->name) {
+                            isFunctionParameter = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (isFunctionParameter) {
+                // 函数参数：第一次访问使用单索引
+                gepInst = new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, indexValue);
+            } else {
+                // 局部变量或中间结果：使用双索引
+                ConstInt * zeroConst = module->newConstInt(0);
+                gepInst = new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, zeroConst, indexValue);
+            }
         } else {
             // 指向元素的指针：使用单个索引 [index]
             gepInst = new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, indexValue);
@@ -5517,4 +5571,246 @@ bool IRGenerator::ir_fdiv_processed(ast_node * node, ast_node * left, ast_node *
     node->val = divInst;
 
     return true;
+}
+
+/// @brief 预收集函数中的所有局部变量声明
+/// @param node 函数体AST节点
+/// @param localVars 收集到的局部变量列表
+/// @return 收集是否成功
+bool IRGenerator::collectLocalVariables(ast_node * node, std::vector<LocalVarInfo> & localVars)
+{
+    static int varCounter = 0; // 静态计数器，为每个变量分配唯一ID
+    return collectLocalVariablesRecursive(node, localVars, varCounter);
+}
+
+/// @brief 递归收集局部变量声明的内部实现
+/// @param node AST节点
+/// @param localVars 收集到的局部变量列表
+/// @param varCounter 变量计数器引用
+/// @return 收集是否成功
+bool IRGenerator::collectLocalVariablesRecursive(ast_node * node,
+                                                 std::vector<LocalVarInfo> & localVars,
+                                                 int & varCounter)
+{
+    if (!node) {
+        return true;
+    }
+
+    // 如果是变量声明语句，收集其中的变量
+    if (node->node_type == ast_operator_type::AST_OP_DECL_STMT) {
+        for (auto & child: node->sons) {
+            if (child->node_type == ast_operator_type::AST_OP_VAR_DECL) {
+                // 处理变量声明
+                if (child->sons.size() < 2) {
+                    printf("Error: Invalid node structure in collectLocalVariables. Expected 2 children, got %zu.\n",
+                           child->sons.size());
+                    return false;
+                }
+
+                ast_node * typeNode = child->sons[0];
+                ast_node * varOrAssignNode = child->sons[1];
+
+                if (!typeNode || !varOrAssignNode) {
+                    printf("Error: Null typeNode or varOrAssignNode in collectLocalVariables.\n");
+                    return false;
+                }
+
+                // 处理变量声明（带或不带初始化）
+                ast_node * varNode = nullptr;
+
+                if (varOrAssignNode->node_type == ast_operator_type::AST_OP_ASSIGN) {
+                    // 带初始化的声明
+                    if (varOrAssignNode->sons.size() < 2) {
+                        printf("Error: Invalid assignment structure in collectLocalVariables.\n");
+                        return false;
+                    }
+                    varNode = varOrAssignNode->sons[0];
+                } else {
+                    // 不带初始化的声明
+                    varNode = varOrAssignNode;
+                }
+
+                if (!varNode) {
+                    printf("Error: Null varNode in collectLocalVariables.\n");
+                    return false;
+                }
+
+                // 处理数组类型
+                Type * varType = typeNode->type;
+                if (!varNode->sons.empty() && !typeNode->type->isArrayType()) {
+                    // 变量节点有子节点，说明是数组声明，需要创建数组类型
+                    std::vector<int> dimensions;
+                    for (auto dimNode: varNode->sons) {
+                        if (dimNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+                            dimensions.push_back(dimNode->integer_val);
+                        } else {
+                            printf("Error: Non-constant array dimension in variable declaration.\n");
+                            return false;
+                        }
+                    }
+                    varType = new ArrayType(typeNode->type, dimensions);
+                }
+
+                // 计算对齐大小
+                uint32_t alignSize = varType->isArrayType() ? 16 : varType->getSize();
+
+                // 添加到局部变量列表，分配唯一ID
+                localVars.emplace_back(varNode->name, varType, alignSize, varNode, ++varCounter);
+            }
+        }
+    }
+
+    // 递归处理子节点
+    for (auto & child: node->sons) {
+        if (!collectLocalVariablesRecursive(child, localVars, varCounter)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/// @brief 在函数开始时生成所有局部变量的alloca指令
+/// @param localVars 局部变量列表
+/// @param blockInsts 指令序列
+/// @return 生成是否成功
+bool IRGenerator::generateAllocaInstructions(const std::vector<LocalVarInfo> & localVars, InterCode & blockInsts)
+{
+    for (const auto & varInfo: localVars) {
+        // 变量的类型应该是指向分配类型的指针类型
+        Type * allocaType = varInfo.type;             // 要分配的类型
+        Type * varType = new PointerType(allocaType); // 变量类型（指针类型）
+
+        Value * varValue = module->newVarValue(varType, varInfo.uniqueName);
+        if (!varValue) {
+            printf("Error: Failed to allocate variable '%s' (unique: %s) in generateAllocaInstructions.\n",
+                   varInfo.name.c_str(),
+                   varInfo.uniqueName.c_str());
+            return false;
+        }
+
+        // 生成alloca指令
+        AllocaInstruction * allocaInst =
+            new AllocaInstruction(module->getCurrentFunction(), varValue, allocaType, varInfo.alignSize);
+        blockInsts.addInst(allocaInst);
+
+        // 设置变量节点的值
+        varInfo.varNode->val = varValue;
+
+        // 注意：不在这里进行数组零初始化，让原有的初始化逻辑处理
+
+        printf("Debug: Generated alloca for variable '%s' (unique: %s) with type %s\n",
+               varInfo.name.c_str(),
+               varInfo.uniqueName.c_str(),
+               allocaType->toString().c_str());
+    }
+
+    return true;
+}
+
+/// @brief 修改后的变量声明处理，只处理初始化（变量已在函数开始时分配）
+/// @param node AST节点
+/// @return 翻译是否成功
+bool IRGenerator::ir_variable_declare_register_only(ast_node * node)
+{
+    // 确保节点有两个子节点：类型节点和变量名或赋值节点
+    if (node->sons.size() < 2) {
+        printf("Error: Invalid node structure in ir_variable_declare_register_only. Expected 2 children, got %zu.\n",
+               node->sons.size());
+        return false;
+    }
+
+    ast_node * typeNode = node->sons[0];
+    ast_node * varOrAssignNode = node->sons[1];
+
+    if (!typeNode || !varOrAssignNode) {
+        printf("Error: Null typeNode or varOrAssignNode in ir_variable_declare_register_only.\n");
+        return false;
+    }
+
+    // 处理变量声明（带或不带初始化）
+    ast_node * varNode = nullptr;
+    ast_node * initExprNode = nullptr;
+
+    if (varOrAssignNode->node_type == ast_operator_type::AST_OP_ASSIGN) {
+        // 带初始化的声明
+        if (varOrAssignNode->sons.size() < 2) {
+            printf("Error: Invalid assignment structure in ir_variable_declare_register_only.\n");
+            return false;
+        }
+
+        varNode = varOrAssignNode->sons[0];
+        initExprNode = varOrAssignNode->sons[1];
+
+        if (!varNode || !initExprNode) {
+            printf("Error: Null varNode or initExprNode in assignment.\n");
+            return false;
+        }
+    } else {
+        // 不带初始化的声明
+        varNode = varOrAssignNode;
+    }
+
+    // 变量应该已经在函数开始时分配，从符号表中查找
+    Value * varValue = module->findVarValue(varNode->name);
+    if (!varValue) {
+        printf("Error: Variable '%s' not found in symbol table. It should have been allocated at function start.\n",
+               varNode->name.c_str());
+        return false;
+    }
+
+    // 设置变量节点的值（用于后续引用）
+    varNode->val = varValue;
+
+    // 只处理初始化（如果有的话）
+    if (initExprNode) {
+        // 处理初始化表达式
+        if (!ir_visit_ast_node(initExprNode)) {
+            printf("Error: Failed to evaluate initialization expression for '%s'.\n", varNode->name.c_str());
+            return false;
+        }
+
+        Value * initValue = nullptr;
+
+        // 处理不同类型的初始化
+        if (initExprNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
+            initValue = module->newConstFloat(initExprNode->float_val);
+            node->blockInsts.addInst(initExprNode->blockInsts);
+        } else if (initExprNode->node_type == ast_operator_type::AST_OP_ARRAY_ACCESS) {
+            // 数组访问返回地址，需要加载值
+            node->blockInsts.addInst(initExprNode->blockInsts);
+
+            if (initExprNode->val && initExprNode->val->getType()->isPointerType()) {
+                const PointerType * ptrType = static_cast<const PointerType *>(initExprNode->val->getType());
+                Value * loadResult = module->newVarValue(const_cast<Type *>(ptrType->getPointeeType()));
+                LoadInstruction * loadInst =
+                    new LoadInstruction(module->getCurrentFunction(), loadResult, initExprNode->val);
+                node->blockInsts.addInst(loadInst);
+                initValue = loadResult;
+            } else {
+                initValue = initExprNode->val;
+            }
+        } else {
+            // 其他表达式
+            node->blockInsts.addInst(initExprNode->blockInsts);
+            initValue = initExprNode->val;
+        }
+
+        if (initValue) {
+            // 生成store指令进行初始化
+            StoreInstruction * storeInst = new StoreInstruction(module->getCurrentFunction(), initValue, varValue);
+            node->blockInsts.addInst(storeInst);
+        }
+    }
+
+    return true;
+}
+
+/// @brief 将预分配的变量注册到当前作用域
+/// @param name 变量名
+/// @param value 变量值
+/// @return 注册是否成功
+bool IRGenerator::registerVariableToCurrentScope(const std::string & name, Value * value)
+{
+    return module->registerVariableToCurrentScope(name, value);
 }
