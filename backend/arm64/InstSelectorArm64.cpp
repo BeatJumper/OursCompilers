@@ -714,13 +714,14 @@ void InstSelectorArm64::translate_load(Instruction * inst)
 
     if (result_regId != -1) {
         // 检查arg1是否是getelementptr的结果，需要重新计算地址
-        // 这是为了解决寄存器分配器将多个getelementptr结果分配到同一寄存器导致地址被覆盖的问题
         if (GetelementptrInstruction * gepResult = dynamic_cast<GetelementptrInstruction *>(arg1)) {
             printf("Debug: 加载gep指令的结果\n");
-            int32_t gep_reg_id = gepResult->getRegId();
-            // arg1有内存地址信息，说明它是getelementptr的结果
-            // 重新计算地址到临时寄存器，确保地址正确
-            iloc.inst("ldr", PlatformArm64::regName[result_regId], "[" + PlatformArm64::regName[gep_reg_id + 32] + "]");
+            int32_t base_reg_id;
+            int64_t base_offset;
+            gepResult->getMemoryAddr(&base_reg_id, &base_offset);
+            std::string s = ",#" + std::to_string(base_offset);
+
+            iloc.inst("ldr", PlatformArm64::regName[result_regId], "[" + PlatformArm64::regName[base_reg_id] + s + "]");
         }
 
         // 内存变量 => 寄存器
@@ -809,23 +810,9 @@ void InstSelectorArm64::translate_store(Instruction * inst)
             int32_t dest_baseRegId = -1;
             int64_t dest_offset = -1;
             if (arg2->getMemoryAddr(&dest_baseRegId, &dest_offset)) {
-                // 检查偏移量是否在str指令的有效范围内
-                // 对于32位数据：有符号偏移-256到+255，或无符号偏移0到16380（4字节对齐）
-                if ((dest_offset >= -256 && dest_offset <= 255) ||
-                    (dest_offset >= 0 && dest_offset <= 16380 && (dest_offset % 4) == 0)) {
-                    // 偏移量在有效范围内，直接使用str指令
-                    std::string s =
-                        "[" + PlatformArm64::regName[dest_baseRegId] + ",#" + std::to_string(dest_offset) + "]";
-                    iloc.inst("str", "wzr", s);
-                } else {
-                    // 偏移量超出范围，先计算地址，然后使用间接寻址
-                    iloc.load_imm(ARM64_TMP_REG_NO, dest_offset);
-                    iloc.inst("add",
-                              PlatformArm64::regName[ARM64_TMP_REG_NO + 32],
-                              PlatformArm64::regName[dest_baseRegId],
-                              PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
-                    iloc.inst("str", "wzr", "[" + PlatformArm64::regName[ARM64_TMP_REG_NO + 32] + "]");
-                }
+                //使用str wzr指令
+                std::string s = "[" + PlatformArm64::regName[dest_baseRegId] + ",#" + std::to_string(dest_offset) + "]";
+                iloc.inst("str", "wzr", s);
             }
         }
     } else if (arg1_regId != -1) {
@@ -942,56 +929,53 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
     int64_t base_offset;
 
     if (basePtr->getMemoryAddr(&base_reg_id, &base_offset)) {
-        // 基址在栈上，计算其地址
-        // 实际的操作数数量，减去指令本身
-        int actual_operands = inst->getOperandsNum() - 1;
-        if (actual_operands == 3) {
-            Value * index = inst->getOperand(2);
-            ConstInt * constIdx = dynamic_cast<ConstInt *>(index);
-            if (constIdx) {
-                int64_t idx = constIdx->getVal();
+        printf("gep源在栈上\n");
+        // gep源在栈上，计算其地址
+        Value * index = inst->getOperand(2);
+        ConstInt * constIdx = dynamic_cast<ConstInt *>(index);
+        if (constIdx) {
+            int64_t idx = constIdx->getVal();
 
-                // 计算正确的元素大小
-                int64_t element_size = 4; // 默认int类型，4字节
+            // 计算正确的元素大小
+            int64_t element_size = 4; // 默认int/float类型，4字节
 
-                // 检查基址指针的类型来确定元素大小
-                Type * baseType = basePtr->getType();
-                if (baseType->isArrayType()) {
-                    printf("计算数组地址时检测到内部元素类型为数组类型\n");
-                    const ArrayType * arrayType = static_cast<const ArrayType *>(baseType);
-                    const std::vector<int> & dimensions = arrayType->getDimensions();
+            // 检查基址指针的类型来确定元素大小
+            Type * baseType = basePtr->getType();
+            if (baseType->isArrayType()) {
+                printf("计算数组地址时检测到内部元素类型为数组类型\n");
+                const ArrayType * arrayType = static_cast<const ArrayType *>(baseType);
+                const std::vector<int> & dimensions = arrayType->getDimensions();
 
-                    if (dimensions.size() > 1) {
-                        // 多维数组：每个元素是一个子数组
-                        // 计算子数组的大小
-                        int sub_array_size = 1;
-                        for (size_t i = 1; i < dimensions.size(); i++) {
-                            sub_array_size *= dimensions[i];
-                        }
-                        element_size = sub_array_size * arrayType->getElementType()->getSize();
-                    } else {
-                        // 一维数组：每个元素是基本类型
-                        element_size = arrayType->getElementType()->getSize();
+                if (dimensions.size() > 1) {
+                    // 多维数组：每个元素是一个子数组
+                    // 计算子数组的大小
+                    int sub_array_size = 1;
+                    for (size_t i = 1; i < dimensions.size(); i++) {
+                        sub_array_size *= dimensions[i];
                     }
-                } else if (baseType->isPointerType()) {
-                    printf("计算数组地址时检测到内部元素类型为指针类型\n");
-                    const PointerType * ptrType = static_cast<const PointerType *>(baseType);
-                    const Type * pointeeType = ptrType->getPointeeType();
-                    if (pointeeType->isArrayType()) {
-                        const ArrayType * arrayType = static_cast<const ArrayType *>(pointeeType);
-                        element_size = arrayType->getElementType()->getSize();
-                    } else {
-                        element_size = pointeeType->getSize();
-                    }
+                    element_size = sub_array_size * arrayType->getElementType()->getSize();
+                } else {
+                    // 一维数组：每个元素是基本类型
+                    element_size = arrayType->getElementType()->getSize();
                 }
-
-                int64_t element_offset = base_offset + (idx * element_size);
-
-                // 只设置结果的内存地址信息，不生成地址计算指令
-                // 地址计算将在load/store指令中进行
-                inst->setMemoryAddr(base_reg_id, element_offset);
-                return;
+            } else if (baseType->isPointerType()) {
+                printf("计算数组地址时检测到内部元素类型为指针类型\n");
+                const PointerType * ptrType = static_cast<const PointerType *>(baseType);
+                const Type * pointeeType = ptrType->getPointeeType();
+                if (pointeeType->isArrayType()) {
+                    const ArrayType * arrayType = static_cast<const ArrayType *>(pointeeType);
+                    element_size = arrayType->getElementType()->getSize();
+                } else {
+                    element_size = pointeeType->getSize();
+                }
             }
+
+            int64_t element_offset = base_offset + (idx * element_size);
+
+            // 只设置结果的内存地址信息，不生成地址计算指令
+            // 地址计算将在load/store指令中进行
+            inst->setMemoryAddr(base_reg_id, element_offset);
+            return;
         }
 
         // 默认情况：只设置内存地址信息，不生成地址计算指令

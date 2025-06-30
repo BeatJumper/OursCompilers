@@ -176,10 +176,6 @@ void CodeGeneratorArm64::getIRValueStr(Value * val, std::string & str)
 /// @param func 要处理的函数
 void CodeGeneratorArm64::genCodeSection(Function * func)
 {
-    // 寄存器分配以及栈内局部变量的站内地址重新分配
-    registerAllocation(func);
-    printf("寄存器分配完成\n");
-
     // 获取函数的指令列表
     std::vector<Instruction *> & IrInsts = func->getInterCode().getInsts();
     printf("成功获取指令列表，指令数量：%d\n", int(IrInsts.size()));
@@ -187,11 +183,15 @@ void CodeGeneratorArm64::genCodeSection(Function * func)
     // 标签已经在前端IR生成时确保全局唯一，无需重新编号
     // ILOC代码序列
     ILocArm64 iloc(module);
+    // 寄存器分配以及栈空间分配
+    registerAllocation(func);
+    printf("寄存器分配完成\n");
+
+    iloc.allocStack(func, ARM64_TMP_REG_NO);
 
     // 指令选择生成汇编指令
     InstSelectorArm64 instSelector(IrInsts, iloc, func);
     instSelector.setShowLinearIR(this->showLinearIR);
-    iloc.allocStack(func, ARM64_TMP_REG_NO);
     instSelector.run();
     printf("汇编已生成\n");
 
@@ -257,6 +257,7 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     protectedRegNo.push_back(ARM64_LX_REG_NO);
     printf("寄存器分配中段\n");
 
+    stackAlloc(func);
     // 给一些指令添加临时调整指令
     adjustSomeInsts(func);
 
@@ -327,15 +328,19 @@ void CodeGeneratorArm64::adjustSomeInsts(Function * func)
         //检测是否是Store指令
         if (dynamic_cast<StoreInstruction *>(inst)) {
             //要存入的数
-            Value * val = inst->getOperand(0);
+            Value * val1 = inst->getOperand(0);
+            Value * val2 = inst->getOperand(1);
+            int32_t dest_baseRegId = -1;
+            int64_t dest_offset = -1;
+            val2->getMemoryAddr(&dest_baseRegId, &dest_offset);
             //检测要存入的数是否是constant
-            if (Instanceof(const_val, ConstInt *, val)) {
+            if (Instanceof(const_val, ConstInt *, val1)) {
                 // 对于常量0，不需要创建MoveInstruction，ARM64有专门的零寄存器
                 if (const_val->getVal() != 0) {
                     // 其他常量需要mov到寄存器
-                    Value * newval = new Value(val->getType());
+                    Value * newval = new Value(val1->getType());
                     // 为constant创建mov指令
-                    MoveInstruction * movinst = new MoveInstruction(func, newval, val);
+                    MoveInstruction * movinst = new MoveInstruction(func, newval, val1);
                     //指令的对应constant操作数修改为新创建的寄存器变量
                     insts[i]->getOperands()[0] = new Use(newval, inst);
 
@@ -570,6 +575,10 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
 
     int64_t sp_esp = 0;
 
+    // 保护寄存器分配栈空间
+    int protectedRegNum = func->getProtectedReg().size();
+    sp_esp += protectedRegNum * 8;
+
     // 只处理未分配到寄存器的局部变量
     for (auto local: func->getVarValues()) {
         if (local->getRegId() != -1) {
@@ -678,7 +687,8 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
         }
     }
 
-    // 设置函数的最大栈帧深度，在加上实参内存传值的空间
+    // 设置函数的最大栈帧深度
+    // TODO加上实参内存传值的空间
     func->setMaxDep(sp_esp);
 }
 

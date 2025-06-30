@@ -26,7 +26,7 @@ class LocalVariable : public Value {
 
     friend class Function;
 
-private:
+public:
     ///
     /// @brief 构造函数
     /// @param _type 类型
@@ -39,7 +39,6 @@ private:
         this->name = _name;
     }
 
-public:
     ///
     /// @brief 取得变量所在的作用域层级
     /// @return int32_t 层级

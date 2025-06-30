@@ -26,13 +26,12 @@ class MemVariable : public Value {
 
     friend class Function;
 
-private:
+public:
     /// @brief 创建内存Value
     /// \param val
     explicit MemVariable(Type * _type) : Value(_type)
     {}
 
-public:
     ///
     /// @brief @brief 如是内存变量型Value，则获取基址寄存器和偏移
     /// @param regId 寄存器编号
