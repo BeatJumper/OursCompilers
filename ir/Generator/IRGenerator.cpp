@@ -2210,6 +2210,16 @@ bool IRGenerator::ir_rel_exp(ast_node * node)
                 }
             }
         }
+    } else {
+        // 处理整数和布尔值的比较
+        // 如果一个操作数是i1类型，另一个是i32类型，需要进行类型转换
+        if (leftType->isInt1Byte() && rightType->isInt32Type()) {
+            // 将i1类型转换为i32类型
+            leftValue = convertToI32(leftValue, module->getCurrentFunction(), node->blockInsts);
+        } else if (leftType->isInt32Type() && rightType->isInt1Byte()) {
+            // 将i1类型转换为i32类型
+            rightValue = convertToI32(rightValue, module->getCurrentFunction(), node->blockInsts);
+        }
     }
 
     // 创建关系表达式指令
@@ -3192,6 +3202,16 @@ bool IRGenerator::ir_rel_exp_with_labels(ast_node * node, LabelInstruction * tru
                 }
             }
         }
+    } else {
+        // 处理整数和布尔值的比较
+        // 如果一个操作数是i1类型，另一个是i32类型，需要进行类型转换
+        if (leftType->isInt1Byte() && rightType->isInt32Type()) {
+            // 将i1类型转换为i32类型
+            leftValue = convertToI32(leftValue, module->getCurrentFunction(), node->blockInsts);
+        } else if (leftType->isInt32Type() && rightType->isInt1Byte()) {
+            // 将i1类型转换为i32类型
+            rightValue = convertToI32(rightValue, module->getCurrentFunction(), node->blockInsts);
+        }
     }
 
     // 创建关系表达式指令
@@ -3498,8 +3518,9 @@ bool IRGenerator::ir_global_const_array_declare(ast_node * node,
 
     ArrayType * arrayType = static_cast<ArrayType *>(typeNode->type);
 
-    // 对于常量数组，使用 __const.main.xxx 命名格式
-    std::string constArrayName = "__const.main." + nameNode->name;
+    // 对于常量数组，使用 __const.main.xxx 命名格式，并添加唯一计数器避免重名
+    static int constArrayCounter = 0;
+    std::string constArrayName = "__const.main." + nameNode->name + "." + std::to_string(constArrayCounter++);
     Value * globalVar = module->newVarValue(arrayType, constArrayName);
     if (!globalVar) {
         printf("Error: Failed to create global constant '%s'.\n", nameNode->name.c_str());
@@ -3830,9 +3851,41 @@ bool IRGenerator::ir_array_init(ast_node * node)
         if (son->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
             // 嵌套的数组初始化列表 - 传递正确的数组类型
             if (elementType && elementType->isArrayType()) {
-                // 如果当前类型是数组类型，嵌套初始化应该使用元素类型（也是数组类型）
-                son->type = const_cast<Type *>(static_cast<const ArrayType *>(elementType)->getElementType());
-                printf("Debug: Setting nested array init type to %s\n", son->type->toString().c_str());
+                // 对于多维数组，需要正确推断嵌套初始化的类型
+                const ArrayType * elementArrayType = static_cast<const ArrayType *>(elementType);
+
+                // 检查嵌套初始化的内容来决定类型
+                // 如果嵌套初始化包含基础类型元素（如数字），则应该使用最内层的数组类型
+                bool hasBasicElements = false;
+                for (auto grandson: son->sons) {
+                    if (grandson->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT ||
+                        grandson->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
+                        hasBasicElements = true;
+                        break;
+                    }
+                }
+
+                if (hasBasicElements) {
+                    // 如果包含基础元素，找到最内层的数组类型
+                    const Type * innerMostArrayType = elementType;
+                    while (innerMostArrayType->isArrayType()) {
+                        const ArrayType * currentArrayType = static_cast<const ArrayType *>(innerMostArrayType);
+                        if (currentArrayType->getElementType()->isArrayType()) {
+                            innerMostArrayType = currentArrayType->getElementType();
+                        } else {
+                            // 找到了最内层的数组类型
+                            break;
+                        }
+                    }
+                    son->type = const_cast<Type *>(innerMostArrayType);
+                    printf("Debug: Setting nested array init type to %s (innermost for basic elements)\n",
+                           son->type->toString().c_str());
+                } else {
+                    // 如果不包含基础元素，使用元素类型
+                    son->type = const_cast<Type *>(elementArrayType->getElementType());
+                    printf("Debug: Setting nested array init type to %s (element type)\n",
+                           son->type->toString().c_str());
+                }
             } else {
                 // 如果不是数组类型，使用内层元素类型
                 son->type = innerElementType;
@@ -3950,14 +4003,19 @@ bool IRGenerator::ir_array_init(ast_node * node)
         arrayType = static_cast<ArrayType *>(node->type);
         printf("Debug: Using node-provided array type: %s\n", arrayType->toString().c_str());
 
-        // 对于2D数组，计算真正的总元素个数
+        // 对于多维数组，计算真正的总元素个数
         int expectedElements = arrayType->getTotalElements();
-        int realTotalElements = expectedElements;
+        int realTotalElements = 1;
 
-        // 如果是多维数组，需要计算所有维度的总元素个数
-        if (arrayType->getElementType()->isArrayType()) {
-            const ArrayType * innerArrayType = static_cast<const ArrayType *>(arrayType->getElementType());
-            realTotalElements = expectedElements * innerArrayType->getTotalElements();
+        // 递归计算所有嵌套维度的总元素个数
+        const Type * currentType = arrayType;
+        while (currentType && currentType->isArrayType()) {
+            const ArrayType * currentArrayType = static_cast<const ArrayType *>(currentType);
+            const std::vector<int> & dims = currentArrayType->getDimensions();
+            if (!dims.empty()) {
+                realTotalElements *= dims[0];
+            }
+            currentType = currentArrayType->getElementType();
         }
 
         printf("Debug: Array expects %d elements (outer), %d total elements, got %zu init values\n",
@@ -3974,9 +4032,11 @@ bool IRGenerator::ir_array_init(ast_node * node)
                     break;
                 }
             }
-            if (allBasicConstants && initValues.size() == static_cast<size_t>(realTotalElements)) {
+            if (allBasicConstants && initValues.size() <= static_cast<size_t>(realTotalElements)) {
                 isFlatInitialization = true;
-                printf("Debug: Detected flat initialization with %zu elements\n", initValues.size());
+                printf("Debug: Detected flat initialization with %zu elements (total: %d)\n",
+                       initValues.size(),
+                       realTotalElements);
             }
         }
 
@@ -4022,7 +4082,24 @@ bool IRGenerator::ir_array_init(ast_node * node)
         printf("Debug: Using parent-provided array type: %s\n", arrayType->toString().c_str());
 
         // 验证初始化值数量是否匹配
-        int expectedElements = arrayType->getTotalElements();
+        // 对于多维数组，需要计算所有维度的总元素个数
+        int expectedElements = 1;
+
+        // 递归计算所有嵌套维度的总元素个数
+        const Type * currentType = arrayType;
+        while (currentType && currentType->isArrayType()) {
+            const ArrayType * currentArrayType = static_cast<const ArrayType *>(currentType);
+            const std::vector<int> & dims = currentArrayType->getDimensions();
+            if (!dims.empty()) {
+                expectedElements *= dims[0];
+            }
+            currentType = currentArrayType->getElementType();
+        }
+
+        printf("Debug: Calculated expected elements: %d for array type %s\n",
+               expectedElements,
+               arrayType->toString().c_str());
+
         if (initValues.size() != static_cast<size_t>(expectedElements)) {
             printf("Warning: Initializer has %zu elements, but array expects %d elements\n",
                    initValues.size(),
@@ -4198,8 +4275,9 @@ bool IRGenerator::ir_array_init(ast_node * node)
                 // 全局作用域：普通全局数组变量，直接使用变量名
                 globalArrayName = node->name;
             } else {
-                // 局部作用域：使用__const.main.前缀
-                globalArrayName = "__const.main." + node->name;
+                // 局部作用域：使用__const.main.前缀，并添加唯一计数器避免重名
+                static int localArrayCounter = 0;
+                globalArrayName = "__const.main." + node->name + "." + std::to_string(localArrayCounter++);
             }
         }
         printf("Debug: Creating top-level array with name '%s', type %s\n",
