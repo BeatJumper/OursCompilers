@@ -27,19 +27,6 @@ GlobalVariable::formatArrayInitializer(ArrayType * arrayType, const std::vector<
     int outerSize = dimensions[0];
     Type * elementType = arrayType->getElementType();
 
-    printf("Debug: formatArrayInitializer - arrayType: %s, outerSize: %d, startIndex: %d, values.size(): %zu\n",
-           arrayType->toString().c_str(),
-           outerSize,
-           startIndex,
-           values.size());
-
-    // 打印前几个值用于调试
-    for (size_t i = startIndex; i < values.size() && i < startIndex + 8; ++i) {
-        if (auto constInt = dynamic_cast<ConstInt *>(values[i])) {
-            printf("  values[%zu] = %d\n", i, constInt->getVal());
-        }
-    }
-
     result += "[";
 
     if (elementType->isArrayType()) {

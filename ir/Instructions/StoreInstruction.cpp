@@ -18,18 +18,14 @@ void StoreInstruction::toString(std::string & str)
         return;
     }
 
-    // 修复：确保指针类型正确显示星号
+    // 获取类型字符串
     std::string valueTypeStr = value->getType()->toString();
     std::string ptrTypeStr = ptr->getType()->toString();
 
-    // 如果指针类型字符串不包含星号，则添加星号
-    if (ptrTypeStr.find('*') == std::string::npos) {
-        ptrTypeStr += "*";
-    }
-
-    // 修复：确保不重复添加星号
-    // value的类型应该是基本类型（如i32）
-    // ptr的类型应该是指针类型（如i32*）
+    // LLVM IR store指令格式：store <ty> <value>, <ty>* <pointer>, align <alignment>
+    // 其中<ty>*表示指向<ty>类型的指针
+    // 例如：store i32 %0, i32* %1, align 4
+    //      store i32* %0, i32** %1, align 8
     str = "store " + valueTypeStr + " " + value->getIRName() + ", " + ptrTypeStr + " " + ptr->getIRName() + ", align " +
           std::to_string(align);
 }

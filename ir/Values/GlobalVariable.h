@@ -88,12 +88,18 @@ public:
             }
         }
 
-        str += getType()->toString();
+        // 使用存储类型而不是变量类型来生成LLVM IR
+        if (storageType) {
+            str += storageType->toString();
+        } else {
+            str += getType()->toString();
+        }
 
         // 处理初值列表
         if (!initValueList.empty()) {
-            if (getType()->isArrayType()) {
-                ArrayType * arrayType = static_cast<ArrayType *>(getType());
+            Type * typeForInit = storageType ? storageType : getType();
+            if (typeForInit->isArrayType()) {
+                ArrayType * arrayType = static_cast<ArrayType *>(typeForInit);
                 auto result = formatArrayInitializer(arrayType, initValueList, 0);
                 str += " " + result.first;
             } else {
@@ -117,7 +123,8 @@ public:
             }
         } else {
             // 没有初始化值时，根据类型选择合适的初始化方式
-            if (getType()->isArrayType()) {
+            Type * typeForInit = storageType ? storageType : getType();
+            if (typeForInit->isArrayType()) {
                 str += " zeroinitializer";
             } else {
                 str += " 0";
@@ -165,6 +172,24 @@ public:
     {
         inBSSSection = isBSS;
     }
+
+    ///
+    /// @brief 设置存储类型
+    /// @param type 存储类型
+    ///
+    void setStorageType(Type * type)
+    {
+        storageType = type;
+    }
+
+    ///
+    /// @brief 获取存储类型
+    /// @return 存储类型
+    ///
+    Type * getStorageType() const
+    {
+        return storageType;
+    }
     ///
     /// @brief 检查是否是常量
     /// @return true 是常量
@@ -189,6 +214,11 @@ private:
     /// @brief 常量标记
     ///
     bool isConstant = false;
+
+    ///
+    /// @brief 存储类型（用于LLVM IR生成）
+    ///
+    Type * storageType = nullptr;
 
 private:
     std::vector<Value *> initValueList; // 初始值列表

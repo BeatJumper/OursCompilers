@@ -257,8 +257,10 @@ bool IRGenerator::ir_function_define(ast_node * node)
     // 为非void函数创建返回值变量
     LocalVariable * retValue = nullptr;
     if (!type_node->type->isVoidType()) {
-        retValue = static_cast<LocalVariable *>(module->newVarValue(type_node->type, "__ret"));
-        AllocaInstruction * allocaRet = new AllocaInstruction(newFunc, retValue, type_node->type, 4);
+        Type * retType = type_node->type;             // 返回值类型
+        Type * retVarType = new PointerType(retType); // 返回值变量类型（指针类型）
+        retValue = static_cast<LocalVariable *>(module->newVarValue(retVarType, "__ret"));
+        AllocaInstruction * allocaRet = new AllocaInstruction(newFunc, retValue, retType, 4);
         irCode.addInst(allocaRet);
 
         // 只有main函数初始化返回值为0
@@ -285,7 +287,23 @@ bool IRGenerator::ir_function_define(ast_node * node)
     // 将函数体的指令直接添加到函数的IR中
     irCode.addInst(block_node->blockInsts);
 
-    // 添加函数出口标签
+    // 检查函数体的最后一条指令是否是终结指令
+    bool needsGotoToExit = true;
+    if (!irCode.getCode().empty()) {
+        Instruction * lastInst = irCode.getCode().back();
+        IRInstOperator op = lastInst->getOp();
+        if (op == IRInstOperator::IRINST_OP_GOTO || op == IRInstOperator::IRINST_OP_RET ||
+            op == IRInstOperator::IRINST_OP_BRANCH) {
+            needsGotoToExit = false;
+        }
+    }
+
+    if (needsGotoToExit) {
+        // 添加跳转到出口标签的指令
+        irCode.addInst(new GotoInstruction(newFunc, exitLabelInst));
+    }
+
+    // 总是添加函数出口标签（return语句可能会跳转到这里）
     irCode.addInst(exitLabelInst);
 
     // 添加函数返回指令
@@ -358,8 +376,20 @@ bool IRGenerator::ir_function_formal_params(ast_node * node)
         currentFunc->getParams().push_back(param);
 
         // 创建一个局部变量表示在函数体内使用的参数
-        // 函数参数的局部变量类型应该与参数类型相同，不是指针类型
-        Type * localVarType = typeNode->type;
+        Type * paramType = typeNode->type;
+        Type * allocaType;   // 要分配的类型
+        Type * localVarType; // 局部变量的类型
+
+        if (paramType->isPointerType()) {
+            // 数组参数：参数类型是i32*，需要分配i32*类型的空间，局部变量类型是i32**
+            allocaType = paramType;                    // 分配i32*类型的空间
+            localVarType = new PointerType(paramType); // 局部变量类型是i32**
+        } else {
+            // 普通参数：参数类型是i32，需要分配i32类型的空间，局部变量类型是i32*
+            allocaType = paramType;                    // 分配i32类型的空间
+            localVarType = new PointerType(paramType); // 局部变量类型是i32*
+        }
+
         Value * paramVar = module->newVarValue(localVarType, nameNode->name);
 
         if (!paramVar) {
@@ -370,9 +400,9 @@ bool IRGenerator::ir_function_formal_params(ast_node * node)
         // 转换为 LocalVariable 类型
         LocalVariable * localParamVar = static_cast<LocalVariable *>(paramVar);
 
-        // 创建 alloca 指令，分配参数类型的空间，使用4字节对齐（int类型）
-        uint32_t alignSize = localVarType->getSize();
-        AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, paramVar, localVarType, alignSize);
+        // 创建 alloca 指令，分配参数类型的空间
+        uint32_t alignSize = allocaType->getSize();
+        AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, paramVar, allocaType, alignSize);
         currentFunc->getInterCode().addInst(allocaInst);
 
         // 设置形参节点的值为创建的局部变量（函数体内使用这个变量）
@@ -443,9 +473,9 @@ bool IRGenerator::ir_function_call(ast_node * node)
 
             Value * paramValue = nullptr;
 
-            // 检查参数是否是数组类型，如果是数组需要传递首地址
+            // 检查参数类型，处理数组到指针的转换
             if (temp->val->getType()->isArrayType()) {
-                // 数组参数：需要获取数组的首地址
+                // 直接的数组类型：需要获取数组的首地址
                 // 使用 getelementptr 获取数组首元素地址
                 ConstInt * zeroConst = module->newConstInt(0);
                 ConstInt * zeroConst2 = module->newConstInt(0);
@@ -454,6 +484,28 @@ bool IRGenerator::ir_function_call(ast_node * node)
                     new GetelementptrInstruction(currentFunc, temp->val, zeroConst, zeroConst2);
                 node->blockInsts.addInst(gepInst);
                 paramValue = gepInst;
+            } else if (temp->val->getType()->isPointerType()) {
+                // 检查是否是指向数组的指针（如数组访问的结果）
+                const PointerType * ptrType = static_cast<const PointerType *>(temp->val->getType());
+                if (ptrType->getPointeeType()->isArrayType()) {
+                    // 指向数组的指针：需要转换为指向元素的指针
+                    // 使用 getelementptr 获取数组首元素地址
+                    ConstInt * zeroConst = module->newConstInt(0);
+                    ConstInt * zeroConst2 = module->newConstInt(0);
+
+                    GetelementptrInstruction * gepInst =
+                        new GetelementptrInstruction(currentFunc, temp->val, zeroConst, zeroConst2);
+                    node->blockInsts.addInst(gepInst);
+                    paramValue = gepInst;
+                } else if (needsLoad(temp->val)) {
+                    // 普通变量（如局部变量），需要加载值
+                    LoadInstruction * loadParam = new LoadInstruction(currentFunc, temp->val, temp->val, 4);
+                    node->blockInsts.addInst(loadParam);
+                    paramValue = loadParam;
+                } else {
+                    // 其他指针类型（如函数参数），直接使用
+                    paramValue = temp->val;
+                }
             } else if (needsLoad(temp->val)) {
                 // 参数是变量，需要加载
                 LoadInstruction * loadParam = new LoadInstruction(currentFunc, temp->val, temp->val, 4);
@@ -1804,16 +1856,19 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
     }
 
     // 为变量分配Value和栈空间
-    Value * varValue = module->newVarValue(typeNode->type, varNode->name);
+    // 变量的类型应该是指向分配类型的指针类型
+    Type * allocaType = typeNode->type;           // 要分配的类型
+    Type * varType = new PointerType(allocaType); // 变量类型（指针类型）
+    Value * varValue = module->newVarValue(varType, varNode->name);
     if (!varValue) {
         printf("Error: Failed to allocate variable '%s' in ir_variable_declare.\n", varNode->name.c_str());
         return false;
     }
 
     // 计算对齐大小（基本类型使用类型大小，数组使用16字节对齐）
-    uint32_t alignSize = typeNode->type->isArrayType() ? 16 : typeNode->type->getSize();
+    uint32_t alignSize = allocaType->isArrayType() ? 16 : allocaType->getSize();
 
-    AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, varValue, typeNode->type, alignSize);
+    AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, varValue, allocaType, alignSize);
     node->blockInsts.addInst(allocaInst);
     varNode->val = varValue;
 
@@ -2205,10 +2260,11 @@ bool IRGenerator::ir_if_else(ast_node * node)
     if (!ir_visit_ast_node(thenNode)) {
         return false;
     }
-    node->blockInsts.addInst(thenNode->blockInsts);
-
     // 检查then分支本身是否已经有终结指令（如break、continue、return）
+    // 必须在addInst之前检查，因为addInst会清空原来的指令序列
     bool thenHasTerminator = hasTerminatorInstruction(thenNode->blockInsts);
+
+    node->blockInsts.addInst(thenNode->blockInsts);
     if (!thenHasTerminator) {
         // 只有在没有终结指令时才添加跳转到结束标签
         node->blockInsts.addInst(new GotoInstruction(currentFunc, endLabel));
@@ -2222,10 +2278,12 @@ bool IRGenerator::ir_if_else(ast_node * node)
         if (!ir_visit_ast_node(elseNode)) {
             return false;
         }
-        node->blockInsts.addInst(elseNode->blockInsts);
 
         // 检查else分支本身是否已经有终结指令
+        // 必须在addInst之前检查，因为addInst会清空原来的指令序列
         bool elseHasTerminator = hasTerminatorInstruction(elseNode->blockInsts);
+
+        node->blockInsts.addInst(elseNode->blockInsts);
         if (!elseHasTerminator) {
             // 只有在没有终结指令时才添加跳转到结束标签
             node->blockInsts.addInst(new GotoInstruction(currentFunc, endLabel));
@@ -3378,6 +3436,18 @@ bool IRGenerator::ir_global_const_array_declare(ast_node * node,
     nameNode->val = globalArray;
     node->val = globalArray;
 
+    // 重要：在全局作用域中注册原始名称的别名，使得函数内部可以通过原始名称找到这个全局常量数组
+    // 使用newVarValue方法创建别名，这会自动注册到符号表中
+    Value * aliasVar = module->newVarValue(arrayType, nameNode->name);
+    if (aliasVar) {
+        GlobalVariable * aliasGlobalVar = static_cast<GlobalVariable *>(aliasVar);
+        aliasGlobalVar->setConstant(true);
+        aliasGlobalVar->setBSSSection(false);
+        aliasGlobalVar->setAlignment(16);
+        aliasGlobalVar->setInitValueList(globalArray->getInitValueList());
+        printf("Debug: Created alias variable '%s' for global constant array\n", nameNode->name.c_str());
+    }
+
     // 收集生成的IR指令
     node->blockInsts.addInst(initExprNode->blockInsts);
 
@@ -3425,14 +3495,17 @@ bool IRGenerator::ir_local_const_declare(ast_node * node,
     }
 
     // 局部常量按照只读变量处理（生成 alloca + store）
-    Value * constVar = module->newVarValue(typeNode->type, nameNode->name);
+    // 常量变量的类型应该是指向常量类型的指针类型
+    Type * constType = typeNode->type;                // 常量类型
+    Type * constVarType = new PointerType(constType); // 常量变量类型（指针类型）
+    Value * constVar = module->newVarValue(constVarType, nameNode->name);
     if (!constVar) {
         printf("Error: Failed to create constant variable '%s'.\n", nameNode->name.c_str());
         return false;
     }
 
     // 创建alloca指令
-    AllocaInstruction * allocaInst = new AllocaInstruction(module->getCurrentFunction(), constVar, typeNode->type, 4);
+    AllocaInstruction * allocaInst = new AllocaInstruction(module->getCurrentFunction(), constVar, constType, 4);
     node->blockInsts.addInst(allocaInst);
 
     // 创建store指令
@@ -4038,13 +4111,10 @@ bool IRGenerator::ir_array_init(ast_node * node)
                arrayType->toString().c_str());
         GlobalVariable * constArray = module->newGlobalConstArray(arrayType, globalArrayName);
 
-        // 对于空初始化列表，需要填充零值
+        // 对于空初始化列表，不填充零值，让GlobalVariable的toString处理
         if (initValues.empty() && arrayType) {
-            int totalElements = arrayType->getTotalElements();
-            for (int i = 0; i < totalElements; ++i) {
-                initValues.push_back(module->newConstInt(0));
-            }
-            printf("Debug: Filled empty initializer with %d zero values\n", totalElements);
+            printf("Debug: Empty initializer detected, will use zeroinitializer in LLVM IR\n");
+            // 不填充零值，保持initValues为空，这样GlobalVariable会输出zeroinitializer
         }
 
         // 对于2D数组，需要重新组织扁平化的初始化值
@@ -4276,9 +4346,6 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
         return false;
     }
 
-    // 获取数组的总元素个数
-    int totalElements = arrayType->getTotalElements();
-
     // 检查是否是多维数组
     bool isMultiDim = arrayType->getElementType()->isArrayType();
 
@@ -4288,6 +4355,9 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
         const std::vector<int> & innerDims = innerArrayType->getDimensions();
         int innerSize = innerDims.empty() ? 1 : innerDims[0]; // 内层数组的大小
         int outerSize = dimensions[0];                        // 外层数组的大小
+
+        // 计算真正的总元素个数（递归计算所有嵌套维度）
+        int totalElements = outerSize * innerArrayType->getTotalElements();
 
         printf("Debug: Processing multi-dim array [%d][%d], total elements: %d\n", outerSize, innerSize, totalElements);
 
@@ -4352,6 +4422,7 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
         }
     } else {
         // 一维数组处理
+        int totalElements = arrayType->getTotalElements();
         printf("Debug: Processing 1D array, total elements: %d\n", totalElements);
 
         for (auto son: initNode->sons) {
@@ -4362,14 +4433,24 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
             }
         }
 
-        // 补零到指定大小
-        while (static_cast<int>(initValues.size()) < totalElements) {
-            if (arrayType->getElementType()->isIntegerType()) {
-                initValues.push_back(module->newConstInt(0));
-            } else if (arrayType->getElementType()->isFloatType()) {
-                initValues.push_back(module->newConstFloat(0.0f));
+        // 对于大数组，避免生成过多的零值
+        if (initValues.empty()) {
+            // 完全空的初始化列表，不填充零值，使用zeroinitializer
+            printf("Debug: Empty initialization list, will use zeroinitializer\n");
+        } else if (static_cast<int>(initValues.size()) < totalElements) {
+            // 部分初始化，只有在数组不太大时才填充零值
+            if (totalElements <= 10000) { // 限制填充的最大元素数
+                while (static_cast<int>(initValues.size()) < totalElements) {
+                    if (arrayType->getElementType()->isIntegerType()) {
+                        initValues.push_back(module->newConstInt(0));
+                    } else if (arrayType->getElementType()->isFloatType()) {
+                        initValues.push_back(module->newConstFloat(0.0f));
+                    } else {
+                        initValues.push_back(module->newConstInt(0));
+                    }
+                }
             } else {
-                initValues.push_back(module->newConstInt(0));
+                printf("Warning: Array too large (%d elements), partial initialization not supported\n", totalElements);
             }
         }
     }
@@ -4828,13 +4909,16 @@ bool IRGenerator::handleDynamicInitialization(ast_node * node,
                     // 创建一个临时变量来存储数组值
                     static int tempArrayCounter = 0;
                     std::string tempArrayName = "__temp_array_" + std::to_string(tempArrayCounter++);
-                    Value * tempVar = module->newVarValue(elementValue->getType(), tempArrayName);
+
+                    // 临时数组变量的类型应该是指向数组类型的指针类型
+                    Type * arrayType = elementValue->getType();      // 数组类型（如[1 x i32]）
+                    Type * tempVarType = new PointerType(arrayType); // 变量类型（如[1 x i32]*）
+                    Value * tempVar = module->newVarValue(tempVarType, tempArrayName);
                     if (!tempVar) {
                         printf("Error: Failed to create temporary array variable\n");
                         return false;
                     }
-                    AllocaInstruction * tempArrayVar =
-                        new AllocaInstruction(currentFunc, tempVar, elementValue->getType(), 4);
+                    AllocaInstruction * tempArrayVar = new AllocaInstruction(currentFunc, tempVar, arrayType, 4);
                     node->blockInsts.addInst(tempArrayVar);
 
                     // 使用tempVar作为指针，而不是tempArrayVar
