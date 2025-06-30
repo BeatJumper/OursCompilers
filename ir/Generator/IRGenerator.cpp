@@ -5270,6 +5270,17 @@ bool IRGenerator::handleDynamicInitialization(ast_node * node,
 
     // 获取数组的维度信息
     const std::vector<int> & outerDimensions = arrayType->getDimensions();
+
+    // 检查内层类型，判断是一维数组还是多维数组
+    Type * innerType = arrayType->getElementType();
+
+    // 如果是一维数组（内层类型不是数组类型），使用简单的逐元素赋值
+    if (outerDimensions.size() == 1 && !innerType->isArrayType()) {
+        printf("Debug: Processing 1D array dynamic initialization\n");
+        return handleOneDimensionalDynamicInit(node, arrayVar, arrayType, initExprNode);
+    }
+
+    // 以下是原有的多维数组处理逻辑
     if (outerDimensions.size() != 1) {
         printf("Error: Expected outer array dimension size 1, got %zu\n", outerDimensions.size());
         return false;
@@ -5286,8 +5297,7 @@ bool IRGenerator::handleDynamicInitialization(ast_node * node,
         printf("Debug: Array has fixed dimension: %d\n", outerDimensions[0]);
     }
 
-    // 检查内层是否也是数组类型
-    Type * innerType = arrayType->getElementType();
+    // 检查内层是否也是数组类型（多维数组情况）
     if (!innerType->isArrayType()) {
         printf("Error: Expected inner array type for 2D array\n");
         return false;
@@ -6159,6 +6169,71 @@ bool IRGenerator::ir_variable_declare_register_only(ast_node * node)
         }
     }
 
+    return true;
+}
+
+/// @brief 处理一维数组动态初始化
+/// @param node AST节点
+/// @param arrayVar 数组变量
+/// @param arrayType 数组类型
+/// @param initExprNode 初始化表达式节点
+/// @return 翻译是否成功
+bool IRGenerator::handleOneDimensionalDynamicInit(ast_node * node,
+                                                  Value * arrayVar,
+                                                  ArrayType * arrayType,
+                                                  ast_node * initExprNode)
+{
+    Function * currentFunc = module->getCurrentFunction();
+
+    printf("Debug: Processing 1D array dynamic initialization for array with %d elements\n",
+           arrayType->getDimensions()[0]);
+
+    // 获取数组维度
+    int arraySize = arrayType->getDimensions()[0];
+
+    // 逐个处理初始化元素
+    for (size_t i = 0; i < initExprNode->sons.size() && i < static_cast<size_t>(arraySize); ++i) {
+        ast_node * elementNode = initExprNode->sons[i];
+
+        // 处理元素表达式
+        if (!ir_visit_ast_node(elementNode)) {
+            printf("Error: Failed to process initialization element %zu\n", i);
+            return false;
+        }
+        node->blockInsts.addInst(elementNode->blockInsts);
+
+        Value * elementValue = elementNode->val;
+
+        // 如果元素值需要加载（如变量引用），先加载
+        if (needsLoad(elementValue)) {
+            LoadInstruction * loadInst = new LoadInstruction(currentFunc, elementValue, elementValue, 4);
+            node->blockInsts.addInst(loadInst);
+            elementValue = loadInst;
+        }
+
+        // 生成GEP指令获取数组元素地址
+        Value * firstIndex = module->newConstInt(0);                    // 第一个索引总是0（数组基址）
+        Value * secondIndex = module->newConstInt(static_cast<int>(i)); // 元素索引
+
+        GetelementptrInstruction * gepInst =
+            new GetelementptrInstruction(currentFunc, arrayVar, firstIndex, secondIndex);
+        node->blockInsts.addInst(gepInst);
+
+        // 生成store指令将值存储到数组元素
+        StoreInstruction * storeInst = new StoreInstruction(currentFunc, elementValue, gepInst);
+        node->blockInsts.addInst(storeInst);
+
+        printf("Debug: Generated store for element %zu\n", i);
+    }
+
+    // 如果初始化元素少于数组大小，剩余元素保持未初始化（或者可以选择初始化为0）
+    if (initExprNode->sons.size() < static_cast<size_t>(arraySize)) {
+        printf("Debug: Array has %d elements but only %zu initialization values provided\n",
+               arraySize,
+               initExprNode->sons.size());
+    }
+
+    printf("Debug: Completed 1D array dynamic initialization\n");
     return true;
 }
 

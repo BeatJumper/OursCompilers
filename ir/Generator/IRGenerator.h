@@ -428,6 +428,15 @@ private:
     /// @param initExprNode 初始化表达式节点
     /// @return 翻译是否成功
     bool handleDynamicInitialization(ast_node * node, Value * arrayVar, ArrayType * arrayType, ast_node * initExprNode);
+
+    /// @brief 处理一维数组动态初始化
+    /// @param node AST节点
+    /// @param arrayVar 数组变量
+    /// @param arrayType 数组类型
+    /// @param initExprNode 初始化表达式节点
+    /// @return 翻译是否成功
+    bool
+    handleOneDimensionalDynamicInit(ast_node * node, Value * arrayVar, ArrayType * arrayType, ast_node * initExprNode);
     /// @brief 浮点数加法AST节点翻译成线性中间IR
     /// @param node AST节点
     /// @return 翻译是否成功，true：成功，false：失败
