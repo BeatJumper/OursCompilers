@@ -23,6 +23,8 @@
 #include "StoreInstruction.h"
 #include "AllocaInstruction.h"
 #include "InterferenceGraph.h"
+#include "LoadInstruction.h"
+#include "VoidType.h"
 
 /// @brief 构造函数
 /// @param tab 符号表
@@ -320,24 +322,114 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
             for (node_IG * node: graph_ig->node_set) {
                 // assert(node->color != -1);
                 // std::cout << InterferenceGraph::ColorToRegId(node->color) << std::endl;
+                // printval(func->getParams()[0]);
+                printval(node->val);
                 node->val->setRegId(InterferenceGraph::ColorToRegId(node->color));
                 // std::cout << node->val->getRegId() << std::endl;
             }
             break;
         } else {
-            // TODO 完成变量溢出的工作
             assert(false);
+            printf("溢出\n");
+            // 完成变量溢出的工作
+            auto x = graph_ig->uncolored_node_set.end();
+            x--;
+            /*
+            while ((*x)->val->getRegId() != -1) {
+                x--;
+            }
+            // 首先取出目前干涉图中度数最高,且没有预定寄存器的Value
+            Value * most_degree_val = (*x)->val;
+            */
+            // 首先取出目前干涉图中度数最高的Value
+            Value * most_degree_val = (*x)->val;
+            int32_t reg_now = most_degree_val->getRegId();
+            auto & insts = func->getInterCode().getInsts();
+
+            // 接下来尝试把该Value的所有出现都替换为新的Value和LocalVariable
+            for (int i = 0; i < insts.size(); i++) {
+                Value *regval_write = nullptr, *regval_read = nullptr;
+
+                // 用的是同一份栈空间
+                LocalVariable * localval = nullptr;
+
+                // 这里假定了一个instrction的DEF变量只会在{它自己，它的各个操作数}中出现唯一一次
+                if (insts[i] == most_degree_val) {
+                    // DEF是它自己的情况
+                    insts[i] = new Instruction(*insts[i]);
+                    insts[i]->setRegId(reg_now);
+                } else if (insts[i]->get_def_set().count(most_degree_val)) {
+                    // DEF是其中某一个操作数的情况
+                    if (localval == nullptr) {
+                        localval = func->newLocalVarValue(IntegerType::getTypeInt());
+                    }
+                    regval_write = new Value(IntegerType::getTypeInt());
+                    regval_write->setRegId(reg_now);
+                    Instruction * strinst = new StoreInstruction(func, regval_write, localval);
+                    insts.insert(insts.begin() + i + 1, strinst);
+                    for (int k = 0; k < insts[i]->getOperandsNum(); k++) {
+                        if (insts[i]->getOperand(k) == most_degree_val) {
+                            insts[i]->getOperands()[k]->setUsee(regval_write);
+                            break;
+                        }
+                    }
+                }
+
+                // 认定接下来剩下的Value都是USE出现的，也进行改写
+                if (insts[i]->get_use_set().count(most_degree_val)) {
+                    if (localval == nullptr) {
+                        localval = func->newLocalVarValue(IntegerType::getTypeInt());
+                    }
+                    regval_read = new Value(IntegerType::getTypeInt());
+                    regval_read->setRegId(reg_now);
+                    Instruction * ldrinst = new LoadInstruction(func, regval_read, localval);
+                    insts.insert(insts.begin() + i, ldrinst);
+                    i++;
+                    for (int k = 0; k < insts[i]->getOperandsNum(); k++) {
+                        if (insts[i]->getOperand(k) == most_degree_val) {
+                            insts[i]->getOperands()[k]->setUsee(regval_read);
+                            break;
+                        }
+                    }
+                }
+            }
         }
     }
 
-    // 为局部变量和临时变量在栈内分配空间，指定偏移，进行栈空间的分配
+    // 这里加一个set临时存储保护寄存器，因为同一个寄存器可能多次加入，这里用set可以去重。
+    std::set<int32_t> protectedreg_set;
+    // 如果用到了保护寄存器，就加进保护寄存器集合
+    for (Instruction * inst: func->getInterCode().getCode()) {
+        for (Value * val: inst->get_use_set()) {
+            // 这里为什么有val->getRegId() < 32？因为要考虑到本系统目前给浮点寄存器分配了大于31的regID
+            if (val->getRegId() > 15 && val->getRegId() < 32) {
+                protectedreg_set.insert(val->getRegId());
+            }
+        }
+        for (Value * val: inst->get_def_set()) {
+            if (val->getRegId() > 15 && val->getRegId() < 32) {
+                protectedreg_set.insert(val->getRegId());
+            }
+        }
+    }
+    // 然后把集合元素加进真正要用的链表里
+    for (int32_t reg: protectedreg_set) {
+        protectedRegNo.push_back(reg);
+    }
+
+    // 保护寄存器的内存分配见ILocArm64::allocStack和ILocArm64::emitFunctionEpilogue处改动
+    /*
+    for (int32_t reg: protectedreg_set) {
+        LocalVariable * newVal = func->newLocalVarValue(PlatformArm64::intRegVal[reg]->getType());
+        Value * regval = new Value(PlatformArm64::intRegVal[reg]->getType());
+        func->get_localspace_for_protected().push_back(newVal);
+        func->get_regvalue_for_protected().push_back(regval);
+    }
+    */
+
+    // 为局部变量和临时变量，以及被保护寄存器在栈内分配空间，指定偏移，进行栈空间的分配
     stackAlloc(func);
     printf("为局部变量和临时变量在栈内分配空间\n");
-
-    // 函数形参要求前8个寄存器分配，后面的参数采用栈传递，实现实参的值传递给形参
-    // 这一步是必须的
-    adjustFormalParamInsts(func);
-    printf("函数形参\n");
     // GenBasicBlocks(func);
     // printf("基本块划分成功\n");
 
@@ -501,7 +593,7 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
     auto & insts = func->getInterCode().getInsts();
 
     // 函数返回值用x0寄存器，若函数调用有返回值，则赋值x0到对应寄存器
-    // 通过栈传递的实参，采用SP + 偏移的方式殉职，偏移肯定非负。
+    // 通过栈传递的实参，采用SP + 偏移的方式寻址，偏移肯定非负。
     for (auto pIter = insts.begin(); pIter != insts.end(); pIter++) {
 
         // 检查是否是函数调用指令，并且含有返回值
@@ -519,21 +611,39 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 // 获取实参的值
                 auto arg = callInst->getOperand(k);
                 // 新建一个内存变量，把实参的值保存到栈中，以便栈传值，其寻址为SP + 非负偏移
-                MemVariable * newVal = func->newMemVariable(IntegerType::getTypeInt());
+
+                // 注意：这里按照约定，把LocalVariable当做内存变量使用
+                LocalVariable * newVal = func->newLocalVarValue(IntegerType::getTypeInt());
                 newVal->setMemoryAddr(ARM64_SP_REG_NO, esp);
                 esp += 8;
 
                 // 引入赋值指令，把实参的值保存到内存变量上
-                Instruction * assignInst = new MoveInstruction(func, newVal, arg);
+                Instruction * assignInst = new StoreInstruction(func, arg, newVal);
 
                 // 更换实参变量为内存变量
-                callInst->setOperand(k, newVal);
+                // callInst->setOperand(k, newVal);
+                /*
+                 * 这里添加一个新的VoidValue的理由：
+                 * 为了形式化添加DEF，之后翻译
+                 * 汇编时检测到void就不翻译即可。
+                 */
+                Value * voidvalue = new Value(VoidType::getType());
+                callInst->setOperand(k, voidvalue);
 
                 // 赋值指令插入到函数调用指令的前面
                 // 函数调用指令前插入后，pIter仍指向函数调用指令
                 pIter = insts.insert(pIter, assignInst);
-                printf("插入一条赋值指令\n");
+                printf("插入一条Store指令（给函数调用的第8个以后的参数）\n");
                 pIter++;
+            }
+            for (int32_t k = argNum; k < PlatformArm64::CallerSaveRegNum; k++) {
+                /*
+                 * 这里添加一个新的VoidValue的理由：
+                 * 为了形式化添加DEF，之后翻译
+                 * 汇编时检测到void就不翻译即可。
+                 */
+                Value * voidvalue = new Value(VoidType::getType());
+                callInst->addOperand(voidvalue);
             }
 
             // ARM64的函数调用约定，前8个参数通过寄存器传递
@@ -554,7 +664,7 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
 
                     // 函数调用指令前插入后，pIter仍指向函数调用指令
                     pIter = insts.insert(pIter, assignInst);
-                    printf("插入第%d个参数的赋值指令\n", k);
+                    printf("为函数调用插入第%d个参数的赋值指令\n", k);
                     pIter++;
                 }
 
@@ -577,7 +687,16 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
 
             // 赋值指令
             if (callInst->hasResultValue()) {
-
+                callInst->setRegId(0);
+                /*
+                下面这段代码弃用。理由：
+                函数返回值会存入w0，这是已经由被调用一方保证了的
+                作为调用方，应该保证的是w0在函数调用时处于可占用状态，
+                而不是在函数调用完之后把返回值存入w0，因为返回值一
+                定会出现在w0，换句话说，这里应该做的是记下它强占了
+                w0，在后面通过染色的方式保证w0此时会空出来。
+                */
+                /*
                 if (callInst->getRegId() == 0) {
                     // 结果变量的寄存器和返回值寄存器一样，则什么都不需要做
                     ;
@@ -593,7 +712,19 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                     pIter = insts.insert(pIter + 1, assignInst);
                     printf("插入一条赋值指令\n");
                 }
+                */
             }
+
+            // 这段代码弃用，理由：不用再加临时的USE了
+            /*
+            // 形式化表达函数调用指令对W0~W15产生的USE。
+            Value * onlyval = new Value(VoidType::getType());
+            for (int index = 0; index < PlatformArm64::CallerSaveRegNum; index++) {
+                Value * val = callInst->getOperand(index);
+                MoveInstruction * movinst = new MoveInstruction(func, onlyval, val);
+                insts.insert(pIter + 1, movinst);
+            }
+            */
         }
     }
 }
@@ -614,8 +745,9 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
 
     // 只处理未分配到寄存器的局部变量
     for (auto local: func->getVarValues()) {
-        if (local->getRegId() != -1) {
-            continue; // 跳过已分配寄存器的变量
+        int64_t offset;
+        if (local->getMemoryAddr(nullptr, &offset)) {
+            continue; // 跳过已分配内存的变量
         }
 
         // 检查是否是数组类型的局部变量，如果是则跳过（它们由alloca指令处理）

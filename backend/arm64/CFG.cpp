@@ -6,9 +6,15 @@
 #include "AllocaInstruction.h"
 #include "StoreInstruction.h"
 #include "LoadInstruction.h"
+#include "MoveInstruction.h"
+#include "FuncCallInstruction.h"
+#include "VoidType.h"
 
 ControlFlowGraph::ControlFlowGraph(Function * func)
 {
+    // 记录所属函数
+    this->func = func;
+
     // 对基本块表里每个基本块都创建一个新的控制流节点
     for (InterCode * BasicIRBlock: func->getBasicBlocks()) {
         Node_CFG * node = new Node_CFG(this, BasicIRBlock);
@@ -67,60 +73,6 @@ Node_CFG ** Node_CFG::get_next_nodes()
     return next_nodes;
 }
 
-Node_Dataflow::Node_Dataflow(Instruction * _inst) : inst(_inst)
-{
-    /*
-    // 如果是void的返回值，则返回值不占用寄存器
-    if (inst->hasResultValue()) {
-        def_set.insert(inst);
-    }
-
-    for (auto usee: inst->getOperandsValue()) {
-        if (def_set.count(usee) == 0) {
-            // use集中不能包含刚刚def的元素
-            use_set.insert(usee);
-        }
-    }
-    */
-    /*
-     * 这里添加一系列指令类型检测的原因：
-     * 有的指令把不产生数据流的变量也存进了操作数，
-     * 同时有的指令的返回值不是他自己的Instruction*
-     * ......由于各种原因所以需要特判。
-     */
-    // printf("产生数据流节点\n");
-    if (Instanceof(inst, AllocaInstruction *, _inst); inst) {
-        // Alloca指令分配栈空间，其结果是栈地址，不应该参与寄存器分配
-        // alloca指令的结果应该直接映射到栈地址，不需要寄存器
-        // 因此不将alloca指令加入def_set，避免参与寄存器分配
-    } else if (Instanceof(inst, StoreInstruction *, _inst)) {
-        use_set.insert(inst->getOperand(0));
-    } else if (Instanceof(inst, LoadInstruction *, _inst)) {
-        def_set.insert(inst);
-    } else if (Instanceof(inst, Instruction *, _inst)) {
-        // printf("其它指令\n");
-        //  Instanceof(inst, Instruction *, _inst);
-        if (inst->hasResultValue()) {
-            def_set.insert(inst);
-        }
-
-        for (auto usee: inst->getOperandsValue()) {
-            // 除了store指令以外的立即数都不需要寄存器
-            // 同时alloca指令也不需要寄存器，因为它们的结果是栈地址
-            if (dynamic_cast<Constant *>(usee) == nullptr && def_set.count(usee) == 0 &&
-                dynamic_cast<AllocaInstruction *>(usee) == nullptr) {
-                // use集中不能包含刚刚def的元素和alloca指令
-                use_set.insert(usee);
-            }
-        }
-    }
-}
-
-std::vector<Node_Dataflow *> & Node_CFG::get_dataflow_list()
-{
-    return dataflow_list;
-}
-
 /*
 std::set<Value *> & ControlFlowGraph::get_value_list()
 {
@@ -177,8 +129,8 @@ Node_CFG::Node_CFG(ControlFlowGraph * _graph, InterCode * BasicIRBlock)
     */
 
     for (Instruction * inst: (BasicIRBlock->getInsts())) {
-        // 添加语句对应的数据流节点
-        dataflow_list.push_back(new Node_Dataflow(inst));
+        // 计算DEF和USE
+        inst->transfer();
 
         // get_value_list()方法弃用
         /*

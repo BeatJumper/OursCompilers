@@ -16,10 +16,13 @@
 
 #include <cstdlib>
 #include <string>
+#include <set>
 
 #include "IRConstant.h"
 #include "Function.h"
 #include "Module.h"
+#include "Liveness.h"
+#include "CFG.h"
 
 /// @brief 指定函数名字、函数类型的构造函数
 /// @param _name 函数名称
@@ -212,6 +215,16 @@ std::vector<int32_t> & Function::getProtectedReg()
 std::string & Function::getProtectedRegStr()
 {
     return protectedRegStr;
+}
+
+std::vector<LocalVariable *> & Function::get_localspace_for_protected()
+{
+    return localspace_for_protected;
+}
+
+std::vector<Value *> & Function::get_regvalue_for_protected()
+{
+    return regvalue_for_protected;
 }
 
 /// @brief 获取函数调用参数个数的最大值

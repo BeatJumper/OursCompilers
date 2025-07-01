@@ -11,16 +11,17 @@
 #include "CodeGeneratorArm64.h"
 
 class ControlFlowGraph;
-struct Node_Dataflow;
 
 static void printval(Value * x)
 {
-    // std::cout << x->getIRName() << std::endl;
+    std::cout << x->getIRName() << std::endl;
+    /*
     if (Instanceof(y, Instruction *, x)) {
         std::string s;
         y->toString(s);
-        // std::cout << s << std::endl;
+        std::cout << s << std::endl;
     }
+    */
 }
 static void printset(std::set<Value *> & S)
 {
@@ -56,10 +57,6 @@ public:
     /// @return 基本块的子节点列表
     Node_CFG ** get_next_nodes();
 
-    /// @brief dataflow_list的getter
-    /// @return 基本块内的数据流语句清单
-    std::vector<Node_Dataflow *> & get_dataflow_list();
-
     /// @brief 对应IR代码块的getter
     /// @return 对应IR代码块
     InterCode * getIRCode();
@@ -78,8 +75,6 @@ private:
      * 此时无法正确把Label转为控制流块，只能用这个集合把Label暂存下来，等到所有块初始化好后再进行Label转换。
      */
     std::set<LabelInstruction *> son_labels;
-    /// @brief 基本块内所有IR语句的列表（包含数据流信息）
-    std::vector<Node_Dataflow *> dataflow_list;
     /// @brief 包含的IR代码块
     InterCode * IRCode;
 };
@@ -128,26 +123,6 @@ private:
     std::set<Value *> value_list;
     /// @brief 所属函数
     Function * func;
-};
-
-/// @brief IR语句对应的数据流
-struct Node_Dataflow {
-public:
-    /// @brief 构造函数
-    /// @param _inst 原始IR语句
-    Node_Dataflow(Instruction * _inst);
-    /// @brief 析构函数
-    ~Node_Dataflow();
-    /// @brief 活跃变量分析
-    std::set<Value *> liveIN;
-    /// @brief 活跃变量分析
-    std::set<Value *> liveOUT;
-    /// @brief 对应的原始IR语句
-    Instruction * inst;
-    /// @brief def集
-    std::set<Value *> def_set;
-    /// @brief use集
-    std::set<Value *> use_set;
 };
 
 #endif

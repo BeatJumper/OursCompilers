@@ -707,17 +707,20 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
     std::string s = "#" + std::to_string(totalSize);
     emit("sub", "sp", "sp", s);
 
+    // if (func->getExistFuncCall()) {
+    // 主函数不用调用其它函数所以不用保护寄存器
     if (func->getExistFuncCall()) {
-        // 非叶子函数：保存 FP 和 LR
-        int64_t saveOffset = totalSize - protectedRegNum * 8;
-
-        //使用stp指令
-        std::string validOff = "[sp, #" + std::to_string(saveOffset) + "]";
-        emit("stp", "x29", "x30", validOff);
-
-        // 设置新帧指针
-        emit("add", "x29", "sp", "#" + std::to_string(saveOffset));
+        auto & protectedRegNo = func->getProtectedReg();
+        for (int i = 0; i < protectedRegNo.size(); i++) {
+            std::string off = "[sp, #" + std::to_string(totalSize - (protectedRegNum - i) * 8) + "]";
+            // 非叶子函数：保存 FP 和 LR
+            // emit("stp", "x29", "x30", off);
+            emit("str", PlatformArm64::intRegVal[protectedRegNo[i]]->getName(), off);
+        }
     }
+    // 设置新帧指针
+    emit("add", "x29", "sp", std::to_string(totalSize - protectedRegNum * 8));
+    //}
 }
 
 /// @brief 调用函数fun
@@ -759,15 +762,21 @@ void ILocArm64::emitFunctionEpilogue(Function * func)
     if (func->getExistFuncCall()) {
         protectedRegNum = func->getProtectedReg().size();
     }
+    // std::string off = "[sp, #" + std::to_string(size - protectedRegNum * 8) + "]";
 
-    // 恢复FP和LR
+    // 恢复所有保护寄存器
+    // if (func->getExistFuncCall()) {
     if (func->getExistFuncCall()) {
-        int64_t saveOffset = size - protectedRegNum * 8;
-
-        std::string validOff = "[sp, #" + std::to_string(saveOffset) + "]";
-        emit("ldp", "x29", "x30", validOff);
+        auto & protectedRegNo = func->getProtectedReg();
+        for (int i = 0; i < protectedRegNo.size(); i++) {
+            std::string off = "[sp, #" + std::to_string(size - (protectedRegNum - i) * 8) + "]";
+            // 非叶子函数：保存 FP 和 LR
+            // emit("stp", "x29", "x30", off);
+            emit("ldr", PlatformArm64::intRegVal[protectedRegNo[i]]->getName(), off);
+        }
     }
-    // 检查栈恢复大小是否超出add指令的立即数范围（0-4095）
+    // emit("ldp", "x29", "x30", off);
+    //}
     std::string s = "#" + std::to_string(size);
     emit("add", "sp", "sp", s);
 

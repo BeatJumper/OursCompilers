@@ -16,6 +16,7 @@
 #pragma once
 
 #include "User.h"
+#include <set>
 
 class Function;
 
@@ -230,11 +231,40 @@ public:
         offset = _offset;
     }
 
+    std::set<Value *> & get_def_set()
+    {
+        return def_set;
+    }
+
+    std::set<Value *> & get_use_set()
+    {
+        return use_set;
+    }
+
+    std::set<Value *> & get_livein()
+    {
+        return liveIN;
+    }
+
+    std::set<Value *> & get_liveout()
+    {
+        return liveOUT;
+    }
+    /// @brief 对一条指令，计算DEF集与USE集
+    /// @param inst
+    void transfer();
+
 protected:
     ///
     /// @brief IR指令操作码
     ///
     enum IRInstOperator op = IRInstOperator::IRINST_OP_MAX;
+
+    /// @brief 指令的DEF集和USE集
+    std::set<Value *> def_set, use_set;
+
+    /// @brief 指令的LIVEIN和LIVEOUT
+    std::set<Value *> liveIN, liveOUT;
 
     ///
     /// @brief 是否是Dead指令

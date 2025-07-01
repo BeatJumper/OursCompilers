@@ -134,7 +134,7 @@ int32_t Value::getScopeLevel()
 int32_t Value::getRegId()
 {
     // assert(false);
-    std::cout << "getRegId() = " << regId << std::endl;
+    // std::cout << "getRegId() = " << regId << std::endl;
     return regId;
 }
 
@@ -153,5 +153,5 @@ bool Value::getMemoryAddr(int32_t * regId, int64_t * offset)
 void Value::setRegId(int32_t _regId)
 {
     regId = _regId;
-    std::cout << "setRegId " << regId << std::endl;
+    // std::cout << "setRegId " << regId << std::endl;
 }

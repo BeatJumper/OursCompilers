@@ -41,6 +41,8 @@
 #include "AllocaInstruction.h"
 #include "LoadInstruction.h"
 #include "GetelementptrInstruction.h"
+#include "CFG.h"
+#include "VoidType.h"
 
 /// @brief 构造函数
 /// @param _irCode 指令
@@ -209,6 +211,14 @@ void InstSelectorArm64::translate_assign(Instruction * inst)
 {
     Value * result = inst->getOperand(0);
     Value * arg1 = inst->getOperand(1);
+
+    /*
+     * 函数调用时,为了形式化表达一个活跃区间,引入了结果值为void的MOV
+     * 指令，所以这里检测到就不翻译了。
+     */
+    if (result->getType() == VoidType::getType()) {
+        return;
+    }
 
     int32_t arg1_regId = arg1->getRegId();
     int32_t result_regId = result->getRegId();
@@ -878,9 +888,13 @@ void InstSelectorArm64::translate_ret(Instruction * inst)
     Value * returnValue = func->getReturnValue();
 
     // 如果存在返回值，确保其位于x0寄存器
-    if (returnValue != nullptr) {
+    // if (returnValue != nullptr) {
+    if (inst->getOperandsNum()) {
+        returnValue = inst->getOperand(0);
         int32_t resultRegId = returnValue->getRegId();
-
+        /*TODO 在汇编阶段临时添加MOV原则上是不行的（至少在这个项目里），
+         * 因为MOV到的寄存器未必空闲，所以应当在寄存器分配前就加好MOV指令
+         */
         // 如果返回值未在x0中，进行寄存器移动
         if (resultRegId != 0) {
             printf("返回值未在x0中，进行寄存器移动:%d\n", resultRegId);

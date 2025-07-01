@@ -17,6 +17,7 @@
 
 #include <string>
 #include <vector>
+#include <set>
 
 #include "GlobalValue.h"
 #include "FunctionType.h"
@@ -25,6 +26,7 @@
 #include "MemVariable.h"
 #include "IRCode.h"
 
+class ControlFlowGraph;
 ///
 /// @brief 描述函数信息的类，是全局静态存储，其Value的类型为FunctionType
 ///
@@ -206,6 +208,14 @@ public:
     ///
     int getStackFrameSize();
 
+    /// @brief 获取为被保护寄存器准备的形式化localspace表
+    /// @return localspace表
+    std::vector<LocalVariable *> & get_localspace_for_protected();
+
+    /// @brief 获取为被保护寄存器准备的形式化regvalue表
+    /// @return regvalue表
+    std::vector<Value *> & get_regvalue_for_protected();
+
 private:
     ///
     /// @brief 函数的返回值类型，有点冗余，可删除，直接从type中取得即可
@@ -287,6 +297,12 @@ private:
     ///
     std::vector<int32_t> protectedRegs;
 
+    /// @brief 被保护的寄存器出入栈申请的空间
+    std::vector<LocalVariable *> localspace_for_protected;
+
+    /// @brief 被保护的寄存器出入栈所用的形式化变量
+
+    std::vector<Value *> regvalue_for_protected;
     ///
     /// @brief 被保护寄存器字符串
     ///
