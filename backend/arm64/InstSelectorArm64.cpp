@@ -835,6 +835,9 @@ void InstSelectorArm64::translate_store(Instruction * inst)
 
         return;
     }
+    if (MemVariable * constVal = dynamic_cast<MemVariable *>(arg1)) {
+        // 加载全局
+    }
 
     // 检查是否是常量
     if (ConstInt * constVal = dynamic_cast<ConstInt *>(arg1)) {
@@ -851,32 +854,40 @@ void InstSelectorArm64::translate_store(Instruction * inst)
     } else if (arg1_regId != -1) {
         // 寄存器 => 内存
         printf("寄存器 => 内存,寄存器号:%d\n", arg1_regId);
-
-        // 检查目标是否是getelementptr的结果，需要重新计算地址
-        int32_t dest_baseRegId = -1;
-        int64_t dest_offset = -1;
-        if (arg2->getMemoryAddr(&dest_baseRegId, &dest_offset)) {
-            printf("目标有内存地址信息\n");
-            // 目标有内存地址信息，重新计算地址到临时寄存器
-            int32_t temp_reg = ARM64_TMP_REG_NO;
-            std::string temp_reg_name = PlatformArm64::regName[temp_reg];
-            std::string base_reg_name = PlatformArm64::regName[dest_baseRegId];
-            std::string src_reg_name = PlatformArm64::regName[arg1_regId];
-
-            // 确保使用64位寄存器进行地址计算
-            if (temp_reg_name[0] == 'w')
-                temp_reg_name[0] = 'x';
-            if (base_reg_name[0] == 'w')
-                base_reg_name[0] = 'x';
-
-            // 重新计算目标地址，检查立即数范围
-            // if (dest_offset >= -512 && dest_offset <= 508)
+        if (arg1->getType()->isPointerType()) {
+            printf("Debug:检测正在将数组地址store,寄存器号:%d\n", arg1->getRegId());
+            int32_t dest_baseRegId = -1;
+            int64_t dest_offset = -1;
+            arg2->getMemoryAddr(&dest_baseRegId, &dest_offset);
             std::string s = "[" + PlatformArm64::regName[dest_baseRegId] + ",#" + std::to_string(dest_offset) + "]";
-            iloc.inst("str", PlatformArm64::regName[arg1_regId], s);
-
+            iloc.inst("str", PlatformArm64::regName[arg1_regId + 32], s);
         } else {
-            // 使用原来的方法
-            iloc.store_var(arg1_regId, arg2, ARM64_TMP_REG_NO);
+            // 检查目标是否是getelementptr的结果，需要重新计算地址
+            int32_t dest_baseRegId = -1;
+            int64_t dest_offset = -1;
+            if (arg2->getMemoryAddr(&dest_baseRegId, &dest_offset)) {
+                printf("目标有内存地址信息\n");
+                // 目标有内存地址信息，重新计算地址到临时寄存器
+                int32_t temp_reg = ARM64_TMP_REG_NO;
+                std::string temp_reg_name = PlatformArm64::regName[temp_reg];
+                std::string base_reg_name = PlatformArm64::regName[dest_baseRegId];
+                std::string src_reg_name = PlatformArm64::regName[arg1_regId];
+
+                // 确保使用64位寄存器进行地址计算
+                if (temp_reg_name[0] == 'w')
+                    temp_reg_name[0] = 'x';
+                if (base_reg_name[0] == 'w')
+                    base_reg_name[0] = 'x';
+
+                // 重新计算目标地址，检查立即数范围
+                // if (dest_offset >= -512 && dest_offset <= 508)
+                std::string s = "[" + PlatformArm64::regName[dest_baseRegId] + ",#" + std::to_string(dest_offset) + "]";
+                iloc.inst("str", PlatformArm64::regName[arg1_regId], s);
+
+            } else {
+                // 使用原来的方法
+                iloc.store_var(arg1_regId, arg2, ARM64_TMP_REG_NO);
+            }
         }
     }
 }

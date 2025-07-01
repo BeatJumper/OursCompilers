@@ -557,47 +557,8 @@ void ILocArm64::leaStack(int rs_reg_no, int base_reg_no, int64_t off)
 /// @param tmp_reg_No
 void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 {
-    // 重新计算栈帧大小，确保所有alloca指令的空间都被正确计算
-
-    // 重新计算实际需要的栈帧大小
-    // 先计算所有变量和临时值需要的最大偏移量
-    int64_t maxOffset = 0;
-
-    // 检查alloca指令的最大偏移
-    for (auto inst: func->getInterCode().getInsts()) {
-        if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
-            int32_t base;
-            int64_t offset;
-            if (inst->getMemoryAddr(&base, &offset)) {
-                Type * allocatedType = inst->getType();
-                int64_t size = allocatedType ? allocatedType->getSize() : 8;
-                size = (size + 7) & ~7; // 对齐到8字节
-                maxOffset = std::max(maxOffset, offset + size);
-            }
-        }
-    }
-
-    // 检查局部变量的最大偏移
-    for (auto & local: func->getVarValues()) {
-        int32_t base;
-        int64_t offset;
-        if (local->getMemoryAddr(&base, &offset)) {
-            maxOffset = std::max(maxOffset, offset + local->getType()->getSize());
-        }
-    }
-
-    // 检查临时变量的最大偏移
-    for (auto inst: func->getInterCode().getInsts()) {
-        if (inst->hasResultValue() && inst->getOp() != IRInstOperator::IRINST_OP_ALLOCA) {
-            int32_t base;
-            int64_t offset;
-            if (inst->getMemoryAddr(&base, &offset)) {
-                int32_t size = inst->getType()->getSize();
-                size += (4 - size % 4) % 4; // 对齐到4字节
-                maxOffset = std::max(maxOffset, offset + size);
-            }
-        }
-    }
+    // 计算栈帧加上保护寄存器的栈空间总大小
+    int64_t maxOffset = func->getMaxDep();
 
     int totalSize = maxOffset;
     int protectedRegNum = 0;
@@ -608,13 +569,10 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
         totalSize += protectedRegNum * 8;
     }
 
-    // 栈传参数空间(超过8个的参数)，先按4字节分配(int,float)
-    int stackArgSize = std::max(func->getRealArgcount() - 8, 0) * 4;
-    func->setExtraStackSize(stackArgSize);
-    totalSize += stackArgSize;
-
     // 对齐到16字节边界(ARM64要求)
     totalSize = (totalSize + 15) & ~15;
+
+    printf("生成函数序言,总栈空间大小:%d\n", totalSize);
 
     func->setStackFrameSize(totalSize);
 
@@ -622,92 +580,11 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
     int64_t saveOffset = totalSize - protectedRegNum * 8;
     std::string off;
 
-    // 检查偏移量是否在stp/ldp指令的有效范围内（-512到+504，且必须8字节对齐）
-    if (saveOffset >= -512 && saveOffset <= 504 && (saveOffset % 8) == 0) {
-        // 直接使用立即数偏移
-        off = "[sp, #" + std::to_string(saveOffset) + "]";
-    } else {
-        // 偏移量超出范围，使用寄存器间接寻址
-        // 这种情况下我们需要在函数序言中处理，暂时使用占位符
-        off = "[sp, #LARGE_OFFSET]";
-    }
-
-    // 局部变量空间 - 从alloca分配的空间之后开始分配
-    // 首先找到alloca指令分配的最大偏移量
-    int64_t maxAllocaOffset = 0;
-    for (auto inst: func->getInterCode().getInsts()) {
-        if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
-            int32_t base;
-            int64_t offset;
-            if (inst->getMemoryAddr(&base, &offset)) {
-                Type * allocatedType = inst->getType();
-                int64_t size = allocatedType ? allocatedType->getSize() : 8;
-                size = (size + 7) & ~7; // 对齐到8字节
-                maxAllocaOffset = std::max(maxAllocaOffset, offset + size);
-            }
-        }
-    }
-
-    // 从alloca空间之后开始分配局部变量
-    int64_t localVarOffset = maxAllocaOffset;
-
-    for (auto & local: func->getVarValues()) {
-        // 检查这个变量是否是alloca指令的结果
-        std::string localName = local->getName();
-
-        bool isAllocaResult = false;
-
-        // 检查是否已经通过alloca指令分配了内存
-        for (auto inst: func->getInterCode().getInsts()) {
-            if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
-                if (inst->getOperandsNum() > 0) {
-                    Value * allocaResult = inst->getOperand(0);
-                    if (allocaResult == local) {
-                        isAllocaResult = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (isAllocaResult) {
-            continue;
-        }
-
-        // 对齐到4字节边界
-        localVarOffset = (localVarOffset + 3) & ~3;
-        local->setOffset(localVarOffset);
-
-        localVarOffset += local->getType()->getSize();
-    }
-
-    // 重新设置临时变量的偏移量，确保在栈帧范围内
-    // 临时变量从局部变量空间之后开始分配
-    int64_t temp_offset = localVarOffset;
-
-    for (auto inst: func->getInterCode().getInsts()) {
-        if (inst->hasResultValue() && inst->getOp() != IRInstOperator::IRINST_OP_ALLOCA) {
-            // 跳过alloca指令，因为它们的内存地址已经在stackAlloc中设置
-            int32_t size = inst->getType()->getSize();
-            // 按照4字节的大小整数倍分配
-            size += (4 - size % 4) % 4;
-
-            // 检查是否已经有内存地址（可能是alloca指令的结果）
-            int32_t existing_base;
-            int64_t existing_offset;
-            if (!inst->getMemoryAddr(&existing_base, &existing_offset)) {
-                // 只有当指令还没有内存地址时才设置
-                // 修复：应该递增偏移量，而不是递减
-                inst->setMemoryAddr(ARM64_SP_REG_NO, temp_offset);
-                temp_offset += size;
-            }
-        }
-    }
+    off = "[sp, #" + std::to_string(saveOffset) + "]";
 
     std::string s = "#" + std::to_string(totalSize);
     emit("sub", "sp", "sp", s);
 
-    // if (func->getExistFuncCall()) {
     // 主函数不用调用其它函数所以不用保护寄存器
     if (func->getExistFuncCall()) {
         auto & protectedRegNo = func->getProtectedReg();
@@ -720,7 +597,6 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
     }
     // 设置新帧指针
     emit("add", "x29", "sp", "#" + std::to_string(totalSize - protectedRegNum * 8));
-    //}
 }
 
 /// @brief 调用函数fun
@@ -750,33 +626,21 @@ void ILocArm64::jump(std::string label)
 /// @brief 生成函数结尾(恢复栈帧)
 void ILocArm64::emitFunctionEpilogue(Function * func)
 {
-    /*// 恢复保留的寄存器
-    int offset = 16;
-    for (auto it = func->getProtectedReg().rbegin(); it != func->getProtectedReg().rend(); ++it) {
-        emit("ldr", PlatformArm64::regName[*it], "[x29, #" + std::to_string(offset) + "]");
-        offset -= 8;
-    }*/
-
     int size = func->getStackFrameSize();
     int protectedRegNum = 0;
     if (func->getExistFuncCall()) {
         protectedRegNum = func->getProtectedReg().size();
     }
-    // std::string off = "[sp, #" + std::to_string(size - protectedRegNum * 8) + "]";
 
     // 恢复所有保护寄存器
-    // if (func->getExistFuncCall()) {
     if (func->getExistFuncCall()) {
         auto & protectedRegNo = func->getProtectedReg();
         for (int i = 0; i < protectedRegNo.size(); i++) {
             std::string off = "[sp, #" + std::to_string(size - (protectedRegNum - i) * 8) + "]";
-            // 非叶子函数：保存 FP 和 LR
-            // emit("stp", "x29", "x30", off);
             emit("ldr", PlatformArm64::intRegVal[protectedRegNo[i]]->getName(), off);
         }
     }
-    // emit("ldp", "x29", "x30", off);
-    //}
+
     std::string s = "#" + std::to_string(size);
     emit("add", "sp", "sp", s);
 

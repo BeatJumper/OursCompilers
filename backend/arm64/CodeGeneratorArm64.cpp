@@ -25,6 +25,7 @@
 #include "InterferenceGraph.h"
 #include "LoadInstruction.h"
 #include "VoidType.h"
+#include "PointerType.h"
 
 /// @brief 构造函数
 /// @param tab 符号表
@@ -293,9 +294,6 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     protectedRegNo.push_back(ARM64_LX_REG_NO);
     printf("寄存器分配中段\n");
 
-    // 给一些指令添加临时调整指令
-    adjustSomeInsts(func);
-
     // 调整函数调用指令，主要是前8个寄存器传值，后面用栈传递
     // 为了更好的进行寄存器分配，可以进行对函数调用的指令进行预处理
     // 当然也可以不做处理，不过性能更差。这个处理是可选的。
@@ -303,7 +301,13 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     adjustFuncCallInsts(func);
     printf("调整函数调用指令\n");
 
+    // 为局部变量、数组、返回值、保护寄存器分配栈空间
+    stackAlloc(func);
+
     adjustFormalParamInsts(func);
+
+    // 给一些指令添加临时调整指令
+    adjustSomeInsts(func);
 
     // 加完新指令后也该重新调整IR编号
     func->renameIR();
@@ -417,8 +421,6 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
 
     // 保护寄存器的内存分配见ILocArm64::allocStack和ILocArm64::emitFunctionEpilogue处改动
 
-    // 为局部变量和临时变量，以及被保护寄存器在栈内分配空间，指定偏移，进行栈空间的分配
-    stackAlloc(func);
     printf("为局部变量和临时变量在栈内分配空间\n");
 }
 
@@ -435,10 +437,6 @@ void CodeGeneratorArm64::adjustSomeInsts(Function * func)
         if (dynamic_cast<StoreInstruction *>(inst)) {
             //要存入的数
             Value * val1 = inst->getOperand(0);
-            // Value * val2 = inst->getOperand(1);
-            //  int32_t dest_baseRegId = -1;
-            //  int64_t dest_offset = -1;
-            //  val2->getMemoryAddr(&dest_baseRegId, &dest_offset);
             //检测要存入的数是否是constant
             if (Instanceof(const_val, ConstInt *, val1)) {
                 // 对于常量0，不需要创建MoveInstruction，ARM64有专门的零寄存器
@@ -559,7 +557,7 @@ void CodeGeneratorArm64::adjustFormalParamInsts(Function * func)
 
         // 目前假定变量大小都是4字节。实际要根据类型来计算
 
-        params[k]->setMemoryAddr(ARM64_FP_REG_NO, fp_esp);
+        params[k]->setMemoryAddr(ARM64_SP_REG_NO, fp_esp);
 
         // 增加8字节
         fp_esp += 8;
@@ -591,11 +589,11 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 printf("检测到8个以后的函数参数\n");
 
                 // 获取实参的值
-                auto arg = callInst->getOperand(k);
+                auto * arg = callInst->getOperand(k);
                 // 新建一个内存变量，把实参的值保存到栈中，以便栈传值，其寻址为SP + 非负偏移
 
                 // 注意：这里按照约定，把LocalVariable当做内存变量使用
-                LocalVariable * newVal = func->newLocalVarValue(IntegerType::getTypeInt());
+                MemVariable * newVal = func->newMemVariable(arg->getType());
                 newVal->setMemoryAddr(ARM64_SP_REG_NO, esp);
                 esp += 8;
 
@@ -663,7 +661,7 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 pIter++;
             }
 #endif
-
+            func->setMaxDep(esp);
             // 有arg指令后可不用参数，展示不删除
             // args.clear();
             // 赋值指令
@@ -697,11 +695,40 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
 
     // 这里对临时变量和局部变量都在栈上进行分配,但形参对应实参的临时变量(FormalParam类型)不需要考虑
 
-    int64_t sp_esp = 0;
+    int64_t sp_esp = func->getMaxDep();
 
-    // 保护寄存器分配栈空间
-    int protectedRegNum = func->getProtectedReg().size();
-    sp_esp += protectedRegNum * 8;
+    // 为数组分配栈空间
+    for (auto inst: func->getInterCode().getInsts()) {
+        if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
+            // alloca指令需要为它要分配的数组分配栈空间
+            // alloca指令的结果是指向这个数组的指针
+
+            // 获取alloca指令分配的类型
+            auto * allocatedType = inst->getType();
+            int64_t size = 4; // 默认大小
+            if (Instanceof(arr, ArrayType *, allocatedType)) {
+                // alloca对象为数组
+                printf("局部变量数组首地址:%d\n", int(sp_esp));
+                inst->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
+                // 为alloca指令的结果变量设置相同的内存地址
+                // 尝试将结果变量转换为LocalVariable并设置内存地址
+                Value * result = inst->getOperand(0);
+                if (LocalVariable * localVar = dynamic_cast<LocalVariable *>(result)) {
+                    localVar->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
+                    printf("Debug: stackAlloc - 局部变量 %s 设置内存地址: offset=%ld\n",
+                           localVar->getName().c_str(),
+                           sp_esp);
+                }
+                size = 1;
+                const std::vector<int> & dimensions = arr->getDimensions();
+                for (int i = 0; i < dimensions.size(); i++) {
+                    size *= dimensions[i];
+                }
+                size *= 4; // 数组偏移=元素个数*元素大小（int/float）
+                sp_esp += size;
+            }
+        }
+    }
 
     // 只处理未分配到寄存器的局部变量
     for (auto local: func->getVarValues()) {
@@ -718,101 +745,24 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
             continue; // 跳过数组变量，它们的地址将在alloca处理阶段设置
         }
 
-        // 对齐到4字节边界
-        sp_esp = (sp_esp + 3) & ~3;
         local->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
 
-        sp_esp += local->getType()->getSize();
+        sp_esp += 4; // local->getType()->getSize()
     }
 
-    // 遍历指令中的alloca指令，为它们分配的数组分配栈空间
-    for (auto inst: func->getInterCode().getInsts()) {
-        if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
-            // alloca指令需要为它要分配的数组分配栈空间
-            // alloca指令的结果是指向这个数组的指针
-
-            // 获取alloca指令分配的类型
-            Type * allocatedType = inst->getType();
-            int64_t size = 8; // 默认大小
-
-            if (allocatedType) {
-                size = allocatedType->getSize();
-
-                // 检查是否是动态数组（大小为负数）
-                if (size <= 0) {
-                    // 尝试从变量名中获取实际大小信息
-                    Value * allocatedVar = inst->getOperand(0);
-                    if (allocatedVar) {
-                        std::string varName = allocatedVar->getName();
-                        size_t sizePos = varName.find("_ACTUAL_SIZE_");
-                        if (sizePos != std::string::npos) {
-                            // 提取实际大小
-                            std::string sizeStr = varName.substr(sizePos + 13); // "_ACTUAL_SIZE_"的长度是13
-                            try {
-                                size = std::stoll(sizeStr);
-                                printf("Debug: Found dynamic array %s with actual size: %ld bytes\n",
-                                       varName.substr(0, sizePos).c_str(),
-                                       size);
-                            } catch (const std::exception & e) {
-                                printf("Debug: Failed to parse size from variable name: %s\n", varName.c_str());
-                                size = 8; // 回退到默认大小
-                            }
-                        } else {
-                            size = 8; // 最小8字节
-                        }
-                    } else {
-                        size = 8; // 最小8字节
-                    }
-                }
-            }
-
-            // 对齐到8字节边界（ARM64要求）
-            size = (size + 7) & ~7;
-
-            // 为alloca指令设置内存地址，这个地址指向分配的数组空间的起始位置
-            // 注意：这里设置的是alloca指令本身的内存地址，
-            // 在指令翻译时，lea_var会使用这个地址
-            inst->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
-
-            // 为alloca指令的结果变量设置相同的内存地址
-            if (inst->getOperandsNum() > 0) {
-                Value * result = inst->getOperand(0);
-                // 尝试将结果变量转换为LocalVariable并设置内存地址
-                if (LocalVariable * localVar = dynamic_cast<LocalVariable *>(result)) {
-                    localVar->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
-                    printf("Debug: stackAlloc - 局部变量 %s 设置内存地址: offset=%ld\n",
-                           localVar->getName().c_str(),
-                           sp_esp);
-                }
-            }
-            sp_esp += size;
-        }
+    // 返回值占用的栈空间
+    Value * returnVal = func->getReturnValue();
+    if (LocalVariable * localVar = dynamic_cast<LocalVariable *>(returnVal)) {
+        localVar->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
+        sp_esp += 4;
     }
 
-    // 遍历指令中需要栈空间的临时变量
-    /*for (auto inst: func->getInterCode().getInsts()) {
-        // 只为没有分配到寄存器且有结果值的指令分配栈空间
-        if (inst->hasResultValue() && inst->getOp() != IRInstOperator::IRINST_OP_ALLOCA && inst->getRegId() == -1) {
+    // 保护寄存器占用的栈空间在生成函数序言中计算
 
-            int32_t size = inst->getType()->getSize();
-
-            // 按照4字节的大小整数倍分配局部变量
-            size += (4 - size % 4) % 4;
-
-            // 临时变量偏移设置
-            inst->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
-
-            // 累计当前作用域大小
-            sp_esp += size;
-
-            printf("Debug: Allocated stack space for instruction %s: size=%d, offset=%ld\n",
-                   inst->getIRName().c_str(),
-                   size,
-                   sp_esp - size);
-        }*/
+    //栈空间16字节对齐
+    sp_esp = (sp_esp + 15) & ~15;
 
     // 设置函数的最大栈帧深度
-    // TODO加上实参内存传值的空间
     func->setMaxDep(sp_esp);
 }
 
