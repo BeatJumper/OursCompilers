@@ -125,4 +125,7 @@ void Instruction::transfer()
             }
         }
     }
+
+    // 提前初始化liveIN
+    liveIN = use_set;
 }

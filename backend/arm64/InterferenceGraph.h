@@ -49,7 +49,10 @@ struct InterferenceGraph {
     void GenBasicBlocks(Function * func);
     /// @brief 由一个函数创建干涉图
     /// @param func 需要创建干涉图的函数
-    InterferenceGraph(Function * func);
+    /// @param is_float 是否是为浮点量创建的
+    InterferenceGraph(Function * func, bool is_float);
+    /// @brief 一个布尔量，表示是否是为浮点量创建的
+    bool is_float = false;
     /// @brief 对一个活跃分析后的控制流图创建干涉图
     /// @param graph 控制流图
     void ExecuteCFG(ControlFlowGraph * graph);

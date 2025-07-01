@@ -313,90 +313,102 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     func->renameIR();
 
     // 主要染色过程（不断尝试染色直至成功）
-    while (true) {
-        // 创建干涉图
-        InterferenceGraph * graph_ig = new InterferenceGraph(func);
+    bool forfloat[] = {false, true};
+    for (bool is_float: forfloat) {
+        while (true) {
+            // 创建干涉图
+            InterferenceGraph * graph_ig = new InterferenceGraph(func, is_float);
 
-        // 尝试进行染色
-        printf("干涉图已产生\n");
-        // 染色是否成功
-        bool suc = InterferenceGraph::color_graph(graph_ig, PlatformArm64::maxUsableRegNum);
+            // 尝试进行染色
+            printf("干涉图已产生\n");
+            // 染色是否成功
+            bool suc =
+                InterferenceGraph::color_graph(graph_ig,
+                                               is_float ? PlatformArm64::maxVecRegNum : PlatformArm64::maxUsableRegNum);
 
-        printf("完成染色\n");
-        if (suc) {
-            // assert(graph_ig->node_set.size());
-            for (node_IG * node: graph_ig->node_set) {
-                // assert(node->color != -1);
-                // std::cout << InterferenceGraph::ColorToRegId(node->color) << std::endl;
-                // printval(func->getParams()[0]);
-                printval(node->val);
-                node->val->setRegId(
-                    InterferenceGraph::ColorToRegId(node->color, node->val->getType() == FloatType::getTypeFloat()));
+            printf("完成染色\n");
+            if (suc) {
+                // assert(graph_ig->node_set.size());
+                for (node_IG * node: graph_ig->node_set) {
+                    // assert(node->color != -1);
+                    // std::cout << InterferenceGraph::ColorToRegId(node->color) << std::endl;
+                    // printval(func->getParams()[0]);
+                    printval(node->val);
+                    node->val->setRegId(
+                        InterferenceGraph::ColorToRegId(node->color,
+                                                        node->val->getType() == FloatType::getTypeFloat()));
 
-                // std::cout << node->val->getRegId() << std::endl;
-            }
-            break;
-        } else {
-            assert(false);
-            printf("溢出\n");
-            // 完成变量溢出的工作
-            auto x = graph_ig->uncolored_node_set.end();
-            x--;
+                    // std::cout << node->val->getRegId() << std::endl;
+                }
+                break;
+            } else {
+                assert(false);
+                printf("溢出\n");
+                // 完成变量溢出的工作
+                auto x = graph_ig->uncolored_node_set.end();
+                x--;
 
-            // 首先取出目前干涉图中度数最高的Value
-            Value * most_degree_val = (*x)->val;
-            int32_t reg_now = most_degree_val->getRegId();
-            auto & insts = func->getInterCode().getInsts();
+                // 首先取出目前干涉图中度数最高的Value
+                Value * most_degree_val = (*x)->val;
+                int32_t reg_now = most_degree_val->getRegId();
+                auto & insts = func->getInterCode().getInsts();
 
-            // 接下来尝试把该Value的所有出现都替换为新的Value和LocalVariable
-            for (int i = 0; i < insts.size(); i++) {
-                Value *regval_write = nullptr, *regval_read = nullptr;
+                // 接下来尝试把该Value的所有出现都替换为新的Value和LocalVariable
+                for (int i = 0; i < insts.size(); i++) {
+                    Value *regval_write = nullptr, *regval_read = nullptr;
 
-                // 用的是同一份栈空间
-                LocalVariable * localval = nullptr;
+                    // 用的是同一份栈空间
+                    LocalVariable * localval = nullptr;
 
-                // 这里假定了一个instrction的DEF变量只会在{它自己，它的各个操作数}中出现唯一一次
-                if (insts[i] == most_degree_val) {
-                    // DEF是它自己的情况
-                    insts[i] = new Instruction(*insts[i]);
-                    insts[i]->setRegId(reg_now);
-                } else if (insts[i]->get_def_set().count(most_degree_val)) {
-                    // DEF是其中某一个操作数的情况
-                    if (localval == nullptr) {
-                        localval = func->newLocalVarValue(IntegerType::getTypeInt());
-                    }
-                    regval_write = new Value(IntegerType::getTypeInt());
-                    regval_write->setRegId(reg_now);
-                    Instruction * strinst = new StoreInstruction(func, regval_write, localval);
-                    insts.insert(insts.begin() + i + 1, strinst);
-                    for (int k = 0; k < insts[i]->getOperandsNum(); k++) {
-                        if (insts[i]->getOperand(k) == most_degree_val) {
-                            insts[i]->getOperands()[k]->setUsee(regval_write);
-                            break;
+                    // 这里假定了一个instrction的DEF变量只会在{它自己，它的各个操作数}中出现唯一一次
+                    if (insts[i] == most_degree_val) {
+                        // DEF是它自己的情况
+                        insts[i] = new Instruction(*insts[i]);
+                        insts[i]->setRegId(reg_now);
+                    } else if (insts[i]->get_def_set().count(most_degree_val)) {
+                        // DEF是其中某一个操作数的情况
+                        if (localval == nullptr) {
+                            localval = func->newLocalVarValue(IntegerType::getTypeInt());
+                        }
+                        regval_write = new Value(IntegerType::getTypeInt());
+                        regval_write->setRegId(reg_now);
+                        Instruction * strinst = new StoreInstruction(func, regval_write, localval);
+                        insts.insert(insts.begin() + i + 1, strinst);
+                        for (int k = 0; k < insts[i]->getOperandsNum(); k++) {
+                            if (insts[i]->getOperand(k) == most_degree_val) {
+                                insts[i]->getOperands()[k]->setUsee(regval_write);
+                                break;
+                            }
                         }
                     }
-                }
 
-                // 认定接下来剩下的Value都是USE出现的，也进行改写
-                if (insts[i]->get_use_set().count(most_degree_val)) {
-                    if (localval == nullptr) {
-                        localval = func->newLocalVarValue(IntegerType::getTypeInt());
-                    }
-                    regval_read = new Value(IntegerType::getTypeInt());
-                    regval_read->setRegId(reg_now);
-                    Instruction * ldrinst = new LoadInstruction(func, regval_read, localval);
-                    insts.insert(insts.begin() + i, ldrinst);
-                    i++;
-                    for (int k = 0; k < insts[i]->getOperandsNum(); k++) {
-                        if (insts[i]->getOperand(k) == most_degree_val) {
-                            insts[i]->getOperands()[k]->setUsee(regval_read);
-                            break;
+                    // 认定接下来剩下的Value都是USE出现的，也进行改写
+                    if (insts[i]->get_use_set().count(most_degree_val)) {
+                        if (localval == nullptr) {
+                            localval = func->newLocalVarValue(IntegerType::getTypeInt());
+                        }
+                        regval_read = new Value(IntegerType::getTypeInt());
+                        regval_read->setRegId(reg_now);
+                        Instruction * ldrinst = new LoadInstruction(func, regval_read, localval);
+                        insts.insert(insts.begin() + i, ldrinst);
+                        i++;
+                        for (int k = 0; k < insts[i]->getOperandsNum(); k++) {
+                            if (insts[i]->getOperand(k) == most_degree_val) {
+                                insts[i]->getOperands()[k]->setUsee(regval_read);
+                                break;
+                            }
                         }
                     }
                 }
             }
         }
     }
+
+    printf("所有指令列表：\n");
+    for (auto inst: func->getInterCode().getCode()) {
+        printval(inst);
+    }
+    printf("指令列表结束\n");
 
     // 这里加一个set临时存储保护寄存器，因为同一个寄存器可能多次加入，这里用set可以去重。
     std::set<int32_t> protectedreg_set;

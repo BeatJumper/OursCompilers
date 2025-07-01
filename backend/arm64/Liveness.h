@@ -39,8 +39,8 @@ bool merge_set(std::set<T> & a, std::set<T> & b)
 /// @tparam T 集合内元素类型
 /// @param a 集合a
 /// @param b 集合b
-/// @return 作差后的集合
+/// @note 从a中删去b拥有的元素
 template <typename T>
-std::set<T> set_difference(std::set<T> & a, std::set<T> & b);
+static void set_difference(std::set<T> & a, std::set<T> & b);
 
 #endif
