@@ -50,8 +50,10 @@ void InterferenceGraph::restore_node(node_IG * node)
     }
 }
 
-InterferenceGraph::InterferenceGraph(Function * func)
+InterferenceGraph::InterferenceGraph(Function * func, bool is_float)
 {
+    this->is_float = is_float;
+
     // 调用基本块划分函数
     GenBasicBlocks(func);
 
@@ -65,8 +67,10 @@ InterferenceGraph::InterferenceGraph(Function * func)
     printf("已删除不用的基本块表\n");
     */
 
+    /*
     // 加完新指令后也该重新调整IR编号
     func->renameIR();
+    */
 
     // printf("已释放临时基本块表\n");
     //  进行活跃变量分析，获得每条语句的DEF和USE集合
@@ -89,8 +93,16 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
     }
     printf("指令列表结束\n");
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
-        merge_set(all_value_in_cfg, inst->get_def_set());
-        merge_set(all_value_in_cfg, inst->get_use_set());
+        for (Value * val: inst->get_def_set()) {
+            if ((val->getType() == FloatType::getTypeFloat()) == is_float) {
+                all_value_in_cfg.insert(val);
+            }
+        }
+        for (Value * val: inst->get_use_set()) {
+            if ((val->getType() == FloatType::getTypeFloat()) == is_float) {
+                all_value_in_cfg.insert(val);
+            }
+        }
         printf("node:");
         printval(inst);
         printf("size of def_set:%d\n", int(inst->get_def_set().size()));
@@ -103,7 +115,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
         printset(inst->get_liveout());
     }
 
-    // 为控制流图中每个Value都创建一个干涉图节点
+    // 为每个Value都创建一个干涉图节点
     for (Value * val: all_value_in_cfg) {
         // 跳过alloca指令，它们不应该参与寄存器分配
         if (dynamic_cast<AllocaInstruction *>(val)) {

@@ -106,9 +106,6 @@ private:
     ///
     int scope_level = -1;
 
-    /// @brief 寄存器编号，-1表示没有分配寄存器，大于等于0代表是寄存器型Value
-    int32_t regId = -1;
-
     /// @brief 变量在栈内的偏移量，对于全局变量默认为0，临时变量没有意义
     int32_t offset = 0;
 

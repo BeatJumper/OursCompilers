@@ -8,12 +8,12 @@ bool update_live(Instruction * node, Instruction * succ1, Instruction * succ2)
         ret |= merge_set(node->get_liveout(), succ1->get_livein());
     }
     if (succ2) {
-        ret |= merge_set(node->get_liveout(), succ1->get_livein());
+        ret |= merge_set(node->get_liveout(), succ2->get_livein());
     }
-    std::set<Value *> original_livein = node->get_livein();
-    node->get_livein() = set_difference(node->get_liveout(), node->get_def_set());
-    merge_set(node->get_livein(), node->get_use_set());
-    ret |= (original_livein != node->get_livein());
+    int original_livein_size = node->get_livein().size();
+    merge_set(node->get_livein(), node->get_liveout());
+    set_difference(node->get_livein(), node->get_def_set());
+    ret |= (original_livein_size != node->get_livein().size());
 
     /*
     std::string s;
@@ -28,7 +28,6 @@ bool update_live(Instruction * node, Instruction * succ1, Instruction * succ2)
     std::cout << "size of use_set:" << node->use_set.size() << std::endl;
     printset(node->use_set);
     */
-
     return ret;
 }
 
@@ -54,16 +53,18 @@ void LiveVariableAnalysis(ControlFlowGraph * _graph)
             // 基本块的末端（跳转指令）可能有多个后继
             Node_CFG ** next_nodes = node->get_next_nodes();
             auto & insts = node->getIRCode()->getCode();
+            // printf("%d\n", insts.size());
             need_update |= update_live(insts[insts.size() - 1],
                                        // 第一个后继
                                        next_nodes[0] ? next_nodes[0]->getIRCode()->getCode()[0] : nullptr,
                                        // 第二个后继（可能是nullptr)
                                        next_nodes[1] ? next_nodes[1]->getIRCode()->getCode()[0] : nullptr);
             for (int i = insts.size() - 2; i >= 0; --i) {
-                std::string s;
-                insts[i]->toString(s);
-                //  对于基本块内的前 n-1 个指令，只会有1个后继指令
+                // std::string s;
+                // insts[i]->toString(s);
+                //   对于基本块内的前 n-1 个指令，只会有1个后继指令
                 need_update |= update_live(insts[i], insts[i + 1]);
+                // printf("%d\n", i);
             }
         }
     }
@@ -73,15 +74,11 @@ void LiveVariableAnalysis(ControlFlowGraph * _graph)
 /// @tparam T 集合内元素类型
 /// @param a 集合a
 /// @param b 集合b
-/// @return 作差后的集合
+/// @note 从a中删去b拥有的元素
 template <typename T>
-std::set<T> set_difference(std::set<T> & a, std::set<T> & b)
+static void set_difference(std::set<T> & a, std::set<T> & b)
 {
-    std::set<T> ret;
-    for (T element: a) {
-        if (b.count(element) == 0) {
-            ret.insert(element);
-        }
+    for (T element: b) {
+        a.erase(element);
     }
-    return ret;
 }

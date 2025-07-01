@@ -268,7 +268,7 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
     int32_t result_reg_no = result->getRegId();
 
     // 检查结果寄存器是否有效
-    if (result_reg_no < 0 || result_reg_no >= PlatformArm64::maxRegNum) {
+    if (is_regid_valid(result_reg_no) == false) {
         printf("Error: translate_two_operator - invalid result_reg_no=%d\n", result_reg_no);
         return;
     }
@@ -342,7 +342,7 @@ void InstSelectorArm64::translate_two_operator_float(Instruction * inst, string 
            arg2_reg_no);
 
     // 检查结果寄存器编号有效性
-    if (result_reg_no < 0 || result_reg_no >= PlatformArm64::maxVecRegNum) {
+    if (result_reg_no < 0 || result_reg_no >= PlatformArm64::maxRegNum) {
         printf("Error: Invalid result register number: %d\n", result_reg_no);
         return;
     }
@@ -351,9 +351,9 @@ void InstSelectorArm64::translate_two_operator_float(Instruction * inst, string 
     std::string s1, s2;
 
     // 处理第一个操作数
-    if (arg1_reg_no >= 0 && arg1_reg_no < PlatformArm64::maxVecRegNum) {
+    if (is_regid_float(arg1_reg_no)) {
         // 操作数1在浮点寄存器中
-        s1 = PlatformArm64::floatRegName[arg1_reg_no];
+        s1 = PlatformArm64::regName[arg1_reg_no];
     } else {
         // 操作数1不在寄存器中，需要加载到临时寄存器
         printf("Debug: arg1 not in register, loading to temp register\n");
@@ -362,9 +362,9 @@ void InstSelectorArm64::translate_two_operator_float(Instruction * inst, string 
     }
 
     // 处理第二个操作数
-    if (arg2_reg_no >= 0 && arg2_reg_no < PlatformArm64::maxVecRegNum) {
+    if (is_regid_float(arg2_reg_no)) {
         // 操作数2在浮点寄存器中
-        s2 = PlatformArm64::floatRegName[arg2_reg_no];
+        s2 = PlatformArm64::regName[arg2_reg_no];
     } else {
         // 操作数2不在寄存器中，需要加载到另一个临时寄存器
         printf("Debug: arg2 not in register, loading to temp register\n");
@@ -375,12 +375,12 @@ void InstSelectorArm64::translate_two_operator_float(Instruction * inst, string 
 
     printf("Debug: Generating %s %s, %s, %s\n",
            operator_name.c_str(),
-           PlatformArm64::floatRegName[result_reg_no].c_str(),
+           PlatformArm64::regName[result_reg_no].c_str(),
            s1.c_str(),
            s2.c_str());
 
     // 生成浮点数运算指令
-    iloc.inst(operator_name, PlatformArm64::floatRegName[result_reg_no], s1, s2);
+    iloc.inst(operator_name, PlatformArm64::regName[result_reg_no], s1, s2);
 }
 
 /// @brief 加法指令翻译成ARM64汇编
@@ -635,13 +635,13 @@ void InstSelectorArm64::translate_cmp(Instruction * inst)
 
     if (isFloatComparison) {
         // 浮点数比较使用浮点寄存器名称
-        arg1_str = PlatformArm64::floatRegName[arg1_reg_no];
+        arg1_str = PlatformArm64::regName[arg1_reg_no];
 
         if (Instanceof(constFloat, ConstFloat *, arg2)) {
             // 浮点数常量需要先加载到寄存器
-            arg2_str = PlatformArm64::floatRegName[arg2_reg_no];
+            arg2_str = PlatformArm64::regName[arg2_reg_no];
         } else {
-            arg2_str = PlatformArm64::floatRegName[arg2_reg_no];
+            arg2_str = PlatformArm64::regName[arg2_reg_no];
         }
     } else {
         // 整数比较使用通用寄存器名称
@@ -934,7 +934,7 @@ void InstSelectorArm64::translate_fptosi(Instruction * inst)
     int result_reg_no = inst->getRegId();
 
     // 使用fcvtzs指令：浮点数转有符号整数（向零舍入）
-    iloc.inst("fcvtzs", PlatformArm64::regName[result_reg_no], PlatformArm64::floatRegName[src_reg_no]);
+    iloc.inst("fcvtzs", PlatformArm64::regName[result_reg_no], PlatformArm64::regName[src_reg_no]);
 }
 
 /// @brief sitofp指令翻译成ARM64汇编
@@ -947,7 +947,7 @@ void InstSelectorArm64::translate_sitofp(Instruction * inst)
     int result_reg_no = inst->getRegId();
 
     // 使用scvtf指令：有符号整数转浮点数
-    iloc.inst("scvtf", PlatformArm64::floatRegName[result_reg_no], PlatformArm64::regName[src_reg_no]);
+    iloc.inst("scvtf", PlatformArm64::regName[result_reg_no], PlatformArm64::regName[src_reg_no]);
 }
 
 /// @brief getelementptr指令翻译成ARM64汇编

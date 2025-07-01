@@ -92,3 +92,20 @@ public:
     /// @brief 对状态寄存器分配Value，记录位置
     static StatusRegVariable * statusRegVal;
 };
+
+/// @brief 一个regid是否合法
+/// @param regid
+/// @return 是否在所有127个id里
+static bool is_regid_valid(int32_t regid)
+{
+    return regid >= 0 && regid < PlatformArm64::maxRegNum;
+}
+
+/// @brief 一个regid是否是浮点寄存器的
+/// @param regid
+/// @return 是否在64个浮点寄存器id里
+static bool is_regid_float(int32_t regid)
+{
+    assert(is_regid_valid(regid));
+    return regid >= 63 && regid < PlatformArm64::maxRegNum;
+}

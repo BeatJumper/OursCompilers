@@ -72,6 +72,7 @@ public:
         offset = _offset;
     }
 
+    /*
     ///
     /// @brief 设置寄存器编号
     /// @param _regId 寄存器编号
@@ -80,6 +81,7 @@ public:
     {
         this->regId = _regId;
     }
+    */
 
 private:
     ///

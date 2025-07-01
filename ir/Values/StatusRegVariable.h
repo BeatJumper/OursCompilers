@@ -27,6 +27,4 @@ public:
     }
 
 private:
-    /// @brief 寄存器编号，-1表示没有分配寄存器，大于等于0代表是寄存器型Value
-    int32_t regId = -1;
 };
