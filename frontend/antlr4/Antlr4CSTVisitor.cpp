@@ -172,7 +172,7 @@ std::any MiniCCSTVisitor::visitFuncFParam(MiniCParser::FuncFParamContext * ctx)
                 if (evaluateConstantExpression(dimNode, dimValue)) {
                     if (dimValue > 0) {
                         typeAttr.dimensions.push_back(dimValue);
-                        printf("Debug: Evaluated function parameter dimension expression to: %d\n", dimValue);
+                        // printf("Debug: Evaluated function parameter dimension expression to: %d\n", dimValue);
                     } else {
                         printf("Error: Function parameter dimension must be positive, got: %d\n", dimValue);
                         typeAttr.dimensions.push_back(-1);
@@ -630,7 +630,7 @@ std::any MiniCCSTVisitor::visitVarDef(MiniCParser::VarDefContext * ctx)
                 if (evaluateConstantExpression(dimNode, dimValue)) {
                     if (dimValue > 0) {
                         varTypeAttr.dimensions.push_back(dimValue);
-                        printf("Debug: Evaluated array dimension expression to: %d\n", dimValue);
+                        // printf("Debug: Evaluated array dimension expression to: %d\n", dimValue);
                     } else {
                         printf("Error: Array dimension must be positive, got: %d\n", dimValue);
                         varTypeAttr.dimensions.push_back(-1);
@@ -1099,7 +1099,7 @@ std::any MiniCCSTVisitor::visitConstDef(MiniCParser::ConstDefContext * ctx)
                 if (evaluateConstantExpression(dimNode, dimValue)) {
                     if (dimValue > 0) {
                         constTypeAttr.dimensions.push_back(dimValue);
-                        printf("Debug: Evaluated const array dimension expression to: %d\n", dimValue);
+                        // printf("Debug: Evaluated const array dimension expression to: %d\n", dimValue);
                     } else {
                         printf("Error: Array dimension must be positive, got: %d\n", dimValue);
                         constTypeAttr.dimensions.push_back(-1);
@@ -1122,9 +1122,9 @@ std::any MiniCCSTVisitor::visitConstDef(MiniCParser::ConstDefContext * ctx)
     // 如果是标量常量（非数组），将其值存储到全局常量表中
     if (!constTypeAttr.is_array && initValNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
         globalConstants[constId] = static_cast<int>(initValNode->integer_val);
-        printf("Debug: Stored global constant '%s' = %d\n",
-               constId.c_str(),
-               static_cast<int>(initValNode->integer_val));
+        // printf("Debug: Stored global constant '%s' = %d\n",
+        // constId.c_str(),
+        // static_cast<int>(initValNode->integer_val));
     }
 
     // 创建赋值节点
@@ -1305,10 +1305,10 @@ bool MiniCCSTVisitor::evaluateConstantExpression(ast_node * node, int & result)
                 auto it = globalConstants.find(node->name);
                 if (it != globalConstants.end()) {
                     result = it->second;
-                    printf("Debug: Found global constant '%s' with value %d\n", node->name.c_str(), result);
+                    // printf("Debug: Found global constant '%s' with value %d\n", node->name.c_str(), result);
                     return true;
                 } else {
-                    printf("Debug: Variable '%s' not found in global constants\n", node->name.c_str());
+                    // printf("Debug: Variable '%s' not found in global constants\n", node->name.c_str());
                     return false;
                 }
             }

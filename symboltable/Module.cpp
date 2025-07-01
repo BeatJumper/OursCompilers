@@ -337,7 +337,7 @@ bool Module::registerVariableToCurrentScope(const std::string & name, Value * va
     // 将变量注册到当前作用域
     // 注意：这里允许遮蔽外层作用域的同名变量，这是正确的作用域行为
     scopeStack->insertValue(name, value);
-    printf("Debug: Registered variable '%s' to current scope (may shadow outer scope)\n", name.c_str());
+    //printf("Debug: Registered variable '%s' to current scope (may shadow outer scope)\n", name.c_str());
     return true;
 }
 
@@ -434,7 +434,7 @@ void Module::outputIR(const std::string & filePath)
     }
 
     // 输出LLVM内置函数声明
-    printf("Debug: Outputting LLVM intrinsic function declarations...\n");
+    //printf("Debug: Outputting LLVM intrinsic function declarations...\n");
     fprintf(fp, "; LLVM intrinsic function declarations\n");
     fprintf(fp,
             "declare void @llvm.memcpy.p0i8.p0i8.i64(i8* noalias nocapture writeonly, i8* noalias nocapture readonly, "
@@ -443,7 +443,7 @@ void Module::outputIR(const std::string & filePath)
     fprintf(fp, "\n");
 
     // 输出标准库函数声明
-    printf("Debug: Outputting standard library function declarations...\n");
+    //printf("Debug: Outputting standard library function declarations...\n");
     fprintf(fp, "; Standard library function declarations\n");
     for (auto func: funcVector) {
         if (func->isBuiltin()) {
@@ -484,11 +484,11 @@ void Module::outputIR(const std::string & filePath)
         std::string instStr;
         func->toString(instStr);
         fprintf(fp, "%s", instStr.c_str());
-        printf("Debug: Function IR: %s\n", instStr.c_str());
+        //printf("Debug: Function IR: %s\n", instStr.c_str());
     }
 
     fclose(fp);
-    printf("Debug: Finished outputting IR to file: %s\n", filePath.c_str());
+    //printf("Debug: Finished outputting IR to file: %s\n", filePath.c_str());
 }
 
 /// @brief 创建全局常量
