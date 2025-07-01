@@ -334,13 +334,7 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
             // 完成变量溢出的工作
             auto x = graph_ig->uncolored_node_set.end();
             x--;
-            /*
-            while ((*x)->val->getRegId() != -1) {
-                x--;
-            }
-            // 首先取出目前干涉图中度数最高,且没有预定寄存器的Value
-            Value * most_degree_val = (*x)->val;
-            */
+
             // 首先取出目前干涉图中度数最高的Value
             Value * most_degree_val = (*x)->val;
             int32_t reg_now = most_degree_val->getRegId();
@@ -407,7 +401,7 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
             }
         }
         for (Value * val: inst->get_def_set()) {
-            if (val->getRegId() > 15 && val->getRegId() < 32) {
+            if (val->getRegId() > 18 && val->getRegId() < 32) {
                 protectedreg_set.insert(val->getRegId());
             }
         }

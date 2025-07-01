@@ -1330,14 +1330,7 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
             if (base_reg_name[0] == 'w')
                 base_reg_name[0] = 'x';
 
-            // 检查偏移量是否在add/sub指令的立即数范围内（0-4095）
-            if (base_offset >= 0 && base_offset <= 4095) {
-                iloc.inst("add", dest_reg_name, base_reg_name, "#" + std::to_string(base_offset));
-            } else {
-                // 偏移量超出范围，使用临时寄存器
-                iloc.load_imm(ARM64_TMP_REG_NO + 1, base_offset); // 使用另一个临时寄存器
-                iloc.inst("add", dest_reg_name, base_reg_name, PlatformArm64::regName[ARM64_TMP_REG_NO + 1 + 32]);
-            }
+            iloc.inst("add", dest_reg_name, base_reg_name, "#" + std::to_string(base_offset));
         }
     }
 
@@ -1540,47 +1533,12 @@ void InstSelectorArm64::translate_zext(Instruction * inst)
     std::string src_reg_name = PlatformArm64::regName[src_reg_no];
     std::string dest_reg_name = PlatformArm64::regName[dest_reg_no];
 
-    printf("Debug: zext from %d bits to %d bits\n", srcBitWidth, destBitWidth);
-    printf("Debug: src_reg_no=%d, dest_reg_no=%d\n", src_reg_no, dest_reg_no);
-
-    if (srcBitWidth == 8 && destBitWidth == 32) {
-        // i8 -> i32: 使用uxtb指令（零扩展字节到字）
-        printf("Debug: Generating uxtb instruction\n");
-        iloc.inst("uxtb", dest_reg_name, src_reg_name);
-    } else if (srcBitWidth == 16 && destBitWidth == 32) {
-        // i16 -> i32: 使用uxth指令（零扩展半字到字）
-        printf("Debug: Generating uxth instruction\n");
-        iloc.inst("uxth", dest_reg_name, src_reg_name);
-    } else if (srcBitWidth == 1 && destBitWidth == 32) {
+    if (srcBitWidth == 1 && destBitWidth == 32) {
         // i1 -> i32: 布尔值零扩展到32位整数
         printf("Debug: Generating mov instruction for i1->i32 (zext)\n");
         iloc.inst("mov", dest_reg_name, src_reg_name);
-    } else if (srcBitWidth == 32 && destBitWidth == 64) {
-        // i32 -> i64: 在ARM64中，32位操作会自动零扩展到64位
-        // 使用mov指令将32位值移动到64位寄存器，高32位自动清零
-        if (dest_reg_no < 32) {
-            dest_reg_name = "x" + std::to_string(dest_reg_no);
-        }
-        // 使用32位寄存器名作为源，会自动零扩展
-        printf("Debug: Generating mov instruction for i32->i64 (zext)\n");
-        iloc.inst("mov", dest_reg_name, src_reg_name);
-    } else if (srcBitWidth == 8 && destBitWidth == 64) {
-        // i8 -> i64: 零扩展字节到64位
-        if (dest_reg_no < 32) {
-            dest_reg_name = "x" + std::to_string(dest_reg_no);
-        }
-        printf("Debug: Generating uxtb instruction for i8->i64\n");
-        iloc.inst("uxtb", dest_reg_name, src_reg_name);
-    } else if (srcBitWidth == 16 && destBitWidth == 64) {
-        // i16 -> i64: 零扩展半字到64位
-        if (dest_reg_no < 32) {
-            dest_reg_name = "x" + std::to_string(dest_reg_no);
-        }
-        printf("Debug: Generating uxth instruction for i16->i64\n");
-        iloc.inst("uxth", dest_reg_name, src_reg_name);
     } else {
-        // 其他情况，使用mov指令（如果位宽相同）
-        printf("Debug: Generating mov instruction (fallback) for %d->%d\n", srcBitWidth, destBitWidth);
-        iloc.inst("mov", dest_reg_name, src_reg_name);
+        // 其他情况,暂不支持
+        printf("Debug: 暂不支持这种类型的zext\n");
     }
 }
