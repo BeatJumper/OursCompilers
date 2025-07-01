@@ -5028,6 +5028,28 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
                         currentPos++;
                     }
                 }
+            } else if (son->node_type == ast_operator_type::AST_OP_NEGATIVE) {
+                // 处理负数常量
+                Value * constResult = nullptr;
+                if (evaluate_const_expr(son, constResult)) {
+                    if (currentPos < totalElements) {
+                        // 如果当前位置不在行首且前面有嵌套数组，移动到下一行
+                        if (currentPos % innerSize != 0) {
+                            int nextRowStart = ((currentPos / innerSize) + 1) * innerSize;
+                            if (nextRowStart < totalElements) {
+                                currentPos = nextRowStart;
+                            }
+                        }
+
+                        if (currentPos < totalElements) {
+                            initValues[currentPos] = constResult;
+                            currentPos++;
+                        }
+                    }
+                } else {
+                    printf("Error: Failed to evaluate negative constant in array initialization\n");
+                    return false;
+                }
             } else if (son->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
                 // 嵌套数组初始化 - 填充一整行
                 int rowStart = (currentPos / innerSize) * innerSize; // 当前行的起始位置
@@ -5059,6 +5081,15 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
                 initValues.push_back(module->newConstInt(son->integer_val));
             } else if (son->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
                 initValues.push_back(module->newConstFloat(son->float_val));
+            } else if (son->node_type == ast_operator_type::AST_OP_NEGATIVE) {
+                // 处理负数常量
+                Value * constResult = nullptr;
+                if (evaluate_const_expr(son, constResult)) {
+                    initValues.push_back(constResult);
+                } else {
+                    printf("Error: Failed to evaluate negative constant in array initialization\n");
+                    return false;
+                }
             }
         }
 
