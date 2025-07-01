@@ -18,6 +18,7 @@
 
 #include "AST.h"
 #include "MiniCBaseVisitor.h"
+#include <unordered_map>
 
 /// @brief 遍历具体语法树产生抽象语法树
 class MiniCCSTVisitor : public MiniCBaseVisitor {
@@ -297,4 +298,7 @@ private:
     /// @param octalFloatStr 八进制浮点数字符串
     /// @return 解析后的浮点数值
     float parseOctalFloat(const std::string & octalFloatStr);
+
+    /// @brief 全局常量表，用于存储const声明的常量值
+    std::unordered_map<std::string, int> globalConstants;
 };

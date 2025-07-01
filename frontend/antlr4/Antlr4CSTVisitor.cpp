@@ -1103,6 +1103,14 @@ std::any MiniCCSTVisitor::visitConstDef(MiniCParser::ConstDefContext * ctx)
     // 获取初始值
     auto initValNode = std::any_cast<ast_node *>(visitConstInitVal(ctx->constInitVal()));
 
+    // 如果是标量常量（非数组），将其值存储到全局常量表中
+    if (!constTypeAttr.is_array && initValNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+        globalConstants[constId] = static_cast<int>(initValNode->integer_val);
+        printf("Debug: Stored global constant '%s' = %d\n",
+               constId.c_str(),
+               static_cast<int>(initValNode->integer_val));
+    }
+
     // 创建赋值节点
     ast_node * assignNode = ast_node::New(ast_operator_type::AST_OP_ASSIGN, constNode, initValNode, nullptr);
 
@@ -1270,6 +1278,22 @@ bool MiniCCSTVisitor::evaluateConstantExpression(ast_node * node, int & result)
                 if (evaluateConstantExpression(node->sons[0], operand)) {
                     result = operand;
                     return true;
+                }
+            }
+            break;
+
+        case ast_operator_type::AST_OP_LEAF_VAR_ID:
+            // 变量引用：查找全局常量
+            {
+                // 在全局常量表中查找该变量
+                auto it = globalConstants.find(node->name);
+                if (it != globalConstants.end()) {
+                    result = it->second;
+                    printf("Debug: Found global constant '%s' with value %d\n", node->name.c_str(), result);
+                    return true;
+                } else {
+                    printf("Debug: Variable '%s' not found in global constants\n", node->name.c_str());
+                    return false;
                 }
             }
             break;
