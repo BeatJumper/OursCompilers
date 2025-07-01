@@ -93,13 +93,13 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
         merge_set(all_value_in_cfg, inst->get_use_set());
         printf("node:");
         printval(inst);
-        printf("size of def_set:%d\n", inst->get_def_set().size());
+        printf("size of def_set:%d\n", int(inst->get_def_set().size()));
         printset(inst->get_def_set());
-        printf("size of use_set:%d\n", inst->get_use_set().size());
+        printf("size of use_set:%d\n", int(inst->get_use_set().size()));
         printset(inst->get_use_set());
-        printf("size of livein:%d\n", inst->get_livein().size());
+        printf("size of livein:%d\n", int(inst->get_livein().size()));
         printset(inst->get_livein());
-        printf("size of liveout:%d\n", inst->get_liveout().size());
+        printf("size of liveout:%d\n", int(inst->get_liveout().size()));
         printset(inst->get_liveout());
     }
 
