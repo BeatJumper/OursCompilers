@@ -28,6 +28,7 @@
 
 #include "PointerType.h"
 #include "ArrayType.h"
+#include "IntegerType.h"
 #include "RegVariable.h"
 #include "Function.h"
 #include "Value.h"
@@ -57,6 +58,9 @@ InstSelectorArm64::InstSelectorArm64(vector<Instruction *> & _irCode, ILocArm64 
     translator_handlers[IRInstOperator::IRINST_OP_SUB_I] = &InstSelectorArm64::translate_sub_i;
     translator_handlers[IRInstOperator::IRINST_OP_MUL_I] = &InstSelectorArm64::translate_mul_i;
     translator_handlers[IRInstOperator::IRINST_OP_DIV_I] = &InstSelectorArm64::translate_div_i;
+
+    translator_handlers[IRInstOperator::IRINST_OP_SEXT] = &InstSelectorArm64::translate_sext;
+    translator_handlers[IRInstOperator::IRINST_OP_ZEXT] = &InstSelectorArm64::translate_zext;
 
     // 浮点数算术指令
     translator_handlers[IRInstOperator::IRINST_OP_ADD_F] = &InstSelectorArm64::translate_add_f;
@@ -941,18 +945,21 @@ void InstSelectorArm64::translate_sitofp(Instruction * inst)
 void InstSelectorArm64::translate_gep(Instruction * inst)
 {
     Value * basePtr = inst->getOperand(0); // 基址指针
+                                           // 对于数组访问，我们需要计算偏移量
+    Value * index = inst->getOperand(2);
+    // 这里简化处理：如果基址在内存中，我们计算其地址
+    int32_t base_reg_id;
+    int64_t base_offset;
+    if (ConstInt * constIdx = dynamic_cast<ConstInt *>(index)) {
+        // 索引为常量
+        if (GetelementptrInstruction * gepBase = dynamic_cast<GetelementptrInstruction *>(basePtr)) {
+            // 源是另一个getelementptr的结果
+            int32_t base_reg_id = -1;
+            int64_t base_offset = -1;
+            gepBase->getMemoryAddr(&base_reg_id, &base_offset);
+            printf("gep源是另一个gep的结果\n");
 
-    if (GetelementptrInstruction * gepBase = dynamic_cast<GetelementptrInstruction *>(basePtr)) {
-        // basePtr是另一个getelementptr的结果
-        int32_t base_reg_id = -1;
-        int64_t base_offset = -1;
-        gepBase->getMemoryAddr(&base_reg_id, &base_offset);
-        printf("gep源是另一个gep的结果\n");
-
-        // 计算第二维的偏移
-        Value * index = inst->getOperand(2);
-        ConstInt * constIdx = dynamic_cast<ConstInt *>(index);
-        if (constIdx) {
+            // 计算第二维的偏移
             int64_t idx = constIdx->getVal();
             int64_t element_size = 4; // 基本元素大小
                                       // 检查gep源的类型来确定元素大小
@@ -992,19 +999,12 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             inst->setMemoryAddr(base_reg_id, base_offset);
             return;
         }
-    }
 
-    // 对于数组访问，我们需要计算偏移量
-    // 这里简化处理：如果基址在内存中，我们计算其地址
-    int32_t base_reg_id;
-    int64_t base_offset;
+        else if (basePtr->getMemoryAddr(&base_reg_id, &base_offset)) {
+            printf("gep源在栈上\n");
+            // gep源在栈上，计算其地址
 
-    if (basePtr->getMemoryAddr(&base_reg_id, &base_offset)) {
-        printf("gep源在栈上\n");
-        // gep源在栈上，计算其地址
-        Value * index = inst->getOperand(2);
-        ConstInt * constIdx = dynamic_cast<ConstInt *>(index);
-        if (constIdx) {
+            // 偏移为常量的情况
             int64_t idx = constIdx->getVal();
 
             // 计算正确的元素大小
@@ -1047,32 +1047,24 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             // 地址计算将在load/store指令中进行
             inst->setMemoryAddr(base_reg_id, element_offset);
             return;
-        }
 
-        // 默认情况：只设置内存地址信息，不生成地址计算指令
-        // 地址计算将在load/store指令中进行
-        inst->setMemoryAddr(base_reg_id, base_offset);
-    } else if (auto * globalArr = dynamic_cast<GlobalVariable *>(basePtr)) {
-        // gep源是全局数组
-        printf("gep源是全局数组: %s\n", globalArr->getName().c_str());
-        int res_reg_id = inst->getRegId();
-        if (res_reg_id == -1) {
-            printf("Error: getelementptr instruction has no register assigned\n");
-            return;
-        }
+            // 默认情况：只设置内存地址信息，不生成地址计算指令
+            // 地址计算将在load/store指令中进行
+            inst->setMemoryAddr(base_reg_id, base_offset);
+        } else if (auto * globalArr = dynamic_cast<GlobalVariable *>(basePtr)) {
+            // gep源是全局数组
+            printf("gep源是全局数组: %s\n", globalArr->getName().c_str());
+            int res_reg_id = inst->getRegId();
 
-        // 加载全局数组的基地址
-        iloc.inst("adrp", PlatformArm64::regName[res_reg_id + 32], globalArr->getName());
-        iloc.inst("add",
-                  PlatformArm64::regName[res_reg_id + 32],
-                  PlatformArm64::regName[res_reg_id + 32],
-                  ":lo12:" + globalArr->getName());
+            // 加载全局数组的基地址
+            iloc.inst("adrp", PlatformArm64::regName[res_reg_id + 32], globalArr->getName());
+            iloc.inst("add",
+                      PlatformArm64::regName[res_reg_id + 32],
+                      PlatformArm64::regName[res_reg_id + 32],
+                      ":lo12:" + globalArr->getName());
 
-        // 计算索引偏移
-        Value * index = inst->getOperand(2);
-        ConstInt * constVal = dynamic_cast<ConstInt *>(index);
-        if (constVal) {
-            int64_t idx = constVal->getVal();
+            // 计算索引偏移
+            int64_t idx = constIdx->getVal();
             int64_t element_size = 4; // 默认元素大小
 
             // 检查全局数组的类型来确定正确的元素大小
@@ -1092,10 +1084,133 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
 
             int64_t off = idx * element_size;
             inst->setMemoryAddr(res_reg_id + 32, off);
-        } else {
-            printf("Warning: non-constant index in getelementptr\n");
         }
-        printf("Debug: getelementptr设置寄存器ID为 %d\n", res_reg_id);
+    } else {
+        // 索引为变量
+        printf("检测到变量索引: %s\n", index->getName().c_str());
+
+        if (basePtr->getType()->isArrayType()) {
+            // 检测到源为数组类型
+            printf("源为数组类型\n");
+            const ArrayType * arrayType = static_cast<const ArrayType *>(basePtr->getType());
+            const std::vector<int> & dimensions = arrayType->getDimensions();
+            // 对于数组,获取最外s维
+            int size = dimensions[0];
+            std::string op = "add";
+            std::string s = PlatformArm64::regName[basePtr->getRegId() + 32] + "," +
+                            PlatformArm64::regName[index->getRegId() + 32] + ",lsl #" + std::to_string(size);
+            if (dimensions.size() > 1) {
+                //多维数组,add res_reg, base_ptr(全局/栈), 变量, lsl #最外围大小
+            } else {
+                //一维数组,ldr res_reg, [base_ptr(全局/栈/gep), 变量, lsl #最外围大小]
+                op = "ldr";
+                s = "[" + s + "]";
+            }
+            iloc.inst(op, PlatformArm64::regName[inst->getRegId() + 32], s);
+        } else if (auto * globalArr = dynamic_cast<GlobalVariable *>(basePtr)) {
+            // 处理全局数组变量的变量索引情况
+            printf("gep源是全局数组(变量索引): %s\n", globalArr->getName().c_str());
+            int res_reg_id = inst->getRegId();
+            int index_reg_id = index->getRegId();
+
+            // 加载全局数组的基地址
+            iloc.inst("adrp", PlatformArm64::regName[res_reg_id + 32], globalArr->getName());
+            iloc.inst("add",
+                      PlatformArm64::regName[res_reg_id + 32],
+                      PlatformArm64::regName[res_reg_id + 32],
+                      ":lo12:" + globalArr->getName());
+
+            // 计算变量索引的偏移
+            int64_t element_size = 4; // 默认元素大小
+
+            // 检查全局数组的类型来确定正确的元素大小
+            Type * globalType = globalArr->getStorageType() ? globalArr->getStorageType() : globalArr->getType();
+            if (globalType->isArrayType()) {
+                const ArrayType * arrayType = static_cast<const ArrayType *>(globalType);
+                Type * elementType = arrayType->getElementType();
+                if (elementType->isArrayType()) {
+                    // 多维数组：第一个gep计算行偏移，元素大小是整行的大小
+                    element_size = elementType->getSize();
+                    printf("Debug: 多维数组第一个gep(变量索引)，行大小: %ld 字节\n", element_size);
+                } else {
+                    // 一维数组：元素大小是基本类型大小
+                    element_size = elementType->getSize();
+                }
+            }
+
+            // 计算 element_size 对应的左移位数 (element_size = 2^shift)
+            int shift = 0;
+            int temp_size = element_size;
+            while (temp_size > 1) {
+                temp_size >>= 1;
+                shift++;
+            }
+
+            // 生成地址计算指令: add res_reg, base_reg, index_reg, lsl #shift
+            iloc.inst("add",
+                      PlatformArm64::regName[res_reg_id + 32],
+                      PlatformArm64::regName[res_reg_id + 32],
+                      PlatformArm64::regName[index_reg_id + 32] + ",lsl #" + std::to_string(shift));
+        } else if (GetelementptrInstruction * gepBase = dynamic_cast<GetelementptrInstruction *>(basePtr)) {
+            // 处理源是另一个getelementptr结果的变量索引情况
+            printf("gep源是另一个gep的结果(变量索引)\n");
+            int32_t base_reg_id = -1;
+            int64_t base_offset = -1;
+
+            if (gepBase->getMemoryAddr(&base_reg_id, &base_offset)) {
+                // 基址在内存中，计算变量索引的偏移
+                int res_reg_id = inst->getRegId();
+                int index_reg_id = index->getRegId();
+
+                // 计算元素大小
+                int64_t element_size = 4; // 默认元素大小
+                Type * baseType = basePtr->getType();
+                if (baseType->isPointerType()) {
+                    const PointerType * ptrType = static_cast<const PointerType *>(baseType);
+                    const Type * pointeeType = ptrType->getPointeeType();
+                    if (pointeeType->isArrayType()) {
+                        const ArrayType * arrayType = static_cast<const ArrayType *>(pointeeType);
+                        element_size = arrayType->getElementType()->getSize();
+                    } else {
+                        element_size = pointeeType->getSize();
+                    }
+                }
+
+                printf("Debug: 第二个gep(变量索引)，元素大小: %ld 字节\n", element_size);
+
+                // 计算 element_size 对应的左移位数
+                int shift = 0;
+                int temp_size = element_size;
+                while (temp_size > 1) {
+                    temp_size >>= 1;
+                    shift++;
+                }
+
+                // 获取第一个gep的寄存器信息
+                int base_gep_reg = gepBase->getRegId();
+
+                // 生成地址计算指令: add res_reg, base_reg, index_reg, lsl #shift
+                if (base_gep_reg >= 0) {
+                    // 第一个gep的结果已经在寄存器中，直接使用
+                    printf("Debug: 使用第一个gep的寄存器结果: %s\n", PlatformArm64::regName[base_gep_reg + 32].c_str());
+                    iloc.inst("add",
+                              PlatformArm64::regName[res_reg_id + 32],
+                              PlatformArm64::regName[base_gep_reg + 32],
+                              PlatformArm64::regName[index_reg_id + 32] + ",lsl #" + std::to_string(shift));
+                } else {
+                    // 如果第一个gep的结果不在寄存器中，从内存加载
+                    iloc.inst("add", PlatformArm64::regName[res_reg_id + 32], "sp", "#" + std::to_string(base_offset));
+                    iloc.inst("add",
+                              PlatformArm64::regName[res_reg_id + 32],
+                              PlatformArm64::regName[res_reg_id + 32],
+                              PlatformArm64::regName[index_reg_id + 32] + ",lsl #" + std::to_string(shift));
+                }
+            } else {
+                printf("Warning: gep基址不在内存中，无法处理变量索引\n");
+            }
+        } else {
+            printf("Warning: 未处理的变量索引情况，basePtr类型: %s\n", basePtr->getType()->toString().c_str());
+        }
     }
 }
 
@@ -1320,5 +1435,132 @@ void InstSelectorArm64::translate_memset(Instruction * inst)
             // 存储零到目标地址
             iloc.inst("str", "wzr", "[" + dest_reg_name + ", #" + std::to_string(i * 4) + "]");
         }
+    }
+}
+
+/// @brief sext指令翻译成ARM64汇编
+/// @param inst IR指令
+void InstSelectorArm64::translate_sext(Instruction * inst)
+{
+    Value * src = inst->getOperand(0);
+
+    // 获取源类型和目标类型
+    Type * srcType = src->getType();
+    Type * destType = inst->getType();
+
+    // 获取源寄存器和目标寄存器
+    int32_t src_reg_no = src->getRegId();
+    int32_t dest_reg_no = inst->getRegId();
+
+    // 如果源值不在寄存器中，先加载到临时寄存器
+    if (src_reg_no == -1) {
+        iloc.load_var(ARM64_TMP_REG_NO, src);
+        src_reg_no = ARM64_TMP_REG_NO;
+    }
+
+    // 获取源类型和目标类型的位宽
+    int32_t srcBitWidth = 32;  // 默认32位
+    int32_t destBitWidth = 32; // 默认32位
+
+    if (Instanceof(srcIntType, IntegerType *, srcType)) {
+        srcBitWidth = srcIntType->getBitWidth();
+    }
+    if (Instanceof(destIntType, IntegerType *, destType)) {
+        destBitWidth = destIntType->getBitWidth();
+    }
+
+    // 根据源类型和目标类型选择合适的符号扩展指令
+    std::string src_reg_name = PlatformArm64::regName[src_reg_no];
+    std::string dest_reg_name = PlatformArm64::regName[dest_reg_no];
+
+    if (srcBitWidth == 32 && destBitWidth == 64) {
+        // i32 -> i64: 使用sxtw指令（符号扩展字到双字）
+        // 需要使用64位寄存器名
+        if (dest_reg_no < 32) {
+            dest_reg_name = "x" + std::to_string(dest_reg_no);
+        }
+        iloc.inst("sxtw", dest_reg_name, src_reg_name);
+    } else {
+        printf("sext暂时不支持这种转换\n");
+    }
+}
+
+/// @brief zext指令翻译成ARM64汇编
+/// @param inst IR指令
+void InstSelectorArm64::translate_zext(Instruction * inst)
+{
+    Value * src = inst->getOperand(0);
+
+    // 获取源类型和目标类型
+    Type * srcType = src->getType();
+    Type * destType = inst->getType();
+
+    // 获取源寄存器和目标寄存器
+    int32_t src_reg_no = src->getRegId();
+    int32_t dest_reg_no = inst->getRegId();
+
+    // 如果源值不在寄存器中，先加载到临时寄存器
+    if (src_reg_no == -1) {
+        iloc.load_var(ARM64_TMP_REG_NO, src);
+        src_reg_no = ARM64_TMP_REG_NO;
+    }
+
+    // 获取源类型和目标类型的位宽
+    int32_t srcBitWidth = 32;  // 默认32位
+    int32_t destBitWidth = 32; // 默认32位
+
+    if (Instanceof(srcIntType, IntegerType *, srcType)) {
+        srcBitWidth = srcIntType->getBitWidth();
+    }
+    if (Instanceof(destIntType, IntegerType *, destType)) {
+        destBitWidth = destIntType->getBitWidth();
+    }
+
+    // 根据源类型和目标类型选择合适的零扩展指令
+    std::string src_reg_name = PlatformArm64::regName[src_reg_no];
+    std::string dest_reg_name = PlatformArm64::regName[dest_reg_no];
+
+    printf("Debug: zext from %d bits to %d bits\n", srcBitWidth, destBitWidth);
+    printf("Debug: src_reg_no=%d, dest_reg_no=%d\n", src_reg_no, dest_reg_no);
+
+    if (srcBitWidth == 8 && destBitWidth == 32) {
+        // i8 -> i32: 使用uxtb指令（零扩展字节到字）
+        printf("Debug: Generating uxtb instruction\n");
+        iloc.inst("uxtb", dest_reg_name, src_reg_name);
+    } else if (srcBitWidth == 16 && destBitWidth == 32) {
+        // i16 -> i32: 使用uxth指令（零扩展半字到字）
+        printf("Debug: Generating uxth instruction\n");
+        iloc.inst("uxth", dest_reg_name, src_reg_name);
+    } else if (srcBitWidth == 1 && destBitWidth == 32) {
+        // i1 -> i32: 布尔值零扩展到32位整数
+        printf("Debug: Generating mov instruction for i1->i32 (zext)\n");
+        iloc.inst("mov", dest_reg_name, src_reg_name);
+    } else if (srcBitWidth == 32 && destBitWidth == 64) {
+        // i32 -> i64: 在ARM64中，32位操作会自动零扩展到64位
+        // 使用mov指令将32位值移动到64位寄存器，高32位自动清零
+        if (dest_reg_no < 32) {
+            dest_reg_name = "x" + std::to_string(dest_reg_no);
+        }
+        // 使用32位寄存器名作为源，会自动零扩展
+        printf("Debug: Generating mov instruction for i32->i64 (zext)\n");
+        iloc.inst("mov", dest_reg_name, src_reg_name);
+    } else if (srcBitWidth == 8 && destBitWidth == 64) {
+        // i8 -> i64: 零扩展字节到64位
+        if (dest_reg_no < 32) {
+            dest_reg_name = "x" + std::to_string(dest_reg_no);
+        }
+        printf("Debug: Generating uxtb instruction for i8->i64\n");
+        iloc.inst("uxtb", dest_reg_name, src_reg_name);
+    } else if (srcBitWidth == 16 && destBitWidth == 64) {
+        // i16 -> i64: 零扩展半字到64位
+        if (dest_reg_no < 32) {
+            dest_reg_name = "x" + std::to_string(dest_reg_no);
+        }
+        printf("Debug: Generating uxth instruction for i16->i64\n");
+        iloc.inst("uxth", dest_reg_name, src_reg_name);
+    } else {
+        // 其他情况，使用mov指令（如果位宽相同）
+        printf("Debug: Generating mov instruction (fallback) for %d->%d\n", srcBitWidth, destBitWidth);
+        iloc.inst("mov", dest_reg_name, src_reg_name);
     }
 }

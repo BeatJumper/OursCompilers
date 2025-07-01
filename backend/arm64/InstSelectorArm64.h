@@ -204,6 +204,14 @@ protected:
     ///
     void translate_memset(Instruction * inst);
 
+    /// @brief sext指令翻译成ARM64汇编
+    /// @param inst IR指令
+    void translate_sext(Instruction * inst);
+
+    /// @brief zext指令翻译成ARM64汇编
+    /// @param inst IR指令
+    void translate_zext(Instruction * inst);
+
     ///
     /// @brief 输出IR指令
     ///
