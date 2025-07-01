@@ -62,11 +62,6 @@ void LiveVariableAnalysis(ControlFlowGraph * _graph)
             for (int i = insts.size() - 2; i >= 0; --i) {
                 std::string s;
                 insts[i]->toString(s);
-                std::cout << "node:" << s << std::endl;
-                std::cout << "size of def_set:" << insts[i]->get_def_set().size() << std::endl;
-                // printset(insts[i]->def_set);
-                std::cout << "size of use_set:" << insts[i]->get_use_set().size() << std::endl;
-                // printset(insts[i]->use_set);
                 //  对于基本块内的前 n-1 个指令，只会有1个后继指令
                 need_update |= update_live(insts[i], insts[i + 1]);
             }

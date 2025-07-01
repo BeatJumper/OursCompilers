@@ -60,7 +60,8 @@ public:
     static bool isReg(std::string name);
 
     /// @brief 最大寄存器数目
-    static const int maxRegNum = 63;
+    /// @note 目前整数寄存器名有63个，浮点寄存器名有64个
+    static const int maxRegNum = 63 + 64;
 
     /// @brief 可使用的通用寄存器的个数(w0~w17以及w19~w28)
     static const int maxUsableRegNum = 28;

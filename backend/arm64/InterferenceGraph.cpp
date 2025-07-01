@@ -1,5 +1,6 @@
 #include <stack>
 #include <algorithm>
+#include <bitset>
 
 #include "InterferenceGraph.h"
 #include "PlatformArm64.h"
@@ -70,6 +71,7 @@ InterferenceGraph::InterferenceGraph(Function * func)
     // printf("已释放临时基本块表\n");
     //  进行活跃变量分析，获得每条语句的DEF和USE集合
     LiveVariableAnalysis(graph_cfg);
+
     // printf("已经活跃变量分析\n");
     //  完成干涉图构建
     ExecuteCFG(graph_cfg);
@@ -81,9 +83,24 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
     std::map<Value *, node_IG *> value_to_ig;
     std::set<Value *> all_value_in_cfg;
 
+    printf("所有指令列表:\n");
+    for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
+        printval(inst);
+    }
+    printf("指令列表结束\n");
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
         merge_set(all_value_in_cfg, inst->get_def_set());
         merge_set(all_value_in_cfg, inst->get_use_set());
+        printf("node:");
+        printval(inst);
+        printf("size of def_set:%d\n", inst->get_def_set().size());
+        printset(inst->get_def_set());
+        printf("size of use_set:%d\n", inst->get_use_set().size());
+        printset(inst->get_use_set());
+        printf("size of livein:%d\n", inst->get_livein().size());
+        printset(inst->get_livein());
+        printf("size of liveout:%d\n", inst->get_liveout().size());
+        printset(inst->get_liveout());
     }
 
     // 为控制流图中每个Value都创建一个干涉图节点
@@ -109,6 +126,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
     printf("所有干涉节点创建完成\n");
     // std::cout <<　uncolored_node_set.size() << std::endl;
 
+    /*
     // 扫描函数里每条指令，获取每个时刻的活跃变量集合
     int i = 1;
     printf("size of insts:%zu\n", graph->get_func()->getInterCode().getCode().size());
@@ -116,11 +134,9 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
         std::set<Value *> value_occupy = inst->get_liveout();
         merge_set(value_occupy, inst->get_def_set());
         printf("第%d次获取DEF、SET集合\n", i++);
-        /*
         if (i == 2) {
             break;
         }
-        */
         //  这些不同的量两两之间都是互斥的，不能在同一寄存器
         FOR_EACH_PAIR_IN_SET(value_occupy)
         {
@@ -132,6 +148,37 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
             add_edge(value_to_ig[*it1], value_to_ig[*it2]);
         }
         // std::cout << "干涉边添加完毕" << std::endl;
+    }
+    */
+    // 优化版本的干涉图产生过程
+    // 每个Value都有一个位图，位图中每一位表示其是否在对应语句的活跃集合中出现
+    std::map<Value *, std::bitset<4000>> live_set_of_value;
+
+    // 集合所对应的位图坐标
+    int index = 0;
+    for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
+        std::set<Value *> value_occupy = inst->get_liveout();
+        merge_set(value_occupy, inst->get_def_set());
+        // std::set<Value *> value_occupy = inst->get_livein();
+        for (Value * val: value_occupy) {
+            live_set_of_value[val].set(index);
+        }
+        index++;
+    }
+    for (Value * val1: all_value_in_cfg) {
+        for (Value * val2: all_value_in_cfg) {
+            if (val1 == val2) {
+                continue;
+            }
+            if ((val1->getType() != val2->getType()) &&
+                (val1->getType() == FloatType::getTypeFloat() || val2->getType() == FloatType::getTypeFloat())) {
+                continue;
+            }
+            auto &bit1 = live_set_of_value[val1], &bit2 = live_set_of_value[val2];
+            if ((bit1 & bit2).any()) {
+                add_edge(value_to_ig[val1], value_to_ig[val2]);
+            }
+        }
     }
 }
 
@@ -217,6 +264,8 @@ static bool welsh_powell(InterferenceGraph * graph, int color_size)
         printf("里程碑\n");
         // 中途有某个节点无颜色可用，则染色失败
         if (node->color == -1) {
+            printval(node->val);
+            // printf("%d\n", node->degree());
             return false;
         }
     }
@@ -294,12 +343,16 @@ bool InterferenceGraph::color_graph(InterferenceGraph * graph, int color_size)
     return suc;
 }
 
-int InterferenceGraph::ColorToRegId(int color)
+int InterferenceGraph::ColorToRegId(int color, bool is_float)
 {
     assert(color < PlatformArm64::maxUsableRegNum);
-    if (color < PlatformArm64::CallerSaveRegNum) {
-        return color;
+    if (is_float) {
+        return color + 63;
     } else {
-        return color + 1;
+        if (color < PlatformArm64::CallerSaveRegNum) {
+            return color;
+        } else {
+            return color + 1;
+        }
     }
 }

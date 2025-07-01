@@ -324,7 +324,9 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
                 // std::cout << InterferenceGraph::ColorToRegId(node->color) << std::endl;
                 // printval(func->getParams()[0]);
                 printval(node->val);
-                node->val->setRegId(InterferenceGraph::ColorToRegId(node->color));
+                node->val->setRegId(
+                    InterferenceGraph::ColorToRegId(node->color, node->val->getType() == FloatType::getTypeFloat()));
+
                 // std::cout << node->val->getRegId() << std::endl;
             }
             break;
@@ -396,7 +398,7 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     for (Instruction * inst: func->getInterCode().getCode()) {
         for (Value * val: inst->get_use_set()) {
             // 这里为什么有val->getRegId() < 32？因为要考虑到本系统目前给浮点寄存器分配了大于31的regID
-            if (val->getRegId() > 15 && val->getRegId() < 32) {
+            if (val->getRegId() >= 19 && val->getRegId() < 32) {
                 protectedreg_set.insert(val->getRegId());
             }
         }

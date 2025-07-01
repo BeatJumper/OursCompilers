@@ -66,9 +66,10 @@ struct InterferenceGraph {
     static const color_method method_chosen = color_method::WELSH_POWELL;
     /// @brief 将染的颜色对应到对应的寄存器号码
     /// @param color 颜色
+    /// @param is_float 是否是浮点寄存器
     /// @return 对应的寄存器号码
     /// @note 染色中可使用的寄存器目前有X0-X15以及X19-X28，一共26个
-    static int ColorToRegId(int color);
+    static int ColorToRegId(int color, bool is_float);
 };
 
 /// @brief 对一个干涉图节点，寻找其目前能染的编号最小的颜色
