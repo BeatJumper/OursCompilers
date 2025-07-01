@@ -166,6 +166,22 @@ std::any MiniCCSTVisitor::visitFuncFParam(MiniCParser::FuncFParamContext * ctx)
             // 收集维度信息
             if (dimNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
                 typeAttr.dimensions.push_back(dimNode->integer_val);
+            } else {
+                // 尝试计算常量表达式（如常量引用 MAX_DIM_Y）
+                int dimValue;
+                if (evaluateConstantExpression(dimNode, dimValue)) {
+                    if (dimValue > 0) {
+                        typeAttr.dimensions.push_back(dimValue);
+                        printf("Debug: Evaluated function parameter dimension expression to: %d\n", dimValue);
+                    } else {
+                        printf("Error: Function parameter dimension must be positive, got: %d\n", dimValue);
+                        typeAttr.dimensions.push_back(-1);
+                    }
+                } else {
+                    // 如果无法计算，使用-1表示动态大小
+                    typeAttr.dimensions.push_back(-1);
+                    printf("Warning: Could not evaluate function parameter dimension expression, using -1\n");
+                }
             }
         }
     }
