@@ -301,7 +301,7 @@ void Function::Delete()
 /// @brief 函数内的Value重命名
 /// @param module 模块指针，用于获取全局计数器
 ///
-void Function::renameIR(Module * module)
+void Function::renameIR()
 {
     // 内置函数忽略
     if (isBuiltin()) {

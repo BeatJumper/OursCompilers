@@ -304,7 +304,7 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     printf("调整函数调用指令\n");
 
     // 加完新指令后也该重新调整IR编号
-    func->renameIR(module);
+    func->renameIR();
 
     // 主要染色过程（不断尝试染色直至成功）
     while (true) {
@@ -684,19 +684,9 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
 
             // 有arg指令后可不用参数，展示不删除
             // args.clear();
-
             // 赋值指令
             if (callInst->hasResultValue()) {
-                callInst->setRegId(0);
-                /*
-                下面这段代码弃用。理由：
-                函数返回值会存入w0，这是已经由被调用一方保证了的
-                作为调用方，应该保证的是w0在函数调用时处于可占用状态，
-                而不是在函数调用完之后把返回值存入w0，因为返回值一
-                定会出现在w0，换句话说，这里应该做的是记下它强占了
-                w0，在后面通过染色的方式保证w0此时会空出来。
-                */
-                /*
+
                 if (callInst->getRegId() == 0) {
                     // 结果变量的寄存器和返回值寄存器一样，则什么都不需要做
                     ;
@@ -712,19 +702,7 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                     pIter = insts.insert(pIter + 1, assignInst);
                     printf("插入一条赋值指令\n");
                 }
-                */
             }
-
-            // 这段代码弃用，理由：不用再加临时的USE了
-            /*
-            // 形式化表达函数调用指令对W0~W15产生的USE。
-            Value * onlyval = new Value(VoidType::getType());
-            for (int index = 0; index < PlatformArm64::CallerSaveRegNum; index++) {
-                Value * val = callInst->getOperand(index);
-                MoveInstruction * movinst = new MoveInstruction(func, onlyval, val);
-                insts.insert(pIter + 1, movinst);
-            }
-            */
         }
     }
 }

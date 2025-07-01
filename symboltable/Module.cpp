@@ -417,7 +417,7 @@ void Module::renameIR()
 
     // 遍历所有的函数，含局部变量名、形参、Label名、指令变量重命名
     for (auto func: funcVector) {
-        func->renameIR(this);
+        func->renameIR();
     }
 }
 

@@ -117,7 +117,7 @@ void InstSelectorArm64::run()
         // 逐个指令进行翻译
         if (!inst->isDead()) {
             translate(inst);
-            printf("第%d条指令翻译成功\n", i);
+            printf("第%d条指令翻译成功,寄存器编号:%d\n", i, inst->getRegId());
             i++;
         }
     }
@@ -888,13 +888,9 @@ void InstSelectorArm64::translate_ret(Instruction * inst)
     Value * returnValue = func->getReturnValue();
 
     // 如果存在返回值，确保其位于x0寄存器
-    // if (returnValue != nullptr) {
-    if (inst->getOperandsNum()) {
-        returnValue = inst->getOperand(0);
+    if (returnValue != nullptr) {
         int32_t resultRegId = returnValue->getRegId();
-        /*TODO 在汇编阶段临时添加MOV原则上是不行的（至少在这个项目里），
-         * 因为MOV到的寄存器未必空闲，所以应当在寄存器分配前就加好MOV指令
-         */
+
         // 如果返回值未在x0中，进行寄存器移动
         if (resultRegId != 0) {
             printf("返回值未在x0中，进行寄存器移动:%d\n", resultRegId);
@@ -1106,13 +1102,23 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
         if (basePtr->getType()->isArrayType()) {
             // 检测到源为数组类型
             printf("源为数组类型\n");
+            int index_reg_id = index->getRegId();
             const ArrayType * arrayType = static_cast<const ArrayType *>(basePtr->getType());
             const std::vector<int> & dimensions = arrayType->getDimensions();
             // 对于数组,获取最外s维
-            int size = dimensions[0];
+            int size = 1;
+            for (int i = 1; i < dimensions.size(); i++) {
+                size *= dimensions[i];
+            }
+            size *= arrayType->getElementType()->getSize();
+            int lsl = 0;
+            for (; size > 1; size >>= 1) {
+                lsl++;
+            }
+
             std::string op = "add";
             std::string s = PlatformArm64::regName[basePtr->getRegId() + 32] + "," +
-                            PlatformArm64::regName[index->getRegId() + 32] + ",lsl #" + std::to_string(size);
+                            PlatformArm64::regName[index_reg_id + 32] + ",lsl #" + std::to_string(lsl);
             if (dimensions.size() > 1) {
                 //多维数组,add res_reg, base_ptr(全局/栈), 变量, lsl #最外围大小
             } else {

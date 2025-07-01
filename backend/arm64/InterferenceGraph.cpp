@@ -111,7 +111,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
 
     // 扫描函数里每条指令，获取每个时刻的活跃变量集合
     int i = 1;
-    printf("size of insts:%d\n", graph->get_func()->getInterCode().getCode().size());
+    printf("size of insts:%zu\n", graph->get_func()->getInterCode().getCode().size());
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
         std::set<Value *> value_occupy = inst->get_liveout();
         merge_set(value_occupy, inst->get_def_set());

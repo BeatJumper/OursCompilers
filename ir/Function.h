@@ -155,7 +155,7 @@ public:
     /// @brief 函数内的Value重命名，用于IR指令的输出
     /// @param module 模块指针，用于获取全局计数器
     ///
-    void renameIR(class Module * module);
+    void renameIR();
 
     ///
     /// @brief 获取统计的ARG指令的个数
