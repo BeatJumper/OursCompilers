@@ -2090,11 +2090,16 @@ bool IRGenerator::ir_global_variable_declare(ast_node * node, ast_node * typeNod
 
                 // 处理初始化值
                 std::vector<Value *> initValues;
+                printf("Debug: Processing global variable '%s' with processArrayInitialization\n",
+                       varNode->name.c_str());
                 if (!processArrayInitialization(initExprNode, arrayType, initValues)) {
                     printf("Error: Failed to process array initialization for global variable '%s'.\n",
                            varNode->name.c_str());
                     return false;
                 }
+                printf("Debug: Global variable '%s' processed successfully with %zu init values\n",
+                       varNode->name.c_str(),
+                       initValues.size());
 
                 // 设置初始化值列表
                 globalArray->setInitValueList(initValues);
@@ -4624,18 +4629,19 @@ bool IRGenerator::ir_array_init(ast_node * node)
 
     if (isTopLevel) {
         // 顶层数组：创建真正的全局常量数组
+        printf("Debug: isTopLevel=true, targetArrayType=%p, node->name='%s'\n", targetArrayType, node->name.c_str());
 
         // 如果有父节点提供的正确类型，使用processArrayInitialization重新处理
         if (targetArrayType && !node->name.empty()) {
-            // printf("Debug: Re-processing with processArrayInitialization for target type: %s\n",
-            // targetArrayType->toString().c_str());
+            printf("Debug: Re-processing with processArrayInitialization for target type: %s\n",
+                   targetArrayType->toString().c_str());
 
             // 使用processArrayInitialization重新处理初始化值
             std::vector<Value *> reorganizedValues;
             if (processArrayInitialization(node, targetArrayType, reorganizedValues)) {
                 initValues = reorganizedValues;
                 arrayType = targetArrayType;
-                // printf("Debug: Successfully re-processed with correct type\n");
+                printf("Debug: Successfully re-processed with correct type\n");
             } else {
                 printf("Warning: Failed to re-process with target type, using inferred type\n");
             }
@@ -4940,6 +4946,51 @@ int IRGenerator::calculateTotalDimensions(ArrayType * arrayType)
     return dimensions;
 }
 
+/// @brief 计算数组类型的最内层数组大小
+/// @param arrayType 数组类型
+/// @return 最内层数组大小
+int IRGenerator::calculateInnermostArraySize(ArrayType * arrayType)
+{
+    if (!arrayType)
+        return 1;
+
+    Type * currentType = arrayType;
+
+    // 找到最内层的数组类型
+    while (currentType->isArrayType()) {
+        ArrayType * currentArrayType = static_cast<ArrayType *>(currentType);
+        Type * elementType = currentArrayType->getElementType();
+
+        if (!elementType->isArrayType()) {
+            // 找到了最内层数组
+            const std::vector<int> & dimensions = currentArrayType->getDimensions();
+            return dimensions.empty() ? 1 : dimensions[0];
+        }
+
+        currentType = elementType;
+    }
+
+    return 1;
+}
+
+/// @brief 获取数组类型的最内层数组类型
+/// @param arrayType 数组类型
+/// @return 最内层数组类型
+ArrayType * IRGenerator::getInnermostArrayType(ArrayType * arrayType)
+{
+    if (!arrayType)
+        return nullptr;
+
+    ArrayType * currentArrayType = arrayType;
+
+    // 找到最内层的数组类型
+    while (currentArrayType->getElementType()->isArrayType()) {
+        currentArrayType = static_cast<ArrayType *>(currentArrayType->getElementType());
+    }
+
+    return currentArrayType;
+}
+
 /// @brief 递归处理数组初始化，用于全局常量数组
 /// @param initNode 数组初始化节点
 /// @param arrayType 数组类型
@@ -4960,149 +5011,136 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
         return false;
     }
 
-    // 检查是否是多维数组
-    bool isMultiDim = arrayType->getElementType()->isArrayType();
+    // 获取当前层的维度信息
+    int currentDimSize = dimensions[0]; // 当前层的大小
+    Type * elementType = arrayType->getElementType();
 
-    if (isMultiDim) {
-        // 多维数组处理
-        ArrayType * innerArrayType = static_cast<ArrayType *>(arrayType->getElementType());
-        const std::vector<int> & innerDims = innerArrayType->getDimensions();
-        int innerSize = innerDims.empty() ? 1 : innerDims[0]; // 内层数组的大小
-        int outerSize = dimensions[0];                        // 外层数组的大小
+    // 计算子数组的大小（递归计算所有嵌套维度）
+    int subArraySize = 1;
+    if (elementType->isArrayType()) {
+        ArrayType * subArrayType = static_cast<ArrayType *>(elementType);
+        subArraySize = calculateTotalBaseElements(subArrayType);
+    }
 
-        // 计算真正的总元素个数（递归计算所有嵌套维度）
-        int totalElements = outerSize * innerArrayType->getTotalElements();
+    printf("Debug: processArrayInitialization - currentDimSize=%d, subArraySize=%d, elementType=%s\n",
+           currentDimSize,
+           subArraySize,
+           elementType->toString().c_str());
+    printf("Debug: Array dimensions: ");
+    for (size_t i = 0; i < dimensions.size(); ++i) {
+        printf("[%d]", dimensions[i]);
+    }
+    printf("\n");
 
-        // printf("Debug: Processing multi-dim array [%d][%d], total elements: %d\n", outerSize, innerSize,
-        // totalElements);
+    // 计算总元素个数
+    int totalElements = currentDimSize * subArraySize;
 
-        // 初始化结果数组，全部填零
-        Value * zeroValue = nullptr;
-        if (arrayType->getElementType()->isFloatType()) {
-            zeroValue = module->newConstFloat(0.0f);
-        } else {
-            zeroValue = module->newConstInt(0);
-        }
-        initValues.resize(totalElements, zeroValue);
+    // 计算最内层数组大小，用于处理嵌套括号
+    int innermostArraySize = calculateInnermostArraySize(arrayType);
+    printf("Debug: innermostArraySize=%d\n", innermostArraySize);
 
-        int currentPos = 0; // 当前在扁平化数组中的位置
-
-        for (auto son: initNode->sons) {
-            if (son->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
-                // 单个整数字面量 - 需要考虑是否应该开始新行
-                if (currentPos < totalElements) {
-                    // 如果当前位置不在行首且前面有嵌套数组，移动到下一行
-                    if (currentPos % innerSize != 0) {
-                        int nextRowStart = ((currentPos / innerSize) + 1) * innerSize;
-                        if (nextRowStart < totalElements) {
-                            currentPos = nextRowStart;
-                        }
-                    }
-
-                    if (currentPos < totalElements) {
-                        initValues[currentPos] = module->newConstInt(son->integer_val);
-                        currentPos++;
-                    }
-                }
-            } else if (son->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
-                // 单个浮点数字面量 - 需要考虑是否应该开始新行
-                if (currentPos < totalElements) {
-                    // 如果当前位置不在行首且前面有嵌套数组，移动到下一行
-                    if (currentPos % innerSize != 0) {
-                        int nextRowStart = ((currentPos / innerSize) + 1) * innerSize;
-                        if (nextRowStart < totalElements) {
-                            currentPos = nextRowStart;
-                        }
-                    }
-
-                    if (currentPos < totalElements) {
-                        initValues[currentPos] = module->newConstFloat(son->float_val);
-                        currentPos++;
-                    }
-                }
-            } else if (son->node_type == ast_operator_type::AST_OP_NEGATIVE) {
-                // 处理负数常量
-                Value * constResult = nullptr;
-                if (evaluate_const_expr(son, constResult)) {
-                    if (currentPos < totalElements) {
-                        // 如果当前位置不在行首且前面有嵌套数组，移动到下一行
-                        if (currentPos % innerSize != 0) {
-                            int nextRowStart = ((currentPos / innerSize) + 1) * innerSize;
-                            if (nextRowStart < totalElements) {
-                                currentPos = nextRowStart;
-                            }
-                        }
-
-                        if (currentPos < totalElements) {
-                            initValues[currentPos] = constResult;
-                            currentPos++;
-                        }
-                    }
-                } else {
-                    printf("Error: Failed to evaluate negative constant in array initialization\n");
-                    return false;
-                }
-            } else if (son->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
-                // 嵌套数组初始化 - 填充一整行
-                int rowStart = (currentPos / innerSize) * innerSize; // 当前行的起始位置
-                if (currentPos % innerSize != 0) {
-                    // 如果当前位置不在行首，移动到下一行
-                    rowStart += innerSize;
-                }
-
-                std::vector<Value *> nestedValues;
-                if (!processArrayInitialization(son, innerArrayType, nestedValues)) {
-                    return false;
-                }
-
-                // 将嵌套数组的值复制到对应的行
-                for (size_t i = 0; i < nestedValues.size() && rowStart + i < static_cast<size_t>(totalElements); ++i) {
-                    initValues[rowStart + i] = nestedValues[i];
-                }
-
-                currentPos = rowStart + innerSize; // 移动到下一行
-            }
-        }
+    // 确定零值类型
+    Value * zeroValue = nullptr;
+    Type * baseType = arrayType;
+    while (baseType->isArrayType()) {
+        baseType = static_cast<ArrayType *>(baseType)->getElementType();
+    }
+    if (baseType->isFloatType()) {
+        zeroValue = module->newConstFloat(0.0f);
     } else {
-        // 一维数组处理
-        int totalElements = arrayType->getTotalElements();
-        // printf("Debug: Processing 1D array, total elements: %d\n", totalElements);
+        zeroValue = module->newConstInt(0);
+    }
 
-        for (auto son: initNode->sons) {
-            if (son->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
-                initValues.push_back(module->newConstInt(son->integer_val));
-            } else if (son->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
-                initValues.push_back(module->newConstFloat(son->float_val));
-            } else if (son->node_type == ast_operator_type::AST_OP_NEGATIVE) {
-                // 处理负数常量
-                Value * constResult = nullptr;
-                if (evaluate_const_expr(son, constResult)) {
-                    initValues.push_back(constResult);
-                } else {
-                    printf("Error: Failed to evaluate negative constant in array initialization\n");
-                    return false;
-                }
+    // 初始化结果数组，全部填零
+    initValues.resize(totalElements, zeroValue);
+
+    // 处理初始化列表
+    int currentPos = 0; // 当前在整个数组中的位置
+
+    for (auto son: initNode->sons) {
+        if (son->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
+            // 嵌套数组初始化 - 按最内层数组大小对齐
+            printf("Debug: Found nested array init {}, currentPos=%d\n", currentPos);
+
+            // 对齐到下一个最内层数组的开始位置
+            // 在C语言中，{...} 总是开始一个新的最内层数组
+            int remainder = currentPos % innermostArraySize;
+            if (remainder != 0) {
+                // 如果不在边界上，移动到下一个最内层数组的开始
+                currentPos += (innermostArraySize - remainder);
             }
-        }
+            // 如果已经在边界上，说明当前位置就是正确的最内层数组开始位置
+            printf("Debug: After alignment, currentPos=%d\n", currentPos);
+            std::vector<Value *> subValues;
 
-        // 对于大数组，避免生成过多的零值
-        if (initValues.empty()) {
-            // 完全空的初始化列表，不填充零值，使用zeroinitializer
-            // printf("Debug: Empty initialization list, will use zeroinitializer\n");
-        } else if (static_cast<int>(initValues.size()) < totalElements) {
-            // 部分初始化，只有在数组不太大时才填充零值
-            if (totalElements <= 10000) { // 限制填充的最大元素数
-                while (static_cast<int>(initValues.size()) < totalElements) {
-                    if (arrayType->getElementType()->isIntegerType()) {
-                        initValues.push_back(module->newConstInt(0));
-                    } else if (arrayType->getElementType()->isFloatType()) {
-                        initValues.push_back(module->newConstFloat(0.0f));
-                    } else {
-                        initValues.push_back(module->newConstInt(0));
-                    }
+            if (elementType->isArrayType()) {
+                // 对于嵌套数组初始化，使用最内层数组类型
+                ArrayType * innermostType = getInnermostArrayType(arrayType);
+                printf("Debug: Recursively processing innermost array type: %s\n", innermostType->toString().c_str());
+                if (!processArrayInitialization(son, innermostType, subValues)) {
+                    return false;
                 }
             } else {
-                printf("Warning: Array too large (%d elements), partial initialization not supported\n", totalElements);
+                // 基础类型数组，直接处理元素
+                for (auto subSon: son->sons) {
+                    Value * value = nullptr;
+                    if (subSon->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+                        value = module->newConstInt(subSon->integer_val);
+                    } else if (subSon->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
+                        value = module->newConstFloat(subSon->float_val);
+                    } else if (subSon->node_type == ast_operator_type::AST_OP_NEGATIVE) {
+                        if (!evaluate_const_expr(subSon, value)) {
+                            printf("Error: Failed to evaluate negative constant in nested array initialization\n");
+                            return false;
+                        }
+                    } else {
+                        printf("Error: Unsupported node type in nested array initialization\n");
+                        return false;
+                    }
+                    subValues.push_back(value);
+                }
+
+                // 填充不足的元素为零
+                while (static_cast<int>(subValues.size()) < subArraySize) {
+                    subValues.push_back(zeroValue);
+                }
+            }
+
+            // 将子数组的值复制到正确的位置
+            printf("Debug: Copying %zu subValues to position %d\n", subValues.size(), currentPos);
+            for (size_t i = 0; i < subValues.size() && currentPos + i < static_cast<size_t>(totalElements); ++i) {
+                initValues[currentPos + i] = subValues[i];
+                printf("Debug: initValues[%d] = subValues[%zu]\n", currentPos + (int) i, i);
+            }
+
+            // 移动到下一个最内层数组的位置
+            currentPos += innermostArraySize;
+
+        } else if (son->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT ||
+                   son->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT ||
+                   son->node_type == ast_operator_type::AST_OP_NEGATIVE) {
+            // 单个元素 - 按顺序填充
+            int value = 0;
+            if (son->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+                value = son->integer_val;
+            }
+            printf("Debug: Found literal value %d, currentPos=%d\n", value, currentPos);
+
+            if (currentPos < totalElements) {
+                Value * valueObj = nullptr;
+                if (son->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+                    valueObj = module->newConstInt(son->integer_val);
+                } else if (son->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
+                    valueObj = module->newConstFloat(son->float_val);
+                } else if (son->node_type == ast_operator_type::AST_OP_NEGATIVE) {
+                    if (!evaluate_const_expr(son, valueObj)) {
+                        printf("Error: Failed to evaluate negative constant in array initialization\n");
+                        return false;
+                    }
+                }
+
+                initValues[currentPos] = valueObj;
+                currentPos++;
             }
         }
     }

@@ -388,6 +388,16 @@ private:
     /// @return 总维度数
     int calculateTotalDimensions(ArrayType * arrayType);
 
+    /// @brief 计算数组类型的最内层数组大小
+    /// @param arrayType 数组类型
+    /// @return 最内层数组大小
+    int calculateInnermostArraySize(ArrayType * arrayType);
+
+    /// @brief 获取数组类型的最内层数组类型
+    /// @param arrayType 数组类型
+    /// @return 最内层数组类型
+    ArrayType * getInnermostArrayType(ArrayType * arrayType);
+
     /// @brief 递归处理数组初始化，用于全局常量数组
     /// @param initNode 数组初始化节点
     /// @param arrayType 数组类型

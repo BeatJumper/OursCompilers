@@ -36,9 +36,9 @@ void LiveVariableAnalysis(ControlFlowGraph * _graph)
     auto & node_list = _graph->get_node_list();
     bool need_update = true;
     // bool first_time = true;
-    int i = 1;
+    // int i = 1;
     while (need_update) {
-        printf("第%d轮迭代\n", i++);
+        // printf("第%d轮迭代\n", i++);
         need_update = false;
         /*
         // 除非是第一轮迭代，否则当且仅当LIVEOUT在迭代后发生更改才继续迭代

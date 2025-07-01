@@ -87,11 +87,11 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
     std::map<Value *, node_IG *> value_to_ig;
     std::set<Value *> all_value_in_cfg;
 
-    printf("所有指令列表:\n");
+    // printf("所有指令列表:\n");
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
         printval(inst);
     }
-    printf("指令列表结束\n");
+    // printf("指令列表结束\n");
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
         for (Value * val: inst->get_def_set()) {
             if ((val->getType() == FloatType::getTypeFloat()) == is_float) {
@@ -103,7 +103,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
                 all_value_in_cfg.insert(val);
             }
         }
-        printf("node:");
+        /*printf("node:");
         printval(inst);
         printf("size of def_set:%d\n", int(inst->get_def_set().size()));
         printset(inst->get_def_set());
@@ -112,7 +112,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
         printf("size of livein:%d\n", int(inst->get_livein().size()));
         printset(inst->get_livein());
         printf("size of liveout:%d\n", int(inst->get_liveout().size()));
-        printset(inst->get_liveout());
+        printset(inst->get_liveout());*/
     }
 
     // 为每个Value都创建一个干涉图节点
@@ -135,8 +135,8 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
             uncolored_node_set.insert(newnode);
         }
     }
-    printf("所有干涉节点创建完成\n");
-    // std::cout <<　uncolored_node_set.size() << std::endl;
+    // printf("所有干涉节点创建完成\n");
+    //  std::cout <<　uncolored_node_set.size() << std::endl;
 
     /*
     // 扫描函数里每条指令，获取每个时刻的活跃变量集合
@@ -247,11 +247,11 @@ static int least_color_for_node(node_IG * node, int color_size)
     for (int color = 0; color < color_size; color++) {
         // printf("%d\n", color);
         if (!used[color]) {
-            printf("找到了\n");
+            // printf("找到了\n");
             return color;
         }
     }
-    printf("没找到\n");
+    // printf("没找到\n");
     return -1;
 }
 
@@ -269,12 +269,12 @@ static bool welsh_powell(InterferenceGraph * graph, int color_size)
     //   按照某序列依次给每个节点染上目前能染的最小编号颜色
     //   时间复杂度：O(m + n * min(c,n))，m为边数，c为颜色数，n为节点数
     for (node_IG * node: remain_nodes) {
-        printf("发生循环\n");
+        // printf("发生循环\n");
 
         // 尝试染上目前能染的最小编号颜色
         node->color = least_color_for_node(node, color_size);
-        printf("里程碑\n");
-        // 中途有某个节点无颜色可用，则染色失败
+        // printf("里程碑\n");
+        //  中途有某个节点无颜色可用，则染色失败
         if (node->color == -1) {
             printval(node->val);
             // printf("%d\n", node->degree());
@@ -286,7 +286,7 @@ static bool welsh_powell(InterferenceGraph * graph, int color_size)
 
 static bool backtrack_color(InterferenceGraph * graph, int color_size, std::set<node_IG *>::iterator iter)
 {
-    printf("回溯法\n");
+    // printf("回溯法\n");
 
     // 目前回溯法之时间复杂度：O(m * c^n)，是指数级别，所以节点数只能为个位数，否则时间复杂度无法支持
     // 同时，不需要修改成非递归形式，因为递归深度很浅
@@ -314,8 +314,8 @@ static bool backtrack_color(InterferenceGraph * graph, int color_size, std::set<
 
 bool InterferenceGraph::color_graph(InterferenceGraph * graph, int color_size)
 {
-    printf("开始染色\n");
-    // 暂时被移出干涉图的小度节点
+    // printf("开始染色\n");
+    //  暂时被移出干涉图的小度节点
     std::stack<node_IG *> removed_nodes;
 
     // 先删除小度节点

@@ -320,13 +320,11 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
             InterferenceGraph * graph_ig = new InterferenceGraph(func, is_float);
 
             // 尝试进行染色
-            printf("干涉图已产生\n");
             // 染色是否成功
             bool suc =
                 InterferenceGraph::color_graph(graph_ig,
                                                is_float ? PlatformArm64::maxVecRegNum : PlatformArm64::maxUsableRegNum);
 
-            printf("完成染色\n");
             if (suc) {
                 // assert(graph_ig->node_set.size());
                 for (node_IG * node: graph_ig->node_set) {
@@ -343,7 +341,6 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
                 break;
             } else {
                 assert(false);
-                printf("溢出\n");
                 // 完成变量溢出的工作
                 auto x = graph_ig->uncolored_node_set.end();
                 x--;
@@ -716,7 +713,7 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
             // alloca指令的结果是指向这个数组的指针
 
             // 获取alloca指令分配的类型
-            auto * allocatedType = inst->getType();
+            auto * allocatedType = inst->getOperand(0)->getType();
             int64_t size = 4; // 默认大小
             if (Instanceof(arr, ArrayType *, allocatedType)) {
                 // alloca对象为数组
@@ -731,12 +728,12 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
                            localVar->getName().c_str(),
                            sp_esp);
                 }
-                size = 1;
-                const std::vector<int> & dimensions = arr->getDimensions();
-                for (int i = 0; i < dimensions.size(); i++) {
-                    size *= dimensions[i];
-                }
-                size *= 4; // 数组偏移=元素个数*元素大小（int/float）
+                // 使用ArrayType的getSize()方法，它会正确计算所有维度的总大小
+                size = arr->getSize();
+                printf("Debug: stackAlloc - 数组 %s 类型: %s, 总大小: %ld 字节\n",
+                       result->getName().c_str(),
+                       arr->toString().c_str(),
+                       size);
                 sp_esp += size;
             }
         }
