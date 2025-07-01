@@ -303,6 +303,8 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     adjustFuncCallInsts(func);
     printf("调整函数调用指令\n");
 
+    adjustFormalParamInsts(func);
+
     // 加完新指令后也该重新调整IR编号
     func->renameIR();
 
@@ -414,27 +416,10 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     }
 
     // 保护寄存器的内存分配见ILocArm64::allocStack和ILocArm64::emitFunctionEpilogue处改动
-    /*
-    for (int32_t reg: protectedreg_set) {
-        LocalVariable * newVal = func->newLocalVarValue(PlatformArm64::intRegVal[reg]->getType());
-        Value * regval = new Value(PlatformArm64::intRegVal[reg]->getType());
-        func->get_localspace_for_protected().push_back(newVal);
-        func->get_regvalue_for_protected().push_back(regval);
-    }
-    */
 
     // 为局部变量和临时变量，以及被保护寄存器在栈内分配空间，指定偏移，进行栈空间的分配
     stackAlloc(func);
     printf("为局部变量和临时变量在栈内分配空间\n");
-    // GenBasicBlocks(func);
-    // printf("基本块划分成功\n");
-
-    /*#if 0
-        // 临时输出调整后的IR指令，用于查看当前的寄存器分配、栈内变量分配、实参入栈等信息的正确性
-        std::string irCodeStr;
-        func->toString(irCodeStr);
-        std::cout << irCodeStr << std::endl;
-    #endif*/
 }
 
 /// @brief 寄存器分配前对常数进行扫描，对一些常数提前追加MOV指令
@@ -603,6 +588,7 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
             // 除前8个整数寄存器外，后面的参数采用栈传递
             int esp = 0;
             for (int32_t k = 8; k < argNum; k++) {
+                printf("检测到8个以后的函数参数\n");
 
                 // 获取实参的值
                 auto arg = callInst->getOperand(k);
@@ -617,7 +603,7 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 Instruction * assignInst = new StoreInstruction(func, arg, newVal);
 
                 // 更换实参变量为内存变量
-                // callInst->setOperand(k, newVal);
+                callInst->setOperand(k, newVal);
                 /*
                  * 这里添加一个新的VoidValue的理由：
                  * 为了形式化添加DEF，之后翻译
@@ -804,7 +790,7 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
     }
 
     // 遍历指令中需要栈空间的临时变量
-    for (auto inst: func->getInterCode().getInsts()) {
+    /*for (auto inst: func->getInterCode().getInsts()) {
         // 只为没有分配到寄存器且有结果值的指令分配栈空间
         if (inst->hasResultValue() && inst->getOp() != IRInstOperator::IRINST_OP_ALLOCA && inst->getRegId() == -1) {
 
@@ -823,8 +809,7 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
                    inst->getIRName().c_str(),
                    size,
                    sp_esp - size);
-        }
-    }
+        }*/
 
     // 设置函数的最大栈帧深度
     // TODO加上实参内存传值的空间

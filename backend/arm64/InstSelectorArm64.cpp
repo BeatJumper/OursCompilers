@@ -850,7 +850,7 @@ void InstSelectorArm64::translate_store(Instruction * inst)
         }
     } else if (arg1_regId != -1) {
         // 寄存器 => 内存
-        printf("寄存器 => 内存\n");
+        printf("寄存器 => 内存,寄存器号:%d\n", arg1_regId);
 
         // 检查目标是否是getelementptr的结果，需要重新计算地址
         int32_t dest_baseRegId = -1;

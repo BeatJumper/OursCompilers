@@ -719,7 +719,7 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
         }
     }
     // 设置新帧指针
-    emit("add", "x29", "sp", std::to_string(totalSize - protectedRegNum * 8));
+    emit("add", "x29", "sp", "#" + std::to_string(totalSize - protectedRegNum * 8));
     //}
 }
 
