@@ -35,7 +35,7 @@ public:
     ///
     explicit GlobalVariable(Type * _type, std::string _name) : GlobalValue(_type, _name)
     {
-        // 设置对齐大小
+        // ARM64架构下统一使用4字节对齐
         setAlignment(4);
     }
 
@@ -76,11 +76,17 @@ public:
     {
         str += "@" + getName() + " = ";
 
-        // 对于全局常量数组，使用 dso_local
-        if (isConstant && getType()->isArrayType()) {
-            str += "dso_local constant ";
+        // 检查存储类型是否是数组类型，对于全局数组，使用 dso_local
+        Type * typeToCheck = storageType ? storageType : getType();
+        if (typeToCheck->isArrayType()) {
+            str += "dso_local ";
+            if (isConstant) {
+                str += "constant ";
+            } else {
+                str += "global ";
+            }
         } else {
-            str += "private unnamed_addr ";
+            str += "dso_local ";
             if (isConstant) {
                 str += "constant ";
             } else {
@@ -180,6 +186,8 @@ public:
     void setStorageType(Type * type)
     {
         storageType = type;
+        // 根据存储类型重新设置对齐：ARM64架构下统一使用4字节对齐
+        setAlignment(4);
     }
 
     ///

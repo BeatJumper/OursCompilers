@@ -125,6 +125,12 @@ public:
     /// @return 指针有效则找到，空指针未找到
     Value * findVarValue(std::string name);
 
+    /// @brief 将已存在的变量注册到当前作用域（用于预分配变量的作用域管理）
+    /// @param name 变量名
+    /// @param value 变量值
+    /// @return 注册是否成功
+    bool registerVariableToCurrentScope(const std::string & name, Value * value);
+
     /// @brief 清理Module中管理的所有信息资源
     void Delete();
 

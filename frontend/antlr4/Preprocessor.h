@@ -53,6 +53,11 @@ private:
     /// @return 处理后的行
     std::string processTimingMacros(const std::string & line, int lineNumber);
 
+    /// @brief 处理数组定义中的单个{0}初始化
+    /// @param line 要处理的行
+    /// @return 处理后的行
+    std::string processArrayZeroInitialization(const std::string & line);
+
     /// @brief 检查字符是否为标识符字符
     /// @param c 要检查的字符
     /// @return 是否为标识符字符

@@ -18,6 +18,7 @@
 
 #include <unordered_map>
 #include <stack>
+#include <map>
 #include <LabelInstruction.h>
 
 #include "AST.h"
@@ -437,6 +438,15 @@ private:
     /// @param initExprNode 初始化表达式节点
     /// @return 翻译是否成功
     bool handleDynamicInitialization(ast_node * node, Value * arrayVar, ArrayType * arrayType, ast_node * initExprNode);
+
+    /// @brief 处理一维数组动态初始化
+    /// @param node AST节点
+    /// @param arrayVar 数组变量
+    /// @param arrayType 数组类型
+    /// @param initExprNode 初始化表达式节点
+    /// @return 翻译是否成功
+    bool
+    handleOneDimensionalDynamicInit(ast_node * node, Value * arrayVar, ArrayType * arrayType, ast_node * initExprNode);
     /// @brief 浮点数加法AST节点翻译成线性中间IR
     /// @param node AST节点
     /// @return 翻译是否成功，true：成功，false：失败
@@ -456,4 +466,54 @@ private:
     /// @param node AST节点
     /// @return 翻译是否成功，true：成功，false：失败
     bool ir_fdiv(ast_node * node);
+
+    /// @brief 变量信息结构体，用于预收集局部变量
+    struct LocalVarInfo {
+        std::string name;       // 变量名
+        Type * type;            // 变量类型
+        uint32_t alignSize;     // 对齐大小
+        ast_node * varNode;     // 变量AST节点
+        int uniqueId;           // 唯一标识符，用于区分同名变量
+        std::string uniqueName; // 唯一名称，如 "a_1", "a_2"
+
+        LocalVarInfo(const std::string & n, Type * t, uint32_t align, ast_node * node, int id)
+            : name(n), type(t), alignSize(align), varNode(node), uniqueId(id)
+        {
+            uniqueName = n + "_" + std::to_string(id);
+        }
+    };
+
+    /// @brief 预收集函数中的所有局部变量声明
+    /// @param node 函数体AST节点
+    /// @param localVars 收集到的局部变量列表
+    /// @return 收集是否成功
+    bool collectLocalVariables(ast_node * node, std::vector<LocalVarInfo> & localVars);
+
+    /// @brief 递归收集局部变量声明的内部实现
+    /// @param node AST节点
+    /// @param localVars 收集到的局部变量列表
+    /// @param varCounter 变量计数器引用
+    /// @return 收集是否成功
+    bool collectLocalVariablesRecursive(ast_node * node, std::vector<LocalVarInfo> & localVars, int & varCounter);
+
+    /// @brief 在函数开始时生成所有局部变量的alloca指令
+    /// @param localVars 局部变量列表
+    /// @param blockInsts 指令序列
+    /// @return 生成是否成功
+    bool generateAllocaInstructions(const std::vector<LocalVarInfo> & localVars, InterCode & blockInsts);
+
+    /// @brief 修改后的变量声明处理，只进行符号表注册
+    /// @param node AST节点
+    /// @return 翻译是否成功
+    bool ir_variable_declare_register_only(ast_node * node);
+
+    /// @brief 将预分配的变量注册到当前作用域
+    /// @param name 变量名
+    /// @param value 变量值
+    /// @return 注册是否成功
+    bool registerVariableToCurrentScope(const std::string & name, Value * value);
+
+private:
+    /// @brief 当前函数的变量映射表：变量名 -> 预分配的Value
+    std::map<std::string, Value *> currentFunctionVarMap;
 };

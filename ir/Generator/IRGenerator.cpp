@@ -277,6 +277,22 @@ bool IRGenerator::ir_function_define(ast_node * node)
     }
     newFunc->setReturnValue(retValue);
 
+    // 预收集函数体中的所有局部变量
+    // 预扫描所有作用域，收集所有变量声明（包括同名变量）
+    std::vector<LocalVarInfo> localVars;
+    if (!collectLocalVariables(block_node, localVars)) {
+        printf("Error: Failed to collect local variables in function '%s'.\n", name_node->name.c_str());
+        return false;
+    }
+
+    // 在函数开始时生成所有局部变量的alloca指令
+    if (!generateAllocaInstructions(localVars, irCode)) {
+        printf("Error: Failed to generate alloca instructions in function '%s'.\n", name_node->name.c_str());
+        return false;
+    }
+
+    printf("Debug: Generated %zu alloca instructions for function '%s'\n", localVars.size(), name_node->name.c_str());
+
     // 处理函数体（不需要新的作用域，因为函数本身就是一个作用域）
     block_node->needScope = false;
     if (!ir_block(block_node)) {
@@ -1134,7 +1150,14 @@ bool IRGenerator::ir_add_processed(ast_node * node, ast_node * left, ast_node * 
         int loadSize = 4; // 默认4字节
         if (left->val->getType()->isPointerType()) {
             const PointerType * ptrType = static_cast<const PointerType *>(left->val->getType());
-            loadSize = ptrType->getPointeeType()->getSize();
+            const Type * pointeeType = ptrType->getPointeeType();
+            if (pointeeType->isFloatType()) {
+                loadSize = 4; // float 类型使用 4 字节对齐
+            } else if (pointeeType->isIntegerType()) {
+                loadSize = 4; // int 类型使用 4 字节对齐
+            } else {
+                loadSize = 4; // 其他类型也使用 4 字节对齐
+            }
         }
         LoadInstruction * loadLeft = new LoadInstruction(module->getCurrentFunction(), left->val, left->val, loadSize);
         node->blockInsts.addInst(loadLeft);
@@ -1149,7 +1172,14 @@ bool IRGenerator::ir_add_processed(ast_node * node, ast_node * left, ast_node * 
         int loadSize = 4; // 默认4字节
         if (right->val->getType()->isPointerType()) {
             const PointerType * ptrType = static_cast<const PointerType *>(right->val->getType());
-            loadSize = ptrType->getPointeeType()->getSize();
+            const Type * pointeeType = ptrType->getPointeeType();
+            if (pointeeType->isFloatType()) {
+                loadSize = 4; // float 类型使用 4 字节对齐
+            } else if (pointeeType->isIntegerType()) {
+                loadSize = 4; // int 类型使用 4 字节对齐
+            } else {
+                loadSize = 4; // 其他类型也使用 4 字节对齐
+            }
         }
         LoadInstruction * loadRight =
             new LoadInstruction(module->getCurrentFunction(), right->val, right->val, loadSize);
@@ -1640,8 +1670,23 @@ bool IRGenerator::ir_return(ast_node * node)
         if (right->val) {
             // 检查是否需要加载返回值
             if (needsLoad(right->val)) {
-                LoadInstruction * loadRight =
-                    new LoadInstruction(currentFunc, right->val, right->val, right->val->getType()->getSize());
+                // 对于需要加载的值，使用固定的对齐方式
+                int alignment = 4; // 默认对齐方式
+
+                // 如果是指针类型，获取指向的类型来确定对齐方式
+                if (right->val->getType()->isPointerType()) {
+                    const PointerType * ptrType = static_cast<const PointerType *>(right->val->getType());
+                    const Type * pointeeType = ptrType->getPointeeType();
+                    if (pointeeType->isFloatType()) {
+                        alignment = 4; // float 类型使用 4 字节对齐
+                    } else if (pointeeType->isIntegerType()) {
+                        alignment = 4; // int 类型使用 4 字节对齐
+                    } else {
+                        alignment = 4; // 其他类型也使用 4 字节对齐
+                    }
+                }
+
+                LoadInstruction * loadRight = new LoadInstruction(currentFunc, right->val, right->val, alignment);
                 node->blockInsts.addInst(loadRight);
                 returnValue = loadRight;
             } else {
@@ -1877,22 +1922,37 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
         return ir_array_variable_declare_with_init(node, typeNode, varNode, initExprNode);
     }
 
-    // 为变量分配Value和栈空间
-    // 变量的类型应该是指向分配类型的指针类型
-    Type * allocaType = typeNode->type;           // 要分配的类型
-    Type * varType = new PointerType(allocaType); // 变量类型（指针类型）
-    Value * varValue = module->newVarValue(varType, varNode->name);
-    if (!varValue) {
-        printf("Error: Failed to allocate variable '%s' in ir_variable_declare.\n", varNode->name.c_str());
-        return false;
+    // 检查变量是否已经在函数开始时预分配
+    Value * varValue = varNode->val; // 应该在generateAllocaInstructions中已经设置
+    if (varValue) {
+        // 变量已经预分配，现在需要将其注册到当前作用域
+        printf("Debug: Using pre-allocated variable '%s', registering to current scope\n", varNode->name.c_str());
+
+        // 将预分配的变量注册到当前作用域
+        // 这会覆盖同名的外层变量，实现正确的作用域遮蔽
+        if (!registerVariableToCurrentScope(varNode->name, varValue)) {
+            printf("Error: Failed to register pre-allocated variable '%s' to current scope\n", varNode->name.c_str());
+            return false;
+        }
+    } else {
+        // 变量未预分配，按原来的方式创建（用于全局变量等）
+        Type * allocaType = typeNode->type;           // 要分配的类型
+        Type * varType = new PointerType(allocaType); // 变量类型（指针类型）
+        varValue = module->newVarValue(varType, varNode->name);
+        if (!varValue) {
+            printf("Error: Failed to allocate variable '%s' in ir_variable_declare.\n", varNode->name.c_str());
+            return false;
+        }
+
+        // 计算对齐大小（基本类型使用类型大小，数组使用16字节对齐）
+        uint32_t alignSize = allocaType->isArrayType() ? 16 : allocaType->getSize();
+
+        AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, varValue, allocaType, alignSize);
+        node->blockInsts.addInst(allocaInst);
+        varNode->val = varValue;
+
+        printf("Debug: Created new variable '%s' with alloca\n", varNode->name.c_str());
     }
-
-    // 计算对齐大小（基本类型使用类型大小，数组使用16字节对齐）
-    uint32_t alignSize = allocaType->isArrayType() ? 16 : allocaType->getSize();
-
-    AllocaInstruction * allocaInst = new AllocaInstruction(currentFunc, varValue, allocaType, alignSize);
-    node->blockInsts.addInst(allocaInst);
-    varNode->val = varValue;
 
     // 处理初始化部分
     if (initExprNode) {
@@ -1924,17 +1984,37 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
                 return false;
             }
 
+            // 对于基础类型，使用固定的对齐方式
+            int alignment = 4; // 默认对齐方式
+            if (elementType->isFloatType()) {
+                alignment = 4; // float 类型使用 4 字节对齐
+            } else if (elementType->isIntegerType()) {
+                alignment = 4; // int 类型使用 4 字节对齐
+            }
+
             LoadInstruction * loadInit =
-                new LoadInstruction(currentFunc, initExprNode->val, initExprNode->val, elementType->getSize());
+                new LoadInstruction(currentFunc, initExprNode->val, initExprNode->val, alignment);
             node->blockInsts.addInst(loadInit);
             initValue = loadInit;
         }
         // 处理需要加载的情况
         else if (needsLoad(initExprNode->val)) {
-            LoadInstruction * loadInit = new LoadInstruction(currentFunc,
-                                                             initExprNode->val,
-                                                             initExprNode->val,
-                                                             initExprNode->val->getType()->getSize());
+            // 对于需要加载的值，使用固定的对齐方式
+            int alignment = 4; // 默认对齐方式
+
+            // 如果是指针类型，获取指向的类型来确定对齐方式
+            if (initExprNode->val->getType()->isPointerType()) {
+                const PointerType * ptrType = static_cast<const PointerType *>(initExprNode->val->getType());
+                const Type * pointeeType = ptrType->getPointeeType();
+                if (pointeeType->isFloatType()) {
+                    alignment = 4; // float 类型使用 4 字节对齐
+                } else if (pointeeType->isIntegerType()) {
+                    alignment = 4; // int 类型使用 4 字节对齐
+                }
+            }
+
+            LoadInstruction * loadInit =
+                new LoadInstruction(currentFunc, initExprNode->val, initExprNode->val, alignment);
             node->blockInsts.addInst(initExprNode->blockInsts);
             node->blockInsts.addInst(loadInit);
             initValue = loadInit;
@@ -2047,8 +2127,36 @@ bool IRGenerator::ir_global_variable_declare(ast_node * node, ast_node * typeNod
             } else {
                 initValue = module->newConstFloat(initExprNode->float_val);
             }
+        } else if (initExprNode->node_type == ast_operator_type::AST_OP_NEGATIVE) {
+            // 处理负数，如 int a = -1;
+            if (initExprNode->sons.size() == 1) {
+                ast_node * operandNode = initExprNode->sons[0];
+                if (operandNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+                    int32_t negativeValue = -static_cast<int32_t>(operandNode->integer_val);
+                    if (typeNode->type->isFloatType()) {
+                        initValue = module->newConstFloat(static_cast<float>(negativeValue));
+                    } else {
+                        initValue = module->newConstInt(negativeValue);
+                    }
+                } else if (operandNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
+                    float negativeValue = -operandNode->float_val;
+                    if (typeNode->type->isIntegerType()) {
+                        initValue = module->newConstInt(static_cast<int32_t>(negativeValue));
+                    } else {
+                        initValue = module->newConstFloat(negativeValue);
+                    }
+                } else {
+                    printf("Error: Global variable initialization with negative operator only supports literal "
+                           "operands.\n");
+                    return false;
+                }
+            } else {
+                printf("Error: Invalid negative operator in global variable initialization.\n");
+                return false;
+            }
         } else {
-            printf("Error: Global variable initialization only supports constants and arrays.\n");
+            printf("Error: Global variable initialization only supports constants and arrays. Got node type: %d\n",
+                   static_cast<int>(initExprNode->node_type));
             return false;
         }
 
@@ -2209,6 +2317,16 @@ bool IRGenerator::ir_rel_exp(ast_node * node)
                     return false;
                 }
             }
+        }
+    } else {
+        // 处理整数和布尔值的比较
+        // 如果一个操作数是i1类型，另一个是i32类型，需要进行类型转换
+        if (leftType->isInt1Byte() && rightType->isInt32Type()) {
+            // 将i1类型转换为i32类型
+            leftValue = convertToI32(leftValue, module->getCurrentFunction(), node->blockInsts);
+        } else if (leftType->isInt32Type() && rightType->isInt1Byte()) {
+            // 将i1类型转换为i32类型
+            rightValue = convertToI32(rightValue, module->getCurrentFunction(), node->blockInsts);
         }
     }
 
@@ -2938,8 +3056,231 @@ bool IRGenerator::evaluate_const_expr(ast_node * node, Value *& result)
             return false;
         }
 
+        case ast_operator_type::AST_OP_LEAF_VAR_ID: {
+            // 变量引用：查找全局常量
+            Value * varValue = module->findVarValue(node->name);
+            GlobalVariable * globalVar = dynamic_cast<GlobalVariable *>(varValue);
+
+            if (globalVar && globalVar->getConstant()) {
+                // 这是一个全局常量，获取其初值
+                Value * initValue = globalVar->getInitValue();
+                if (initValue) {
+                    result = initValue;
+                    printf("Debug: Evaluated global constant '%s' to value\n", node->name.c_str());
+                    return true;
+                }
+            }
+
+            printf("Debug: Variable '%s' is not a global constant\n", node->name.c_str());
+            return false;
+        }
+
+        case ast_operator_type::AST_OP_ADD: {
+            // 加法运算：递归计算操作数
+            if (node->sons.size() != 2) {
+                return false;
+            }
+
+            Value * leftResult = nullptr;
+            Value * rightResult = nullptr;
+
+            if (!evaluate_const_expr(node->sons[0], leftResult) || !evaluate_const_expr(node->sons[1], rightResult)) {
+                return false;
+            }
+
+            // 执行常量折叠
+            ConstInt * leftConstInt = dynamic_cast<ConstInt *>(leftResult);
+            ConstInt * rightConstInt = dynamic_cast<ConstInt *>(rightResult);
+            ConstFloat * leftConstFloat = dynamic_cast<ConstFloat *>(leftResult);
+            ConstFloat * rightConstFloat = dynamic_cast<ConstFloat *>(rightResult);
+
+            if ((leftConstInt || leftConstFloat) && (rightConstInt || rightConstFloat)) {
+                if (leftConstFloat || rightConstFloat) {
+                    // 浮点数运算
+                    float leftVal =
+                        leftConstFloat ? leftConstFloat->getVal() : static_cast<float>(leftConstInt->getVal());
+                    float rightVal =
+                        rightConstFloat ? rightConstFloat->getVal() : static_cast<float>(rightConstInt->getVal());
+                    result = module->newConstFloat(leftVal + rightVal);
+                } else {
+                    // 整数运算
+                    int32_t leftVal = leftConstInt->getVal();
+                    int32_t rightVal = rightConstInt->getVal();
+                    result = module->newConstInt(leftVal + rightVal);
+                }
+                return true;
+            }
+
+            return false;
+        }
+
+        case ast_operator_type::AST_OP_SUB: {
+            // 减法运算：递归计算操作数
+            if (node->sons.size() != 2) {
+                return false;
+            }
+
+            Value * leftResult = nullptr;
+            Value * rightResult = nullptr;
+
+            if (!evaluate_const_expr(node->sons[0], leftResult) || !evaluate_const_expr(node->sons[1], rightResult)) {
+                return false;
+            }
+
+            // 执行常量折叠
+            ConstInt * leftConstInt = dynamic_cast<ConstInt *>(leftResult);
+            ConstInt * rightConstInt = dynamic_cast<ConstInt *>(rightResult);
+            ConstFloat * leftConstFloat = dynamic_cast<ConstFloat *>(leftResult);
+            ConstFloat * rightConstFloat = dynamic_cast<ConstFloat *>(rightResult);
+
+            if ((leftConstInt || leftConstFloat) && (rightConstInt || rightConstFloat)) {
+                if (leftConstFloat || rightConstFloat) {
+                    // 浮点数运算
+                    float leftVal =
+                        leftConstFloat ? leftConstFloat->getVal() : static_cast<float>(leftConstInt->getVal());
+                    float rightVal =
+                        rightConstFloat ? rightConstFloat->getVal() : static_cast<float>(rightConstInt->getVal());
+                    result = module->newConstFloat(leftVal - rightVal);
+                } else {
+                    // 整数运算
+                    int32_t leftVal = leftConstInt->getVal();
+                    int32_t rightVal = rightConstInt->getVal();
+                    result = module->newConstInt(leftVal - rightVal);
+                }
+                return true;
+            }
+
+            return false;
+        }
+
+        case ast_operator_type::AST_OP_MUL: {
+            // 乘法运算：递归计算操作数
+            if (node->sons.size() != 2) {
+                return false;
+            }
+
+            Value * leftResult = nullptr;
+            Value * rightResult = nullptr;
+
+            if (!evaluate_const_expr(node->sons[0], leftResult) || !evaluate_const_expr(node->sons[1], rightResult)) {
+                return false;
+            }
+
+            // 执行常量折叠
+            ConstInt * leftConstInt = dynamic_cast<ConstInt *>(leftResult);
+            ConstInt * rightConstInt = dynamic_cast<ConstInt *>(rightResult);
+            ConstFloat * leftConstFloat = dynamic_cast<ConstFloat *>(leftResult);
+            ConstFloat * rightConstFloat = dynamic_cast<ConstFloat *>(rightResult);
+
+            if ((leftConstInt || leftConstFloat) && (rightConstInt || rightConstFloat)) {
+                if (leftConstFloat || rightConstFloat) {
+                    // 浮点数运算
+                    float leftVal =
+                        leftConstFloat ? leftConstFloat->getVal() : static_cast<float>(leftConstInt->getVal());
+                    float rightVal =
+                        rightConstFloat ? rightConstFloat->getVal() : static_cast<float>(rightConstInt->getVal());
+                    result = module->newConstFloat(leftVal * rightVal);
+                } else {
+                    // 整数运算
+                    int32_t leftVal = leftConstInt->getVal();
+                    int32_t rightVal = rightConstInt->getVal();
+                    result = module->newConstInt(leftVal * rightVal);
+                }
+                return true;
+            }
+
+            return false;
+        }
+
+        case ast_operator_type::AST_OP_DIV: {
+            // 除法运算：递归计算操作数
+            if (node->sons.size() != 2) {
+                return false;
+            }
+
+            Value * leftResult = nullptr;
+            Value * rightResult = nullptr;
+
+            if (!evaluate_const_expr(node->sons[0], leftResult) || !evaluate_const_expr(node->sons[1], rightResult)) {
+                return false;
+            }
+
+            // 执行常量折叠
+            ConstInt * leftConstInt = dynamic_cast<ConstInt *>(leftResult);
+            ConstInt * rightConstInt = dynamic_cast<ConstInt *>(rightResult);
+            ConstFloat * leftConstFloat = dynamic_cast<ConstFloat *>(leftResult);
+            ConstFloat * rightConstFloat = dynamic_cast<ConstFloat *>(rightResult);
+
+            if ((leftConstInt || leftConstFloat) && (rightConstInt || rightConstFloat)) {
+                // 检查除零
+                if ((rightConstInt && rightConstInt->getVal() == 0) ||
+                    (rightConstFloat && rightConstFloat->getVal() == 0.0f)) {
+                    printf("Error: Division by zero in constant expression\n");
+                    return false;
+                }
+
+                if (leftConstFloat || rightConstFloat) {
+                    // 浮点数运算
+                    float leftVal =
+                        leftConstFloat ? leftConstFloat->getVal() : static_cast<float>(leftConstInt->getVal());
+                    float rightVal =
+                        rightConstFloat ? rightConstFloat->getVal() : static_cast<float>(rightConstInt->getVal());
+                    result = module->newConstFloat(leftVal / rightVal);
+                } else {
+                    // 整数运算
+                    int32_t leftVal = leftConstInt->getVal();
+                    int32_t rightVal = rightConstInt->getVal();
+                    result = module->newConstInt(leftVal / rightVal);
+                }
+                return true;
+            }
+
+            return false;
+        }
+
+        case ast_operator_type::AST_OP_NEGATIVE: {
+            // 负号运算：递归计算操作数
+            if (node->sons.size() != 1) {
+                return false;
+            }
+
+            Value * operandResult = nullptr;
+            if (!evaluate_const_expr(node->sons[0], operandResult)) {
+                return false;
+            }
+
+            ConstInt * constInt = dynamic_cast<ConstInt *>(operandResult);
+            ConstFloat * constFloat = dynamic_cast<ConstFloat *>(operandResult);
+
+            if (constFloat) {
+                result = module->newConstFloat(-constFloat->getVal());
+                return true;
+            } else if (constInt) {
+                result = module->newConstInt(-constInt->getVal());
+                return true;
+            }
+
+            return false;
+        }
+
+        case ast_operator_type::AST_OP_POSITIVE: {
+            // 正号运算：递归计算操作数
+            if (node->sons.size() != 1) {
+                return false;
+            }
+
+            Value * operandResult = nullptr;
+            if (!evaluate_const_expr(node->sons[0], operandResult)) {
+                return false;
+            }
+
+            result = operandResult; // 正号不改变值
+            return true;
+        }
+
         default:
             // 其他类型的表达式暂不支持
+            printf("Debug: Unsupported expression type %d in evaluate_const_expr\n", (int) node->node_type);
             return false;
     }
 }
@@ -2962,8 +3303,16 @@ Value * IRGenerator::convertToI1(Value * val, Function * func, InterCode & block
         }
     }
 
-    // 如果是i32类型，转换为i1
-    ConstInt * zeroConst = module->newConstInt(0);
+    // 根据输入值的类型选择合适的零常量
+    Value * zeroConst = nullptr;
+    if (val->getType()->isFloatType()) {
+        // 浮点数类型，使用浮点数零常量
+        zeroConst = module->newConstFloat(0.0f);
+    } else {
+        // 整数类型，使用整数零常量
+        zeroConst = module->newConstInt(0);
+    }
+
     RelInstruction * toBoolInst =
         new RelInstruction(func, IRInstOperator::IRINST_OP_NE, val, zeroConst, IntegerType::getTypeBool());
     blockInsts.addInst(toBoolInst);
@@ -3192,6 +3541,16 @@ bool IRGenerator::ir_rel_exp_with_labels(ast_node * node, LabelInstruction * tru
                 }
             }
         }
+    } else {
+        // 处理整数和布尔值的比较
+        // 如果一个操作数是i1类型，另一个是i32类型，需要进行类型转换
+        if (leftType->isInt1Byte() && rightType->isInt32Type()) {
+            // 将i1类型转换为i32类型
+            leftValue = convertToI32(leftValue, module->getCurrentFunction(), node->blockInsts);
+        } else if (leftType->isInt32Type() && rightType->isInt1Byte()) {
+            // 将i1类型转换为i32类型
+            rightValue = convertToI32(rightValue, module->getCurrentFunction(), node->blockInsts);
+        }
     }
 
     // 创建关系表达式指令
@@ -3372,8 +3731,62 @@ bool IRGenerator::ir_global_const_declare(ast_node * node,
         // 处理数组初始化
         return ir_global_const_array_declare(node, typeNode, nameNode, initExprNode);
     } else {
-        printf("Error: Global constant must be initialized with literal value or array initializer.\n");
-        return false;
+        // 尝试计算常量表达式
+        Value * constValue = nullptr;
+        if (evaluate_const_expr(initExprNode, constValue)) {
+            // 成功计算出常量值，创建一个临时的字面量节点
+            ast_node * tempLiteralNode = ast_node::New("", initExprNode->line_no);
+
+            // 根据目标类型进行适当的类型转换
+            if (typeNode->type->isIntegerType()) {
+                // 目标是整数类型
+                if (ConstInt * constInt = dynamic_cast<ConstInt *>(constValue)) {
+                    tempLiteralNode->node_type = ast_operator_type::AST_OP_LEAF_LITERAL_UINT;
+                    tempLiteralNode->integer_val = constInt->getVal();
+                } else if (ConstFloat * constFloat = dynamic_cast<ConstFloat *>(constValue)) {
+                    // 浮点数转整数
+                    tempLiteralNode->node_type = ast_operator_type::AST_OP_LEAF_LITERAL_UINT;
+                    tempLiteralNode->integer_val = static_cast<int32_t>(constFloat->getVal());
+                    printf("Debug: Converting float constant %f to integer %d\n",
+                           constFloat->getVal(),
+                           tempLiteralNode->integer_val);
+                } else {
+                    printf("Error: Constant expression evaluation returned non-constant value.\n");
+                    return false;
+                }
+            } else if (typeNode->type->isFloatType()) {
+                // 目标是浮点数类型
+                if (ConstFloat * constFloat = dynamic_cast<ConstFloat *>(constValue)) {
+                    tempLiteralNode->node_type = ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT;
+                    tempLiteralNode->float_val = constFloat->getVal();
+                } else if (ConstInt * constInt = dynamic_cast<ConstInt *>(constValue)) {
+                    // 整数转浮点数
+                    tempLiteralNode->node_type = ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT;
+                    tempLiteralNode->float_val = static_cast<float>(constInt->getVal());
+                    printf("Debug: Converting integer constant %d to float %f\n",
+                           constInt->getVal(),
+                           tempLiteralNode->float_val);
+                } else {
+                    printf("Error: Constant expression evaluation returned non-constant value.\n");
+                    return false;
+                }
+            } else {
+                printf("Error: Unsupported target type for constant expression.\n");
+                return false;
+            }
+
+            // 使用临时字面量节点进行标量声明
+            bool result = ir_global_const_scalar_declare(node, typeNode, nameNode, tempLiteralNode);
+
+            // 清理临时节点
+            delete tempLiteralNode;
+
+            return result;
+        } else {
+            printf("Error: Global constant must be initialized with literal value, array initializer, or constant "
+                   "expression.\n");
+            return false;
+        }
     }
 }
 
@@ -3396,32 +3809,14 @@ bool IRGenerator::ir_global_const_scalar_declare(ast_node * node,
 
     // 根据初始化表达式的类型创建相应的常量值
     if (initExprNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
-        // 整数字面量
-        std::string numStr = initExprNode->name;
-        int32_t intValue = 0;
-
-        try {
-            if (numStr.size() >= 2 && (numStr.substr(0, 2) == "0x" || numStr.substr(0, 2) == "0X")) {
-                // 十六进制数字
-                uint64_t temp = std::stoull(numStr, nullptr, 16);
-                intValue = static_cast<int32_t>(static_cast<uint32_t>(temp));
-            } else if (numStr.size() >= 2 && numStr[0] == '0' && numStr[1] >= '0' && numStr[1] <= '7') {
-                // 八进制数字
-                uint64_t temp = std::stoull(numStr, nullptr, 8);
-                intValue = static_cast<int32_t>(static_cast<uint32_t>(temp));
-            } else {
-                // 十进制数字
-                uint64_t temp = std::stoull(numStr, nullptr, 10);
-                intValue = static_cast<int32_t>(static_cast<uint32_t>(temp));
-            }
-        } catch (const std::exception & e) {
-            printf("Error: Failed to parse integer constant '%s': %s\n", numStr.c_str(), e.what());
-            return false;
-        }
+        // 整数字面量 - 直接使用已解析的值
+        int32_t intValue = static_cast<int32_t>(initExprNode->integer_val);
+        printf("Debug: Processing integer literal with value: %d\n", intValue);
 
         if (typeNode->type->isFloatType()) {
             // 目标类型是浮点数，进行类型转换
             constValue = module->newConstFloat(static_cast<float>(intValue));
+            printf("Debug: Converting integer %d to float %f\n", intValue, static_cast<float>(intValue));
         } else {
             // 目标类型是整数
             constValue = module->newConstInt(intValue);
@@ -3498,8 +3893,9 @@ bool IRGenerator::ir_global_const_array_declare(ast_node * node,
 
     ArrayType * arrayType = static_cast<ArrayType *>(typeNode->type);
 
-    // 对于常量数组，使用 __const.main.xxx 命名格式
-    std::string constArrayName = "__const.main." + nameNode->name;
+    // 对于常量数组，使用 __const.main.xxx 命名格式，并添加唯一计数器避免重名
+    static int constArrayCounter = 0;
+    std::string constArrayName = "__const.main." + nameNode->name + "." + std::to_string(constArrayCounter++);
     Value * globalVar = module->newVarValue(arrayType, constArrayName);
     if (!globalVar) {
         printf("Error: Failed to create global constant '%s'.\n", nameNode->name.c_str());
@@ -3762,9 +4158,32 @@ bool IRGenerator::ir_array_access(ast_node * node)
         const Type * pointeeType = ptrType->getPointeeType();
 
         if (pointeeType->isArrayType()) {
-            // 指向数组的指针：需要两个索引 [0][index]
-            ConstInt * zeroConst = module->newConstInt(0);
-            gepInst = new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, zeroConst, indexValue);
+            // 指向数组的指针：需要区分函数参数和中间结果
+            bool isFunctionParameter = false;
+
+            // 检查是否是函数参数：通过检查变量名和当前访问模式
+            if (arrayNode->node_type == ast_operator_type::AST_OP_LEAF_VAR_ID) {
+                // 检查变量是否是函数参数
+                Function * currentFunc = module->getCurrentFunction();
+                if (currentFunc) {
+                    const std::vector<FormalParam *> & params = currentFunc->getParams();
+                    for (FormalParam * param: params) {
+                        if (param->getName() == arrayNode->name) {
+                            isFunctionParameter = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (isFunctionParameter) {
+                // 函数参数：第一次访问使用单索引
+                gepInst = new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, indexValue);
+            } else {
+                // 局部变量或中间结果：使用双索引
+                ConstInt * zeroConst = module->newConstInt(0);
+                gepInst = new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, zeroConst, indexValue);
+            }
         } else {
             // 指向元素的指针：使用单个索引 [index]
             gepInst = new GetelementptrInstruction(module->getCurrentFunction(), arrayVar, indexValue);
@@ -3830,9 +4249,41 @@ bool IRGenerator::ir_array_init(ast_node * node)
         if (son->node_type == ast_operator_type::AST_OP_ARRAY_INIT) {
             // 嵌套的数组初始化列表 - 传递正确的数组类型
             if (elementType && elementType->isArrayType()) {
-                // 如果当前类型是数组类型，嵌套初始化应该使用元素类型（也是数组类型）
-                son->type = const_cast<Type *>(static_cast<const ArrayType *>(elementType)->getElementType());
-                printf("Debug: Setting nested array init type to %s\n", son->type->toString().c_str());
+                // 对于多维数组，需要正确推断嵌套初始化的类型
+                const ArrayType * elementArrayType = static_cast<const ArrayType *>(elementType);
+
+                // 检查嵌套初始化的内容来决定类型
+                // 如果嵌套初始化包含基础类型元素（如数字），则应该使用最内层的数组类型
+                bool hasBasicElements = false;
+                for (auto grandson: son->sons) {
+                    if (grandson->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT ||
+                        grandson->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
+                        hasBasicElements = true;
+                        break;
+                    }
+                }
+
+                if (hasBasicElements) {
+                    // 如果包含基础元素，找到最内层的数组类型
+                    const Type * innerMostArrayType = elementType;
+                    while (innerMostArrayType->isArrayType()) {
+                        const ArrayType * currentArrayType = static_cast<const ArrayType *>(innerMostArrayType);
+                        if (currentArrayType->getElementType()->isArrayType()) {
+                            innerMostArrayType = currentArrayType->getElementType();
+                        } else {
+                            // 找到了最内层的数组类型
+                            break;
+                        }
+                    }
+                    son->type = const_cast<Type *>(innerMostArrayType);
+                    printf("Debug: Setting nested array init type to %s (innermost for basic elements)\n",
+                           son->type->toString().c_str());
+                } else {
+                    // 如果不包含基础元素，使用元素类型
+                    son->type = const_cast<Type *>(elementArrayType->getElementType());
+                    printf("Debug: Setting nested array init type to %s (element type)\n",
+                           son->type->toString().c_str());
+                }
             } else {
                 // 如果不是数组类型，使用内层元素类型
                 son->type = innerElementType;
@@ -3848,9 +4299,32 @@ bool IRGenerator::ir_array_init(ast_node * node)
 
         Value * initVal = son->val;
 
-        // 对于常量值，不需要load
+        // 对于常量值，不需要load，但需要类型转换
         if (dynamic_cast<ConstInt *>(initVal) || dynamic_cast<ConstFloat *>(initVal)) {
-            initValues.push_back(initVal);
+            // 检查是否需要类型转换
+            Value * convertedVal = initVal;
+            if (innerElementType) {
+                if (innerElementType->isFloatType() && !initVal->getType()->isFloatType()) {
+                    // 目标是浮点数，源是整数，需要转换
+                    ConstInt * constInt = dynamic_cast<ConstInt *>(initVal);
+                    if (constInt) {
+                        convertedVal = module->newConstFloat(static_cast<float>(constInt->getVal()));
+                        printf("Debug: Converting array init value from int %d to float %f\n",
+                               constInt->getVal(),
+                               static_cast<float>(constInt->getVal()));
+                    }
+                } else if (innerElementType->isIntegerType() && !initVal->getType()->isIntegerType()) {
+                    // 目标是整数，源是浮点数，需要转换
+                    ConstFloat * constFloat = dynamic_cast<ConstFloat *>(initVal);
+                    if (constFloat) {
+                        convertedVal = module->newConstInt(static_cast<int32_t>(constFloat->getVal()));
+                        printf("Debug: Converting array init value from float %f to int %d\n",
+                               constFloat->getVal(),
+                               static_cast<int32_t>(constFloat->getVal()));
+                    }
+                }
+            }
+            initValues.push_back(convertedVal);
         } else if (dynamic_cast<GlobalVariable *>(initVal)) {
             // 这是嵌套数组的全局常量，需要展开其初始化值
             GlobalVariable * nestedArray = static_cast<GlobalVariable *>(initVal);
@@ -3950,14 +4424,19 @@ bool IRGenerator::ir_array_init(ast_node * node)
         arrayType = static_cast<ArrayType *>(node->type);
         printf("Debug: Using node-provided array type: %s\n", arrayType->toString().c_str());
 
-        // 对于2D数组，计算真正的总元素个数
+        // 对于多维数组，计算真正的总元素个数
         int expectedElements = arrayType->getTotalElements();
-        int realTotalElements = expectedElements;
+        int realTotalElements = 1;
 
-        // 如果是多维数组，需要计算所有维度的总元素个数
-        if (arrayType->getElementType()->isArrayType()) {
-            const ArrayType * innerArrayType = static_cast<const ArrayType *>(arrayType->getElementType());
-            realTotalElements = expectedElements * innerArrayType->getTotalElements();
+        // 递归计算所有嵌套维度的总元素个数
+        const Type * currentType = arrayType;
+        while (currentType && currentType->isArrayType()) {
+            const ArrayType * currentArrayType = static_cast<const ArrayType *>(currentType);
+            const std::vector<int> & dims = currentArrayType->getDimensions();
+            if (!dims.empty()) {
+                realTotalElements *= dims[0];
+            }
+            currentType = currentArrayType->getElementType();
         }
 
         printf("Debug: Array expects %d elements (outer), %d total elements, got %zu init values\n",
@@ -3974,9 +4453,11 @@ bool IRGenerator::ir_array_init(ast_node * node)
                     break;
                 }
             }
-            if (allBasicConstants && initValues.size() == static_cast<size_t>(realTotalElements)) {
+            if (allBasicConstants && initValues.size() <= static_cast<size_t>(realTotalElements)) {
                 isFlatInitialization = true;
-                printf("Debug: Detected flat initialization with %zu elements\n", initValues.size());
+                printf("Debug: Detected flat initialization with %zu elements (total: %d)\n",
+                       initValues.size(),
+                       realTotalElements);
             }
         }
 
@@ -4006,7 +4487,11 @@ bool IRGenerator::ir_array_init(ast_node * node)
 
             // 如果初始化值不足，用零填充
             while (initValues.size() < static_cast<size_t>(expectedElements)) {
-                initValues.push_back(module->newConstInt(0));
+                if (innerElementType && innerElementType->isFloatType()) {
+                    initValues.push_back(module->newConstFloat(0.0f));
+                } else {
+                    initValues.push_back(module->newConstInt(0));
+                }
             }
             printf("Debug: Filled array with zeros to %zu elements\n", initValues.size());
         }
@@ -4022,7 +4507,24 @@ bool IRGenerator::ir_array_init(ast_node * node)
         printf("Debug: Using parent-provided array type: %s\n", arrayType->toString().c_str());
 
         // 验证初始化值数量是否匹配
-        int expectedElements = arrayType->getTotalElements();
+        // 对于多维数组，需要计算所有维度的总元素个数
+        int expectedElements = 1;
+
+        // 递归计算所有嵌套维度的总元素个数
+        const Type * currentType = arrayType;
+        while (currentType && currentType->isArrayType()) {
+            const ArrayType * currentArrayType = static_cast<const ArrayType *>(currentType);
+            const std::vector<int> & dims = currentArrayType->getDimensions();
+            if (!dims.empty()) {
+                expectedElements *= dims[0];
+            }
+            currentType = currentArrayType->getElementType();
+        }
+
+        printf("Debug: Calculated expected elements: %d for array type %s\n",
+               expectedElements,
+               arrayType->toString().c_str());
+
         if (initValues.size() != static_cast<size_t>(expectedElements)) {
             printf("Warning: Initializer has %zu elements, but array expects %d elements\n",
                    initValues.size(),
@@ -4030,7 +4532,11 @@ bool IRGenerator::ir_array_init(ast_node * node)
 
             // 如果初始化值不足，用零填充
             while (initValues.size() < static_cast<size_t>(expectedElements)) {
-                initValues.push_back(module->newConstInt(0));
+                if (innerElementType && innerElementType->isFloatType()) {
+                    initValues.push_back(module->newConstFloat(0.0f));
+                } else {
+                    initValues.push_back(module->newConstInt(0));
+                }
             }
             // 如果初始化值过多，截断
             if (initValues.size() > static_cast<size_t>(expectedElements)) {
@@ -4198,8 +4704,9 @@ bool IRGenerator::ir_array_init(ast_node * node)
                 // 全局作用域：普通全局数组变量，直接使用变量名
                 globalArrayName = node->name;
             } else {
-                // 局部作用域：使用__const.main.前缀
-                globalArrayName = "__const.main." + node->name;
+                // 局部作用域：使用__const.main.前缀，并添加唯一计数器避免重名
+                static int localArrayCounter = 0;
+                globalArrayName = "__const.main." + node->name + "." + std::to_string(localArrayCounter++);
             }
         }
         printf("Debug: Creating top-level array with name '%s', type %s\n",
@@ -4289,7 +4796,11 @@ bool IRGenerator::ir_array_init(ast_node * node)
 
                         // 确保flatValues有足够的空间到当前行
                         while (flatValues.size() < static_cast<size_t>(rowStart)) {
-                            flatValues.push_back(module->newConstInt(0));
+                            if (arrayType->getElementType()->isFloatType()) {
+                                flatValues.push_back(module->newConstFloat(0.0f));
+                            } else {
+                                flatValues.push_back(module->newConstInt(0));
+                            }
                         }
 
                         // 处理嵌套数组的元素
@@ -4306,14 +4817,22 @@ bool IRGenerator::ir_array_init(ast_node * node)
                             } else if (grandson->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
                                 flatValues.push_back(module->newConstFloat(grandson->float_val));
                             } else {
-                                flatValues.push_back(module->newConstInt(0));
+                                if (arrayType->getElementType()->isFloatType()) {
+                                    flatValues.push_back(module->newConstFloat(0.0f));
+                                } else {
+                                    flatValues.push_back(module->newConstInt(0));
+                                }
                             }
                             elementsInRow++;
                         }
 
                         // 用零填充当前行的剩余位置
                         while (elementsInRow < rowSize) {
-                            flatValues.push_back(module->newConstInt(0));
+                            if (arrayType->getElementType()->isFloatType()) {
+                                flatValues.push_back(module->newConstFloat(0.0f));
+                            } else {
+                                flatValues.push_back(module->newConstInt(0));
+                            }
                             elementsInRow++;
                         }
 
@@ -4338,7 +4857,11 @@ bool IRGenerator::ir_array_init(ast_node * node)
 
             // 用零填充不足的元素，但不超过总元素数
             while (flatValues.size() < static_cast<size_t>(totalElements)) {
-                flatValues.push_back(module->newConstInt(0));
+                if (arrayType->getElementType()->isFloatType()) {
+                    flatValues.push_back(module->newConstFloat(0.0f));
+                } else {
+                    flatValues.push_back(module->newConstInt(0));
+                }
             }
 
             // 确保不超过总元素数
@@ -4391,7 +4914,11 @@ bool IRGenerator::ir_array_init(ast_node * node)
 
             // 用零填充不足的元素
             while (flatValues.size() < static_cast<size_t>(totalElements)) {
-                flatValues.push_back(module->newConstInt(0));
+                if (arrayType->getElementType()->isFloatType()) {
+                    flatValues.push_back(module->newConstFloat(0.0f));
+                } else {
+                    flatValues.push_back(module->newConstInt(0));
+                }
             }
 
             // 创建一个临时的全局变量来存储嵌套数组的值
@@ -4628,7 +5155,13 @@ bool IRGenerator::processArrayInitialization(ast_node * initNode,
         }
 
         // 初始化结果数组，全部填零
-        initValues.resize(totalElements, module->newConstInt(0));
+        Value * zeroValue = nullptr;
+        if (arrayType->getElementType()->isFloatType()) {
+            zeroValue = module->newConstFloat(0.0f);
+        } else {
+            zeroValue = module->newConstInt(0);
+        }
+        initValues.resize(totalElements, zeroValue);
 
         int currentPos = 0; // 当前在扁平化数组中的位置
 
@@ -4765,7 +5298,11 @@ bool IRGenerator::reorganizeInitValuesForTargetType(const std::vector<Value *> &
 
         // 如果值不足，用零填充
         while (static_cast<int>(reorganizedValues.size()) < totalElements) {
-            reorganizedValues.push_back(module->newConstInt(0));
+            if (targetType->getElementType()->isFloatType()) {
+                reorganizedValues.push_back(module->newConstFloat(0.0f));
+            } else {
+                reorganizedValues.push_back(module->newConstInt(0));
+            }
         }
 
         return true;
@@ -4953,6 +5490,17 @@ bool IRGenerator::handleDynamicInitialization(ast_node * node,
 
     // 获取数组的维度信息
     const std::vector<int> & outerDimensions = arrayType->getDimensions();
+
+    // 检查内层类型，判断是一维数组还是多维数组
+    Type * innerType = arrayType->getElementType();
+
+    // 如果是一维数组（内层类型不是数组类型），使用简单的逐元素赋值
+    if (outerDimensions.size() == 1 && !innerType->isArrayType()) {
+        printf("Debug: Processing 1D array dynamic initialization\n");
+        return handleOneDimensionalDynamicInit(node, arrayVar, arrayType, initExprNode);
+    }
+
+    // 以下是原有的多维数组处理逻辑
     if (outerDimensions.size() != 1) {
         printf("Error: Expected outer array dimension size 1, got %zu\n", outerDimensions.size());
         return false;
@@ -4969,8 +5517,7 @@ bool IRGenerator::handleDynamicInitialization(ast_node * node,
         printf("Debug: Array has fixed dimension: %d\n", outerDimensions[0]);
     }
 
-    // 检查内层是否也是数组类型
-    Type * innerType = arrayType->getElementType();
+    // 检查内层是否也是数组类型（多维数组情况）
     if (!innerType->isArrayType()) {
         printf("Error: Expected inner array type for 2D array\n");
         return false;
@@ -5610,4 +6157,341 @@ bool IRGenerator::ir_fdiv_processed(ast_node * node, ast_node * left, ast_node *
     node->val = divInst;
 
     return true;
+}
+
+/// @brief 预收集函数中的所有局部变量声明
+/// @param node 函数体AST节点
+/// @param localVars 收集到的局部变量列表
+/// @return 收集是否成功
+bool IRGenerator::collectLocalVariables(ast_node * node, std::vector<LocalVarInfo> & localVars)
+{
+    static int varCounter = 0; // 静态计数器，为每个变量分配唯一ID
+    return collectLocalVariablesRecursive(node, localVars, varCounter);
+}
+
+/// @brief 递归收集局部变量声明的内部实现
+/// @param node AST节点
+/// @param localVars 收集到的局部变量列表
+/// @param varCounter 变量计数器引用
+/// @return 收集是否成功
+bool IRGenerator::collectLocalVariablesRecursive(ast_node * node,
+                                                 std::vector<LocalVarInfo> & localVars,
+                                                 int & varCounter)
+{
+    if (!node) {
+        return true;
+    }
+
+    // 如果是变量声明语句，收集其中的变量
+    if (node->node_type == ast_operator_type::AST_OP_DECL_STMT) {
+        for (auto & child: node->sons) {
+            if (child->node_type == ast_operator_type::AST_OP_VAR_DECL) {
+                // 处理变量声明
+                if (child->sons.size() < 2) {
+                    printf("Error: Invalid node structure in collectLocalVariables. Expected 2 children, got %zu.\n",
+                           child->sons.size());
+                    return false;
+                }
+
+                ast_node * typeNode = child->sons[0];
+                ast_node * varOrAssignNode = child->sons[1];
+
+                if (!typeNode || !varOrAssignNode) {
+                    printf("Error: Null typeNode or varOrAssignNode in collectLocalVariables.\n");
+                    return false;
+                }
+
+                // 处理变量声明（带或不带初始化）
+                ast_node * varNode = nullptr;
+
+                if (varOrAssignNode->node_type == ast_operator_type::AST_OP_ASSIGN) {
+                    // 带初始化的声明
+                    if (varOrAssignNode->sons.size() < 2) {
+                        printf("Error: Invalid assignment structure in collectLocalVariables.\n");
+                        return false;
+                    }
+                    varNode = varOrAssignNode->sons[0];
+                } else {
+                    // 不带初始化的声明
+                    varNode = varOrAssignNode;
+                }
+
+                if (!varNode) {
+                    printf("Error: Null varNode in collectLocalVariables.\n");
+                    return false;
+                }
+
+                // 处理数组类型
+                Type * varType = typeNode->type;
+                if (!varNode->sons.empty() && !typeNode->type->isArrayType()) {
+                    // 变量节点有子节点，说明是数组声明，需要创建数组类型
+                    std::vector<int> dimensions;
+                    for (auto dimNode: varNode->sons) {
+                        if (dimNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
+                            dimensions.push_back(dimNode->integer_val);
+                        } else {
+                            printf("Error: Non-constant array dimension in variable declaration.\n");
+                            return false;
+                        }
+                    }
+                    varType = new ArrayType(typeNode->type, dimensions);
+                }
+
+                // 计算对齐大小
+                uint32_t alignSize = varType->isArrayType() ? 16 : varType->getSize();
+
+                // 添加到局部变量列表，分配唯一ID
+                localVars.emplace_back(varNode->name, varType, alignSize, varNode, ++varCounter);
+            }
+        }
+    }
+
+    // 递归处理子节点
+    for (auto & child: node->sons) {
+        if (!collectLocalVariablesRecursive(child, localVars, varCounter)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/// @brief 在函数开始时生成所有局部变量的alloca指令
+/// @param localVars 局部变量列表
+/// @param blockInsts 指令序列
+/// @return 生成是否成功
+bool IRGenerator::generateAllocaInstructions(const std::vector<LocalVarInfo> & localVars, InterCode & blockInsts)
+{
+    for (const auto & varInfo: localVars) {
+        // 变量的类型应该是指向分配类型的指针类型
+        Type * allocaType = varInfo.type;             // 要分配的类型
+        Type * varType = new PointerType(allocaType); // 变量类型（指针类型）
+
+        Value * varValue = module->newVarValue(varType, varInfo.uniqueName);
+        if (!varValue) {
+            printf("Error: Failed to allocate variable '%s' (unique: %s) in generateAllocaInstructions.\n",
+                   varInfo.name.c_str(),
+                   varInfo.uniqueName.c_str());
+            return false;
+        }
+
+        // 生成alloca指令
+        AllocaInstruction * allocaInst =
+            new AllocaInstruction(module->getCurrentFunction(), varValue, allocaType, varInfo.alignSize);
+        blockInsts.addInst(allocaInst);
+
+        // 设置变量节点的值
+        varInfo.varNode->val = varValue;
+
+        // 注意：不在这里进行数组零初始化，让原有的初始化逻辑处理
+
+        printf("Debug: Generated alloca for variable '%s' (unique: %s) with type %s\n",
+               varInfo.name.c_str(),
+               varInfo.uniqueName.c_str(),
+               allocaType->toString().c_str());
+    }
+
+    return true;
+}
+
+/// @brief 修改后的变量声明处理，只处理初始化（变量已在函数开始时分配）
+/// @param node AST节点
+/// @return 翻译是否成功
+bool IRGenerator::ir_variable_declare_register_only(ast_node * node)
+{
+    // 确保节点有两个子节点：类型节点和变量名或赋值节点
+    if (node->sons.size() < 2) {
+        printf("Error: Invalid node structure in ir_variable_declare_register_only. Expected 2 children, got %zu.\n",
+               node->sons.size());
+        return false;
+    }
+
+    ast_node * typeNode = node->sons[0];
+    ast_node * varOrAssignNode = node->sons[1];
+
+    if (!typeNode || !varOrAssignNode) {
+        printf("Error: Null typeNode or varOrAssignNode in ir_variable_declare_register_only.\n");
+        return false;
+    }
+
+    // 处理变量声明（带或不带初始化）
+    ast_node * varNode = nullptr;
+    ast_node * initExprNode = nullptr;
+
+    if (varOrAssignNode->node_type == ast_operator_type::AST_OP_ASSIGN) {
+        // 带初始化的声明
+        if (varOrAssignNode->sons.size() < 2) {
+            printf("Error: Invalid assignment structure in ir_variable_declare_register_only.\n");
+            return false;
+        }
+
+        varNode = varOrAssignNode->sons[0];
+        initExprNode = varOrAssignNode->sons[1];
+
+        if (!varNode || !initExprNode) {
+            printf("Error: Null varNode or initExprNode in assignment.\n");
+            return false;
+        }
+    } else {
+        // 不带初始化的声明
+        varNode = varOrAssignNode;
+    }
+
+    // 变量应该已经在函数开始时分配，从符号表中查找
+    Value * varValue = module->findVarValue(varNode->name);
+    if (!varValue) {
+        printf("Error: Variable '%s' not found in symbol table. It should have been allocated at function start.\n",
+               varNode->name.c_str());
+        return false;
+    }
+
+    // 设置变量节点的值（用于后续引用）
+    varNode->val = varValue;
+
+    // 只处理初始化（如果有的话）
+    if (initExprNode) {
+        // 处理初始化表达式
+        if (!ir_visit_ast_node(initExprNode)) {
+            printf("Error: Failed to evaluate initialization expression for '%s'.\n", varNode->name.c_str());
+            return false;
+        }
+
+        Value * initValue = nullptr;
+
+        // 处理不同类型的初始化
+        if (initExprNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_FLOAT) {
+            initValue = module->newConstFloat(initExprNode->float_val);
+            node->blockInsts.addInst(initExprNode->blockInsts);
+        } else if (initExprNode->node_type == ast_operator_type::AST_OP_ARRAY_ACCESS) {
+            // 数组访问返回地址，需要加载值
+            node->blockInsts.addInst(initExprNode->blockInsts);
+
+            if (initExprNode->val && initExprNode->val->getType()->isPointerType()) {
+                const PointerType * ptrType = static_cast<const PointerType *>(initExprNode->val->getType());
+                Value * loadResult = module->newVarValue(const_cast<Type *>(ptrType->getPointeeType()));
+                LoadInstruction * loadInst =
+                    new LoadInstruction(module->getCurrentFunction(), loadResult, initExprNode->val);
+                node->blockInsts.addInst(loadInst);
+                initValue = loadResult;
+            } else {
+                initValue = initExprNode->val;
+            }
+        } else {
+            // 其他表达式
+            node->blockInsts.addInst(initExprNode->blockInsts);
+            initValue = initExprNode->val;
+        }
+
+        if (initValue) {
+            // 生成store指令进行初始化
+            StoreInstruction * storeInst = new StoreInstruction(module->getCurrentFunction(), initValue, varValue);
+            node->blockInsts.addInst(storeInst);
+        }
+    }
+
+    return true;
+}
+
+/// @brief 处理一维数组动态初始化
+/// @param node AST节点
+/// @param arrayVar 数组变量
+/// @param arrayType 数组类型
+/// @param initExprNode 初始化表达式节点
+/// @return 翻译是否成功
+bool IRGenerator::handleOneDimensionalDynamicInit(ast_node * node,
+                                                  Value * arrayVar,
+                                                  ArrayType * arrayType,
+                                                  ast_node * initExprNode)
+{
+    Function * currentFunc = module->getCurrentFunction();
+
+    printf("Debug: Processing 1D array dynamic initialization for array with %d elements\n",
+           arrayType->getDimensions()[0]);
+
+    // 获取数组维度
+    int arraySize = arrayType->getDimensions()[0];
+
+    // 逐个处理初始化元素
+    for (size_t i = 0; i < initExprNode->sons.size() && i < static_cast<size_t>(arraySize); ++i) {
+        ast_node * elementNode = initExprNode->sons[i];
+
+        // 处理元素表达式
+        if (!ir_visit_ast_node(elementNode)) {
+            printf("Error: Failed to process initialization element %zu\n", i);
+            return false;
+        }
+        node->blockInsts.addInst(elementNode->blockInsts);
+
+        Value * elementValue = elementNode->val;
+
+        // 如果元素值需要加载（如变量引用），先加载
+        if (needsLoad(elementValue)) {
+            LoadInstruction * loadInst = new LoadInstruction(currentFunc, elementValue, elementValue, 4);
+            node->blockInsts.addInst(loadInst);
+            elementValue = loadInst;
+        }
+
+        // 生成GEP指令获取数组元素地址
+        Value * firstIndex = module->newConstInt(0);                    // 第一个索引总是0（数组基址）
+        Value * secondIndex = module->newConstInt(static_cast<int>(i)); // 元素索引
+
+        GetelementptrInstruction * gepInst =
+            new GetelementptrInstruction(currentFunc, arrayVar, firstIndex, secondIndex);
+        node->blockInsts.addInst(gepInst);
+
+        // 生成store指令将值存储到数组元素
+        StoreInstruction * storeInst = new StoreInstruction(currentFunc, elementValue, gepInst);
+        node->blockInsts.addInst(storeInst);
+
+        printf("Debug: Generated store for element %zu\n", i);
+    }
+
+    // 如果初始化元素少于数组大小，剩余元素需要初始化为0
+    if (initExprNode->sons.size() < static_cast<size_t>(arraySize)) {
+        printf("Debug: Array has %d elements but only %zu initialization values provided, initializing remaining "
+               "elements to 0\n",
+               arraySize,
+               initExprNode->sons.size());
+
+        // 初始化剩余元素为0
+        for (size_t i = initExprNode->sons.size(); i < static_cast<size_t>(arraySize); ++i) {
+            // 生成GEP指令获取数组元素地址
+            Value * firstIndex = module->newConstInt(0);                    // 第一个索引总是0（数组基址）
+            Value * secondIndex = module->newConstInt(static_cast<int>(i)); // 元素索引
+
+            GetelementptrInstruction * gepInst =
+                new GetelementptrInstruction(currentFunc, arrayVar, firstIndex, secondIndex);
+            node->blockInsts.addInst(gepInst);
+
+            // 根据数组元素类型生成相应的0值
+            Value * zeroValue = nullptr;
+            Type * elementType = arrayType->getElementType();
+            if (elementType->isIntegerType()) {
+                zeroValue = module->newConstInt(0);
+            } else if (elementType->isFloatType()) {
+                zeroValue = module->newConstFloat(0.0f);
+            } else {
+                printf("Error: Unsupported element type for zero initialization\n");
+                return false;
+            }
+
+            // 生成store指令将0值存储到数组元素
+            StoreInstruction * storeInst = new StoreInstruction(currentFunc, zeroValue, gepInst);
+            node->blockInsts.addInst(storeInst);
+
+            printf("Debug: Initialized element %zu to 0\n", i);
+        }
+    }
+
+    printf("Debug: Completed 1D array dynamic initialization\n");
+    return true;
+}
+
+/// @brief 将预分配的变量注册到当前作用域
+/// @param name 变量名
+/// @param value 变量值
+/// @return 注册是否成功
+bool IRGenerator::registerVariableToCurrentScope(const std::string & name, Value * value)
+{
+    return module->registerVariableToCurrentScope(name, value);
 }
