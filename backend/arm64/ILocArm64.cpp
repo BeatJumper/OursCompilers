@@ -587,7 +587,6 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
     std::string s = "#" + std::to_string(totalSize);
     emit("sub", "sp", "sp", s);
 
-    // 主函数不用调用其它函数所以不用保护寄存器
     if (func->getExistFuncCall()) {
         auto & protectedRegNo = func->getProtectedReg();
         for (int i = 0; i < protectedRegNo.size(); i++) {
@@ -596,9 +595,9 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
             // emit("stp", "x29", "x30", off);
             emit("str", PlatformArm64::intRegVal[protectedRegNo[i]]->getName(), off);
         }
+        // 设置新帧指针
+        emit("add", "x29", "sp", "#" + std::to_string(totalSize - protectedRegNum * 8));
     }
-    // 设置新帧指针
-    emit("add", "x29", "sp", "#" + std::to_string(totalSize - protectedRegNum * 8));
 }
 
 /// @brief 调用函数fun

@@ -712,13 +712,14 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
     // 这里对临时变量和局部变量都在栈上进行分配,但形参对应实参的临时变量(FormalParam类型)不需要考虑
 
     int64_t sp_esp = func->getMaxDep();
+    printf("stackAlloc开始时,已建立的栈空间大小:%d\n", int(sp_esp));
 
     // 为数组分配栈空间
     for (auto inst: func->getInterCode().getInsts()) {
         if (inst->getOp() == IRInstOperator::IRINST_OP_ALLOCA) {
             // alloca指令需要为它要分配的数组分配栈空间
             // alloca指令的结果是指向这个数组的指针
-
+            Value * result = inst->getOperand(0);
             // 获取alloca指令分配的类型
             auto * allocatedType = inst->getOperand(0)->getType();
             int64_t size = 4; // 默认大小
@@ -728,7 +729,6 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
                 inst->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
                 // 为alloca指令的结果变量设置相同的内存地址
                 // 尝试将结果变量转换为LocalVariable并设置内存地址
-                Value * result = inst->getOperand(0);
                 if (LocalVariable * localVar = dynamic_cast<LocalVariable *>(result)) {
                     localVar->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
                     printf("Debug: stackAlloc - 局部变量 %s 设置内存地址: offset=%ld\n",
@@ -741,6 +741,14 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
                        result->getName().c_str(),
                        arr->toString().c_str(),
                        size);
+                sp_esp += size;
+            } else if (Instanceof(val, PointerType *, allocatedType)) {
+                printf("检测到Alloca对象为指针类型\n");
+                auto * pointeeType = val->getPointeeType();
+                size = pointeeType->getSize();
+                LocalVariable * localVar = dynamic_cast<LocalVariable *>(result);
+                localVar->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
+                printf("Alloca指向的数据类型的大小:%d\n", int(size));
                 sp_esp += size;
             }
         }
@@ -757,7 +765,6 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
         bool isArrayVariable = local->getType()->isArrayType();
 
         if (isArrayVariable) {
-
             continue; // 跳过数组变量，它们的地址将在alloca处理阶段设置
         }
 

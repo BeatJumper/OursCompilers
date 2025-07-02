@@ -769,6 +769,10 @@ void InstSelectorArm64::translate_load(Instruction * inst)
                           PlatformArm64::regName[result_regId],
                           "[" + PlatformArm64::regName[base_reg_id] + ",#" + std::to_string(base_offset) + "]");
             }
+        } else if (result->getType()->isPointerType()) {
+            // 如果结果是指针类型，使用64位寄存器
+            printf("Debug: ldr结果为指针类型，使用64位寄存器\n");
+            iloc.load_var(result_regId + 32, arg1);
         }
         // 内存变量 => 寄存器
         else {
