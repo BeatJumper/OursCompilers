@@ -28,6 +28,7 @@ public:
     {
         this->name = _name;
         regId = _reg_no;
+        assert(_type);
     }
 
     /// @brief 获取名字

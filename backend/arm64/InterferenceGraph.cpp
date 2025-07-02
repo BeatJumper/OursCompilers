@@ -67,10 +67,8 @@ InterferenceGraph::InterferenceGraph(Function * func, bool is_float)
     printf("已删除不用的基本块表\n");
     */
 
-    /*
     // 加完新指令后也该重新调整IR编号
     func->renameIR();
-    */
 
     // printf("已释放临时基本块表\n");
     //  进行活跃变量分析，获得每条语句的DEF和USE集合
@@ -129,7 +127,20 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
         // printf("当前变量：");
         // printval(val);
         // printf("寄存器ID：%d\n", val->getRegId());
-        newnode->color = val->getRegId();
+        newnode->color = RegIdToColor(val->getRegId());
+        if (newnode->color == 28) {
+            // printval(newnode->val);
+            // std::cout << (is_float ? "true" : "false") << std::endl;
+            assert(val == PlatformArm64::intRegVal[91]);
+            assert(FloatType::getTypeFloat());
+            assert(PlatformArm64::intRegVal[0]->getType());
+            assert(PlatformArm64::intRegVal[91]->getType());
+            std::cout << PlatformArm64::intRegVal[91]->getType()->getTypeID() << std::endl;
+            // assert(PlatformArm64::intRegVal[91]->getType() == IntegerType::getTypeInt());
+            assert(PlatformArm64::intRegVal[91]->getType() == FloatType::getTypeFloat());
+            assert(val->getType() == FloatType::getTypeFloat());
+        }
+        // assert(newnode->color != 28);
         // printf("newnode->color = val->getRegId(); %d\n", val->getRegId());
         if (newnode->color == -1) {
             uncolored_node_set.insert(newnode);
@@ -138,7 +149,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
     // printf("所有干涉节点创建完成\n");
     //  std::cout <<　uncolored_node_set.size() << std::endl;
 
-    /*
+    // 这是std::set版本的干涉图构建过程，时间复杂度是O(N * M * M * logN)，其中N为指令数目，M为活跃集合的size上限
     // 扫描函数里每条指令，获取每个时刻的活跃变量集合
     int i = 1;
     printf("size of insts:%zu\n", graph->get_func()->getInterCode().getCode().size());
@@ -146,9 +157,9 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
         std::set<Value *> value_occupy = inst->get_liveout();
         merge_set(value_occupy, inst->get_def_set());
         printf("第%d次获取DEF、SET集合\n", i++);
-        if (i == 2) {
-            break;
-        }
+        // if (i == 2) {
+        // break;
+        //}
         //  这些不同的量两两之间都是互斥的，不能在同一寄存器
         FOR_EACH_PAIR_IN_SET(value_occupy)
         {
@@ -156,15 +167,21 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
             if (it1 == it2) {
                 continue;
             }
+            if (all_value_in_cfg.count(*it1) == 0 || all_value_in_cfg.count(*it2) == 0) {
+                continue;
+            }
             // 因此在干涉图中连上一条边
             add_edge(value_to_ig[*it1], value_to_ig[*it2]);
         }
         // std::cout << "干涉边添加完毕" << std::endl;
     }
-    */
+
+    // 下面的干涉图构建方法弃用，用回上面的。
+    // 下面是BitSet版本的干涉图构建，时间复杂度O(N * N * (N/W + logN))，其中N是指令数，W = 32
+    /*
     // 优化版本的干涉图产生过程
     // 每个Value都有一个位图，位图中每一位表示其是否在对应语句的活跃集合中出现
-    std::map<Value *, std::bitset<4000>> live_set_of_value;
+    std::map<Value *, std::bitset<10000>> live_set_of_value;
 
     // 集合所对应的位图坐标
     int index = 0;
@@ -177,6 +194,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
         }
         index++;
     }
+    printf("干涉图正在产生\n");
     for (Value * val1: all_value_in_cfg) {
         for (Value * val2: all_value_in_cfg) {
             if (val1 == val2) {
@@ -192,6 +210,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
             }
         }
     }
+    */
 }
 
 void InterferenceGraph::flush_all_color()
@@ -357,7 +376,7 @@ bool InterferenceGraph::color_graph(InterferenceGraph * graph, int color_size)
 
 int InterferenceGraph::ColorToRegId(int color, bool is_float)
 {
-    assert(color < PlatformArm64::maxUsableRegNum);
+    assert(color < 32);
     if (is_float) {
         return color + 63;
     } else {
@@ -365,6 +384,19 @@ int InterferenceGraph::ColorToRegId(int color, bool is_float)
             return color;
         } else {
             return color + 1;
+        }
+    }
+}
+
+int InterferenceGraph::RegIdToColor(int regid)
+{
+    if (regid >= 63) {
+        return regid - 63;
+    } else {
+        if (regid >= PlatformArm64::CallerSaveRegNum) {
+            return regid - 1;
+        } else {
+            return regid;
         }
     }
 }

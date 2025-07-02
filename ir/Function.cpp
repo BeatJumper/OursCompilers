@@ -347,6 +347,20 @@ void Function::renameIR()
             variableCounter++;
         }
     }
+    for (auto inst: this->getInterCode().getInsts()) {
+        for (Value * val: inst->get_def_set()) {
+            if (val->getIRName().empty()) {
+                val->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(variableCounter));
+                variableCounter++;
+            }
+        }
+        for (Value * val: inst->get_use_set()) {
+            if (val->getIRName().empty()) {
+                val->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(variableCounter));
+                variableCounter++;
+            }
+        }
+    }
     // printf("==== Finished renameIR for function %s ====\n", this->name.c_str());
 }
 

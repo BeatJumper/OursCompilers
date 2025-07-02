@@ -99,10 +99,16 @@ void Instruction::transfer()
     } else if (Instanceof(inst, FuncCallInstruction *, this)) {
         // 在DEF集上，添加18个DEF，表示函数调用使得寄存器W0~W17都可能遭到修改
         for (int index = 0; index < PlatformArm64::CallerSaveRegNum; index++) {
-            Value * val = inst->getOperand(index);
-            val->setRegId(index);
-            def_set.insert(val);
+            // Value * val = inst->getOperand(index);
+            // val->setRegId(index);
+            def_set.insert(PlatformArm64::intRegVal[index]);
         }
+        // 在DEF集上，再添加32个DEF，表示函数调用使得寄存器S0~S31都可能遭到修改
+        for (int index = 0; index < PlatformArm64::maxVecRegNum; index++) {
+            def_set.insert(PlatformArm64::intRegVal[index + 63]);
+        }
+        // 最后再在DEF集上添加FuncCallInstruction自己
+        def_set.insert(this);
 
         // 接下来是USE集的添加
 
