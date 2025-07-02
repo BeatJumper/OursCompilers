@@ -682,7 +682,6 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
             // args.clear();
             // 赋值指令
             if (callInst->hasResultValue()) {
-
                 if (callInst->getRegId() == 0) {
                     // 结果变量的寄存器和返回值寄存器一样，则什么都不需要做
                     ;
