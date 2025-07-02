@@ -156,6 +156,15 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
         std::set<Value *> value_occupy = inst->get_liveout();
         merge_set(value_occupy, inst->get_def_set());
+        //  手动循环的安全版本
+        for (auto it = value_occupy.begin(); it != value_occupy.end();) {
+            if (all_value_in_cfg.count(*it) == 0) {
+                it = value_occupy.erase(it); // erase 返回下一个有效迭代器
+            } else {
+                ++it;
+            }
+        }
+
         printf("第%d次获取DEF、SET集合\n", i++);
         // if (i == 2) {
         // break;

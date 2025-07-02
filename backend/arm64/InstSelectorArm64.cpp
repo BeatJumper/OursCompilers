@@ -476,6 +476,16 @@ void InstSelectorArm64::translate_call(Instruction * inst)
 
     iloc.call_fun(callInst->getName());
 
+    if (callInst->hasResultValue()) {
+        if (callInst->getRegId() == 0) {
+            // 结果变量的寄存器和返回值寄存器一样，则什么都不需要做
+            ;
+        } else {
+            // 其它情况，需要产生赋值指令
+            iloc.mov_reg(callInst->getRegId(), 0);
+        }
+    }
+
     // 函数调用后清零，使得下次可正常统计
     realArgCount = 0;
 }

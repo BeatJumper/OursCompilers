@@ -335,7 +335,7 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
                     // assert(node->color != -1);
                     // std::cout << InterferenceGraph::ColorToRegId(node->color) << std::endl;
                     // printval(func->getParams()[0]);
-                    printval(node->val);
+                    // printval(node->val);
                     node->val->setRegId(
                         InterferenceGraph::ColorToRegId(node->color,
                                                         node->val->getType() == FloatType::getTypeFloat()));
@@ -669,6 +669,7 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
             // 有arg指令后可不用参数，展示不删除
             // args.clear();
             // 赋值指令
+            /*
             if (callInst->hasResultValue()) {
                 if (callInst->getRegId() == 0) {
                     // 结果变量的寄存器和返回值寄存器一样，则什么都不需要做
@@ -686,6 +687,7 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                     printf("插入一条赋值指令\n");
                 }
             }
+            */
         }
     }
 }
