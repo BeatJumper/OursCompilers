@@ -485,9 +485,9 @@ void InstSelectorArm64::translate_call(Instruction * inst)
             // 其它情况，需要产生赋值指令
             // 创建一个表示 x0 寄存器的临时变量
             if (callInst->getType()->isIntegerType()) {
-                iloc.inst("mov", std::to_string(callInst->getRegId()), "w0");
+                iloc.inst("mov", PlatformArm64::regName[callInst->getRegId()], "w0");
             } else if (callInst->getType()->isFloatType()) {
-                iloc.inst("mov", std::to_string(callInst->getRegId()), "s0");
+                iloc.inst("mov", PlatformArm64::regName[callInst->getRegId()], "s0");
             }
         }
     }
@@ -774,6 +774,8 @@ void InstSelectorArm64::translate_load(Instruction * inst)
     else if (result_regId != -1) {
         // 检查arg1是否是getelementptr的结果，需要重新计算地址
         if (GetelementptrInstruction * gepResult = dynamic_cast<GetelementptrInstruction *>(arg1)) {
+            printf("Debug: load指令的源是getelementptr结果\n");
+
             // 检查getelementptr是否使用了变量索引
             // 第0个操作数是基址，从第1个操作数开始检查索引
             // 最后一个操作数是指令本身，所以检查范围是 [1, operandsNum-2]
@@ -790,18 +792,27 @@ void InstSelectorArm64::translate_load(Instruction * inst)
                 // 变量索引的getelementptr，结果在寄存器中
                 int gep_reg_id = gepResult->getRegId();
                 if (gep_reg_id >= 0) {
+                    printf("Debug: 使用变量索引getelementptr的寄存器结果: %s\n",
+                           PlatformArm64::regName[gep_reg_id + 32].c_str());
                     iloc.inst("ldr",
                               PlatformArm64::regName[result_regId],
                               "[" + PlatformArm64::regName[gep_reg_id + 32] + "]");
+                } else {
+                    printf("Warning: 变量索引getelementptr没有分配寄存器\n");
                 }
             } else {
                 // 常量索引的getelementptr，结果在内存中
                 int32_t base_reg_id = -1;
                 int64_t base_offset = -1;
                 if (gepResult->getMemoryAddr(&base_reg_id, &base_offset)) {
+                    printf("Debug: 使用常量索引getelementptr的内存地址: [%s,#%ld]\n",
+                           PlatformArm64::regName[base_reg_id].c_str(),
+                           base_offset);
                     iloc.inst("ldr",
                               PlatformArm64::regName[result_regId],
                               "[" + PlatformArm64::regName[base_reg_id] + ",#" + std::to_string(base_offset) + "]");
+                } else {
+                    printf("Warning: 常量索引getelementptr没有内存地址信息\n");
                 }
             }
         } else if (result->getType()->isPointerType()) {
@@ -1198,18 +1209,35 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                 lsl++;
             }
 
-            std::string op = "add";
-            std::string s = PlatformArm64::regName[basePtr->getRegId() + 32] + "," +
-                            PlatformArm64::regName[index_reg_id + 32] + ",lsl #" + std::to_string(lsl);
-            if (dimensions.size() > 1) {
-                //多维数组,add res_reg, base_ptr(全局/栈), 变量, lsl #最外围大小
+            int res_reg_id = inst->getRegId();
+            std::string index_reg_name = PlatformArm64::regName[index_reg_id + 32];
+            std::string result_reg_name = PlatformArm64::regName[res_reg_id + 32];
+
+            // 检查数组是否在栈上
+            int32_t base_reg_id = -1;
+            int64_t base_offset = -1;
+            if (basePtr->getMemoryAddr(&base_reg_id, &base_offset)) {
+                // 数组在栈上，先计算数组基地址
+                printf("Debug: 数组在栈上，基地址计算: add %s, sp, #%ld\n", result_reg_name.c_str(), base_offset);
+                iloc.inst("add", result_reg_name, "sp", "#" + std::to_string(base_offset));
+
+                // 然后计算元素地址：add res_reg, res_reg, index_reg, lsl #shift
+                printf("Debug: 数组元素地址计算: %s = %s + %s,lsl #%d\n",
+                       result_reg_name.c_str(),
+                       result_reg_name.c_str(),
+                       index_reg_name.c_str(),
+                       lsl);
+                iloc.inst("add", result_reg_name, result_reg_name, index_reg_name + ",lsl #" + std::to_string(lsl));
             } else {
-                //一维数组,ldr res_reg, [base_ptr(全局/栈/gep), 变量, lsl #最外围大小]
-                op = "ldr";
-                s = "[" + s + "]";
+                // 数组在寄存器中（不太可能，但保留原逻辑）
+                std::string base_reg_name = PlatformArm64::regName[basePtr->getRegId() + 32];
+                printf("Debug: 数组变量索引地址计算: %s = %s + %s,lsl #%d\n",
+                       result_reg_name.c_str(),
+                       base_reg_name.c_str(),
+                       index_reg_name.c_str(),
+                       lsl);
+                iloc.inst("add", result_reg_name, base_reg_name, index_reg_name + ",lsl #" + std::to_string(lsl));
             }
-			iloc.inst("add",)
-            iloc.inst(op, PlatformArm64::regName[inst->getRegId() + 32], s);
         } else if (auto * globalArr = dynamic_cast<GlobalVariable *>(basePtr)) {
             // 处理全局数组变量的变量索引情况
             printf("gep源是全局数组(变量索引): %s\n", globalArr->getName().c_str());
@@ -1331,6 +1359,72 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                           PlatformArm64::regName[index_reg_id + 32] + ",lsl #" + std::to_string(shift));
             } else {
                 printf("Warning: gep基址不在寄存器或内存中，无法处理变量索引\n");
+            }
+        } else if (basePtr->getType()->isPointerType()) {
+            // 处理指针类型的basePtr（如函数参数i32*）
+            printf("gep源是指针类型(变量索引): %s\n", basePtr->getType()->toString().c_str());
+            int res_reg_id = inst->getRegId();
+            int index_reg_id = index->getRegId();
+
+            // 获取指针指向的类型大小
+            const PointerType * ptrType = static_cast<const PointerType *>(basePtr->getType());
+            const Type * pointeeType = ptrType->getPointeeType();
+            int element_size = pointeeType->getSize();
+
+            // 计算左移位数
+            int shift = 0;
+            int temp_size = element_size;
+            while (temp_size > 1) {
+                temp_size >>= 1;
+                shift++;
+            }
+
+            printf("Debug: 指针类型变量索引，元素大小: %d 字节，左移位数: %d\n", element_size, shift);
+
+            // 检查basePtr是否在寄存器中
+            int base_reg_id = basePtr->getRegId();
+            if (base_reg_id != -1) {
+                // basePtr在寄存器中，直接计算地址
+                std::string base_reg_name = PlatformArm64::regName[base_reg_id + 32];
+                std::string index_reg_name = PlatformArm64::regName[index_reg_id + 32];
+                std::string result_reg_name = PlatformArm64::regName[res_reg_id + 32];
+
+                printf("Debug: 指针在寄存器中，地址计算: %s = %s + %s,lsl #%d\n",
+                       result_reg_name.c_str(),
+                       base_reg_name.c_str(),
+                       index_reg_name.c_str(),
+                       shift);
+
+                iloc.inst("add", result_reg_name, base_reg_name, index_reg_name + ",lsl #" + std::to_string(shift));
+            } else {
+                // basePtr在内存中，需要先加载
+                int32_t base_reg_id_mem = -1;
+                int64_t base_offset = -1;
+                if (basePtr->getMemoryAddr(&base_reg_id_mem, &base_offset)) {
+                    std::string result_reg_name = PlatformArm64::regName[res_reg_id + 32];
+                    std::string index_reg_name = PlatformArm64::regName[index_reg_id + 32];
+
+                    printf("Debug: 指针在内存中，先加载指针值: ldr %s, [sp, #%ld]\n",
+                           result_reg_name.c_str(),
+                           base_offset);
+
+                    // 先从内存加载指针值
+                    iloc.load_base(res_reg_id + 32, base_reg_id_mem, base_offset);
+
+                    // 然后计算元素地址
+                    printf("Debug: 计算元素地址: %s = %s + %s,lsl #%d\n",
+                           result_reg_name.c_str(),
+                           result_reg_name.c_str(),
+                           index_reg_name.c_str(),
+                           shift);
+
+                    iloc.inst("add",
+                              result_reg_name,
+                              result_reg_name,
+                              index_reg_name + ",lsl #" + std::to_string(shift));
+                } else {
+                    printf("Warning: 指针类型basePtr既不在寄存器也不在内存中\n");
+                }
             }
         } else {
             printf("Warning: 未处理的变量索引情况，basePtr类型: %s\n", basePtr->getType()->toString().c_str());

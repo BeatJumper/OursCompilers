@@ -404,19 +404,36 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
             load_base(rs_reg_no, src_base_reg, src_offset);
             return;
         }
+
         // 源操作数为寄存器变量
-        // 对于load指令，寄存器中存储的是地址，需要从地址加载数据
+        // 检查这是否是一个指针类型（地址）还是普通值
         int32_t src_regId = src_var->getRegId();
 
-        // 确保使用64位寄存器进行地址访问
-        std::string src_reg_name = PlatformArm64::regName[src_regId];
-        std::string result_reg_name = PlatformArm64::regName[rs_reg_no];
-        if (src_reg_name[0] == 'w') {
-            src_reg_name[0] = 'x';
-        }
+        if (src_var->getType()->isPointerType()) {
+            printf("Debug: load_var - src_var is pointer type, loading from address\n");
+            // 对于指针类型，寄存器中存储的是地址，需要从地址加载数据
 
-        // ldr w8, [x2] - 从寄存器中的地址加载数据
-        emit("ldr", result_reg_name, "[" + src_reg_name + "]");
+            // 确保使用64位寄存器进行地址访问
+            std::string src_reg_name = PlatformArm64::regName[src_regId];
+            std::string result_reg_name = PlatformArm64::regName[rs_reg_no];
+            if (src_reg_name[0] == 'w') {
+                src_reg_name[0] = 'x';
+            }
+
+            // ldr w8, [x2] - 从寄存器中的地址加载数据
+            emit("ldr", result_reg_name, "[" + src_reg_name + "]");
+        } else {
+            printf("Debug: load_var - src_var is value type, direct register move\n");
+            // 对于非指针类型，寄存器中存储的是值，直接移动寄存器
+            std::string src_reg_name = PlatformArm64::regName[src_regId];
+            std::string result_reg_name = PlatformArm64::regName[rs_reg_no];
+
+            // 如果源和目标寄存器不同，则需要mov指令
+            if (src_regId != rs_reg_no) {
+                emit("mov", result_reg_name, src_reg_name);
+            }
+            // 如果相同，则不需要任何操作
+        }
     } else if (Instanceof(globalVar, GlobalVariable *, src_var)) {
         // 全局变量
 
