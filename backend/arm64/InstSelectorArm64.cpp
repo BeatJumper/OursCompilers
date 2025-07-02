@@ -741,8 +741,21 @@ void InstSelectorArm64::translate_load(Instruction * inst)
     Value * arg1 = inst->getOperand(0);
 
     int32_t result_regId = result->getRegId();
+    if (FormalParam * val = dynamic_cast<FormalParam *>(arg1)) {
+        printf("Debug: ldr源为形参\n");
+        // ldr源为形参
+        int32_t base_reg_id = -1;
+        int64_t base_offset = -1;
+        arg1->getMemoryAddr(&base_reg_id, &base_offset);
+        if (val->getType()->isPointerType()) {
+            printf("Debug: ldr源为形参,为数组指针\n");
+            iloc.load_base(result_regId + 32, base_reg_id, base_offset);
+        } else {
+            iloc.load_base(result_regId, base_reg_id, base_offset);
+        }
+    }
 
-    if (result_regId != -1) {
+    else if (result_regId != -1) {
         // 检查arg1是否是getelementptr的结果，需要重新计算地址
         if (GetelementptrInstruction * gepResult = dynamic_cast<GetelementptrInstruction *>(arg1)) {
             printf("Debug: 加载gep指令的结果\n");
@@ -967,7 +980,10 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
 {
     Value * basePtr = inst->getOperand(0); // 基址指针
                                            // 对于数组访问，我们需要计算偏移量
-    Value * index = inst->getOperand(2);
+    Value * index = inst->getOperand(1);
+    if (inst->getOperandsNum() > 3) {
+        index = inst->getOperand(2);
+    }
     // 这里简化处理：如果基址在内存中，我们计算其地址
     int32_t base_reg_id;
     int64_t base_offset;
@@ -1105,6 +1121,23 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
 
             int64_t off = idx * element_size;
             inst->setMemoryAddr(res_reg_id + 32, off);
+        } else if (auto * ptrType = static_cast<PointerType *>(basePtr->getType())) {
+            // gep源为数组指针
+            printf("Debug:gep源为指向栈中数组地址的指针\n");
+            // 先计算索引偏移
+            int size = constIdx->getVal();
+            if (ptrType->getPointeeType()->isArrayType()) {
+                printf("Debug:gep源为指向多维数组的指针\n");
+                // 获取维度
+                const ArrayType * arrayType = static_cast<const ArrayType *>(ptrType->getPointeeType());
+                const std::vector<int> & dimensions = arrayType->getDimensions();
+                for (int i = 1; i < dimensions.size(); i++) {
+                    size *= dimensions[i];
+                }
+            }
+
+            size *= 4;
+            inst->setMemoryAddr(inst->getRegId() + 32, size);
         }
     } else {
         // 索引为变量

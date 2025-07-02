@@ -576,12 +576,18 @@ void CodeGeneratorArm64::adjustFormalParamInsts(Function * func)
         fp_esp += 8;
 
         // 插入ldr指令
-        // 创建一个新的临时变量来表示寄存器参数，并设置其寄存器ID
-        Value * regParam = new Value(params[k]->getType());
-        regParam->setRegId(k);
-        LoadInstruction * ldrinst = new LoadInstruction(func, regParam, params[k]);
+        // 这里创建的resVal仅用来翻译load时获取结果的类型
+        FormalParam * resVal = new FormalParam(params[k]->getType(), params[k]->getName());
+        LoadInstruction * ldrinst = new LoadInstruction(func, resVal, params[k]);
+
         ldrinst->setRegId(k);
+        params[k]->setRegId(k);
+        // 把原来引用形参的地方替换为ldrinst的引用
+        // params[k]->replaceAllUsesWith(ldrinst);
         insts.insert(insts.begin(), ldrinst);
+        if (FormalParam * val = dynamic_cast<FormalParam *>(ldrinst->getOperand(0))) {
+            printf("Debug:形参判断逻辑正常\n");
+        }
     }
 }
 
@@ -613,7 +619,6 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 auto * arg = callInst->getOperand(k);
                 // 新建一个内存变量，把实参的值保存到栈中，以便栈传值，其寻址为SP + 非负偏移
 
-                // 注意：这里按照约定，把LocalVariable当做内存变量使用
                 MemVariable * newVal = func->newMemVariable(arg->getType());
                 newVal->setMemoryAddr(ARM64_SP_REG_NO, esp);
                 esp += 8;
@@ -672,16 +677,6 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 callInst->setOperand(k, regParam);
             }
 
-#if 0
-            for (int k = 0; k < callInst->getOperandsNum(); k++) {
-
-                auto arg = callInst->getOperand(k);
-
-                // 产生ARG指令
-                pIter = insts.insert(pIter, new ArgInstruction(func, arg));
-                pIter++;
-            }
-#endif
             func->setMaxDep(esp);
             // 有arg指令后可不用参数，展示不删除
             // args.clear();
