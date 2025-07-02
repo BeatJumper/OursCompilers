@@ -157,6 +157,23 @@ std::string Preprocessor::processArrayZeroInitialization(const std::string & lin
         return arrayDecl + ";" + restOfLine;
     }
 
+    // 使用正则表达式匹配数组定义中只有单个{}的初始化
+    // 匹配模式：类型 变量名[维度]... = {};
+    // 注意：只处理等号右边恰好是{}的情况，不处理复杂的嵌套初始化
+
+    std::regex arrayEmptyInitRegex(
+        R"(^(\s*(?:int|float|const\s+int|const\s+float)\s+[a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])+)\s*=\s*\{\}\s*;(.*)$)");
+
+    std::smatch emptyMatch;
+    if (std::regex_match(line, emptyMatch, arrayEmptyInitRegex)) {
+        // 找到匹配的数组定义，移除 = {} 部分
+        std::string arrayDecl = emptyMatch[1].str();  // 数组声明部分
+        std::string restOfLine = emptyMatch[2].str(); // 行的其余部分（如果有的话）
+
+        // 重新组合，去掉 = {}
+        return arrayDecl + ";" + restOfLine;
+    }
+
     // 如果没有匹配，返回原行
     return line;
 }
