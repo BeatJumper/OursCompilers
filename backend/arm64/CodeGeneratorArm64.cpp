@@ -401,12 +401,6 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
         }
     }
 
-    printf("所有指令列表：\n");
-    for (auto inst: func->getInterCode().getCode()) {
-        printval(inst);
-    }
-    printf("指令列表结束\n");
-
     // 这里加一个set临时存储保护寄存器，因为同一个寄存器可能多次加入，这里用set可以去重。
     std::set<int32_t> protectedreg_set;
     // 如果用到了保护寄存器，就加进保护寄存器集合
@@ -560,16 +554,34 @@ void CodeGeneratorArm64::adjustFormalParamInsts(Function * func)
         params[k]->setRegId(k);
     }
 
+    auto & insts = func->getInterCode().getInsts();
     // 根据ARM版C语言的调用约定，除前8个外的实参进行值传递，逆序入栈
-    int64_t fp_esp = func->getMaxDep() + (func->getProtectedReg().size() * 8);
+    int64_t maxOffset = func->getMaxDep();
+    int64_t fp_esp = maxOffset;
+    int protectedRegNum = 0;
+    // 保存寄存器空间
+    if (func->getExistFuncCall()) {
+        protectedRegNum = func->getProtectedReg().size();
+        fp_esp += protectedRegNum * 8;
+    }
+    printf("Debug:被调函数传参前检测栈帧大小:%d\n", int(fp_esp));
     for (int k = 8; k < (int) params.size(); k++) {
 
         // 目前假定变量大小都是4字节。实际要根据类型来计算
 
+        printf("Debug:8个以后形参的偏移量:%d\n", int(fp_esp));
         params[k]->setMemoryAddr(ARM64_SP_REG_NO, fp_esp);
 
         // 增加8字节
         fp_esp += 8;
+
+        // 插入ldr指令
+        // 创建一个新的临时变量来表示寄存器参数，并设置其寄存器ID
+        Value * regParam = new Value(params[k]->getType());
+        regParam->setRegId(k);
+        LoadInstruction * ldrinst = new LoadInstruction(func, regParam, params[k]);
+        ldrinst->setRegId(k);
+        insts.insert(insts.begin(), ldrinst);
     }
 }
 

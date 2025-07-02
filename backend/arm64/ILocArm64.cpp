@@ -385,11 +385,6 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
 {
     printf("Debug: load_var - rs_reg_no=%d, src_var=%p\n", rs_reg_no, src_var);
 
-    if (src_var == nullptr) {
-        printf("Error: load_var - src_var is null\n");
-        return;
-    }
-
     printf("Debug: load_var - src_var name=%s, IRName=%s\n", src_var->getName().c_str(), src_var->getIRName().c_str());
 
     if (Instanceof(constVal, ConstInt *, src_var)) {
@@ -402,6 +397,13 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
         load_float_imm(rs_reg_no, constFloat->getVal());
     } else if (src_var->getRegId() != -1) {
 
+        int32_t src_base_reg = -1;
+        int64_t src_offset = -1;
+        if (src_var->getMemoryAddr(&src_base_reg, &src_offset)) {
+            printf("Debug: load_var - src_var is in memory\n");
+            load_base(rs_reg_no, src_base_reg, src_offset);
+            return;
+        }
         // 源操作数为寄存器变量
         // 对于load指令，寄存器中存储的是地址，需要从地址加载数据
         int32_t src_regId = src_var->getRegId();
