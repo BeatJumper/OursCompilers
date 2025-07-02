@@ -9,6 +9,7 @@ tools/
 thirdparty/
 .vscode/
 arm64-test/
+compilertestcases/
 
 # 忽略doxygen产生的文件夹
 doc/html/

@@ -46,7 +46,7 @@ void CodeGeneratorArm64::genHeader()
     //代码段按四字节对齐
     fprintf(fp, "%s\n", ".align 2");
     // 若有浮点运算需求，可添加如下指令支持高级SIMD和浮点单元
-    // fpintf(fp, "%s\n", ".fpu neon-fp-armv8");
+    // fprintf(fp, "%s\n", ".fpu neon-fp-armv8");
     //生成的汇编代码将使用 ARM 指令集的指令
     fprintf(fp, "%s\n", ".cpu generic+fp+simd");
 

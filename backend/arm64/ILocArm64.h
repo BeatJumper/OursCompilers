@@ -223,4 +223,9 @@ public:
 
     /// @brief 生成函数结尾(恢复栈帧)
     void emitFunctionEpilogue(Function * func);
+
+    /// @brief 生成neg指令（取负）
+    /// @param dest_reg 目标寄存器编号
+    /// @param src_reg 源寄存器编号
+    void neg(int dest_reg, int src_reg);
 };

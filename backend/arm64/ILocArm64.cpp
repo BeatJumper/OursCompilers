@@ -624,6 +624,14 @@ void ILocArm64::jump(std::string label)
     emit("b", label);
 }
 
+/// @brief 生成neg指令（取负）
+/// @param dest_reg 目标寄存器编号
+/// @param src_reg 源寄存器编号
+void ILocArm64::neg(int dest_reg, int src_reg)
+{
+    emit("neg", PlatformArm64::regName[dest_reg], PlatformArm64::regName[src_reg]);
+}
+
 /// @brief 生成函数结尾(恢复栈帧)
 void ILocArm64::emitFunctionEpilogue(Function * func)
 {

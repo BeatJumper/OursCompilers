@@ -273,6 +273,26 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
         return;
     }
 
+    // 特殊处理：sub 0, operand => neg operand
+    if (inst->getOp() == IRInstOperator::IRINST_OP_SUB_I) {
+        ConstInt * constArg1 = dynamic_cast<ConstInt *>(arg1);
+        if (constArg1 && constArg1->getVal() == 0) {
+            // 这是取负操作，使用neg指令
+            printf("Debug: Detected sub 0, operand pattern, using neg instruction\n");
+
+            // 确保第二个操作数在寄存器中
+            if (arg2_reg_no >= 0 && arg2_reg_no < PlatformArm64::maxRegNum) {
+                // 操作数2在寄存器中，直接使用neg指令
+                iloc.neg(result_reg_no, arg2_reg_no);
+            } else {
+                // 操作数2不在寄存器中，先加载到临时寄存器
+                iloc.load_var(ARM64_TMP_REG_NO, arg2);
+                iloc.neg(result_reg_no, ARM64_TMP_REG_NO);
+            }
+            return;
+        }
+    }
+
     // 处理操作数：如果不在寄存器中，需要先加载到临时寄存器
     string s1, s2;
 
