@@ -476,6 +476,22 @@ void InstSelectorArm64::translate_call(Instruction * inst)
 
     iloc.call_fun(callInst->getName());
 
+    // 赋值指令
+    if (callInst->hasResultValue()) {
+        if (callInst->getRegId() == 0) {
+            // 结果变量的寄存器和返回值寄存器一样，则什么都不需要做
+            ;
+        } else {
+            // 其它情况，需要产生赋值指令
+            // 创建一个表示 x0 寄存器的临时变量
+            if (callInst->getType()->isIntegerType()) {
+                iloc.inst("mov", std::to_string(callInst->getRegId()), "w0");
+            } else if (callInst->getType()->isFloatType()) {
+                iloc.inst("mov", std::to_string(callInst->getRegId()), "s0");
+            }
+        }
+    }
+
     // 函数调用后清零，使得下次可正常统计
     realArgCount = 0;
 }
@@ -1192,6 +1208,7 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                 op = "ldr";
                 s = "[" + s + "]";
             }
+			iloc.inst("add",)
             iloc.inst(op, PlatformArm64::regName[inst->getRegId() + 32], s);
         } else if (auto * globalArr = dynamic_cast<GlobalVariable *>(basePtr)) {
             // 处理全局数组变量的变量索引情况

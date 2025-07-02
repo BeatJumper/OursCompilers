@@ -668,24 +668,6 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
             func->setMaxDep(esp);
             // 有arg指令后可不用参数，展示不删除
             // args.clear();
-            // 赋值指令
-            if (callInst->hasResultValue()) {
-                if (callInst->getRegId() == 0) {
-                    // 结果变量的寄存器和返回值寄存器一样，则什么都不需要做
-                    ;
-                } else {
-                    // 其它情况，需要产生赋值指令
-                    // 创建一个表示 x0 寄存器的临时变量
-                    Value * retRegVar = new Value(callInst->getType());
-                    retRegVar->setRegId(0);
-
-                    // 新建一个赋值操作
-                    Instruction * assignInst = new MoveInstruction(func, callInst, retRegVar);
-                    //  函数调用指令的下一个指令的前面插入指令，因为有Exit指令，+1肯定有效
-                    pIter = insts.insert(pIter + 1, assignInst);
-                    printf("插入一条赋值指令\n");
-                }
-            }
         }
     }
 }
