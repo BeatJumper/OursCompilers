@@ -1058,9 +1058,9 @@ void InstSelectorArm64::translate_store(Instruction * inst)
             int32_t dest_baseRegId = -1;
             int64_t dest_offset = -1;
             if (arg2->getMemoryAddr(&dest_baseRegId, &dest_offset)) {
-                //使用str wzr指令
-                std::string s = "[" + PlatformArm64::regName[dest_baseRegId] + ",#" + std::to_string(dest_offset) + "]";
-                iloc.inst("str", "wzr", s);
+                // 使用store_base函数处理大偏移量
+                // wzr对应的寄存器编号是31（在ARM64中）
+                iloc.store_base(31, dest_baseRegId, dest_offset, ARM64_TMP_REG_NO);
             } else if (GetelementptrInstruction * gepVal = dynamic_cast<GetelementptrInstruction *>(arg2)) {
                 // 检查目标是否是getelementptr的结果，需要重新计算地址
                 iloc.inst("str", "wzr", "[" + PlatformArm64::regName[gepVal->getRegId() + 32] + "]");
@@ -1971,8 +1971,8 @@ void InstSelectorArm64::translate_memset(Instruction * inst)
         }
 
         for (int i = 0; i < wordCount; i++) {
-            // 存储零到目标地址
-            iloc.inst("str", "wzr", "[" + dest_reg_name + ", #" + std::to_string(i * 4) + "]");
+            // 使用store_base函数处理大偏移量，wzr对应寄存器编号31
+            iloc.store_base(31, dest_reg, i * 4, ARM64_TMP_REG_NO + 1);
         }
     }
 }

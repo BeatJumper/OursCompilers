@@ -262,7 +262,35 @@ void ILocArm64::comment(std::string str)
 */
 void ILocArm64::load_imm(int rs_reg_no, int64_t constant)
 {
-    emit("mov", PlatformArm64::regName[rs_reg_no], "#" + std::to_string(constant));
+    std::string reg_name = PlatformArm64::regName[rs_reg_no];
+
+    // 对于地址计算，确保使用64位寄存器
+    if (rs_reg_no >= 32 && reg_name[0] == 'w') {
+        reg_name[0] = 'x';
+    }
+
+    // 检查立即数是否在16位范围内
+    if (constant >= 0 && constant <= 65535) {
+        // 小立即数，直接使用mov指令
+        emit("mov", reg_name, "#" + std::to_string(constant));
+    } else {
+        // 大立即数，使用movz + movk指令组合
+        uint32_t value = static_cast<uint32_t>(constant);
+        uint16_t low16 = value & 0xFFFF;          // 低16位
+        uint16_t high16 = (value >> 16) & 0xFFFF; // 高16位
+
+        // 生成movz指令加载低16位
+        char low16_hex[16];
+        sprintf(low16_hex, "#0x%04X, lsl #0", low16);
+        emit("movz", reg_name, low16_hex);
+
+        // 如果高16位不为0，生成movk指令加载高16位
+        if (high16 != 0) {
+            char high16_hex[32];
+            sprintf(high16_hex, "#0x%04X, lsl #16", high16);
+            emit("movk", reg_name, high16_hex);
+        }
+    }
 }
 
 /*
@@ -308,24 +336,44 @@ void ILocArm64::load_base(int rs_reg_no, int base_reg_no, int64_t offset)
     std::string rsReg = PlatformArm64::regName[rs_reg_no];
     std::string base = PlatformArm64::regName[base_reg_no];
 
+    // 确保基址寄存器是64位（ARM64 ldr指令要求）
+    if (base[0] == 'w') {
+        base[0] = 'x';
+    }
+
     printf("Debug: load_base - 获取的寄存器名称: rsReg='%s', base='%s'\n", rsReg.c_str(), base.c_str());
     std::cout << "基址寻址中,结果寄存器" << rsReg << "\n";
 
     // 检查偏移量是否在ldr指令的有效范围内
-    // 对于32位数据：有符号偏移-256到+255，或无符号偏移0到16380（4字节对齐）
-    if ((offset >= -256 && offset <= 255) || (offset >= 0 && offset <= 16380 && (offset % 4) == 0)) {
+    // ARM64 ldr指令的立即数偏移范围：0到4095（12位无符号）
+    if (offset >= 0 && offset <= 4095) {
         // 有效的偏移常量
         if (offset) {
             // [fp,#-16] [fp]
             base += "," + toStr(offset);
         }
     } else {
-        // 偏移量超出范围，使用寄存器间接寻址
-        // ldr r8,=large_offset
-        load_imm(rs_reg_no, offset);
+        // 偏移量超出范围，使用临时寄存器计算地址
+        // 使用临时寄存器避免破坏结果寄存器
+        int temp_reg = ARM64_TMP_REG_NO;
+        std::string temp_reg_name = PlatformArm64::regName[temp_reg + 32]; // 使用64位寄存器
+        std::string base_reg_name = PlatformArm64::regName[base_reg_no];
 
-        // fp,r8
-        base += "," + rsReg;
+        // 确保基址寄存器也是64位
+        if (base_reg_name[0] == 'w') {
+            base_reg_name[0] = 'x';
+        }
+
+        // 加载偏移量到临时寄存器（使用64位寄存器）
+        load_imm(temp_reg + 32, offset);
+
+        // 计算最终地址：temp_reg = base + offset
+        emit("add", temp_reg_name, base_reg_name, temp_reg_name);
+
+        // 使用计算出的地址进行加载
+        base = "[" + temp_reg_name + "]";
+        emit("ldr", rsReg, base);
+        return; // 直接返回，避免后面的重复emit
     }
 
     // 内存寻址
@@ -344,10 +392,23 @@ void ILocArm64::load_base(int rs_reg_no, int base_reg_no, int64_t offset)
 void ILocArm64::store_base(int src_reg_no, int base_reg_no, int64_t disp, int tmp_reg_no)
 {
     std::string base = PlatformArm64::regName[base_reg_no];
+    std::string src_reg_name;
+
+    // 确保基址寄存器是64位（ARM64 str指令要求）
+    if (base[0] == 'w') {
+        base[0] = 'x';
+    }
+
+    // 处理特殊的零寄存器
+    if (src_reg_no == 31) {
+        src_reg_name = "wzr"; // 零寄存器
+    } else {
+        src_reg_name = PlatformArm64::regName[src_reg_no];
+    }
 
     // 检查偏移量是否在str指令的有效范围内
-    // 对于32位数据：有符号偏移-256到+255，或无符号偏移0到16380（4字节对齐）
-    if ((disp >= -256 && disp <= 255) || (disp >= 0 && disp <= 16380 && (disp % 4) == 0)) {
+    // ARM64 str指令的立即数偏移范围：0到4095（12位无符号）
+    if (disp >= 0 && disp <= 4095) {
         // 有效的偏移常量
 
         // 若disp为0，则直接采用基址，否则采用基址+偏移
@@ -356,14 +417,25 @@ void ILocArm64::store_base(int src_reg_no, int base_reg_no, int64_t disp, int tm
             base += "," + toStr(disp);
         }
     } else {
-        // 偏移量超出范围，使用寄存器间接寻址
-        // 先把立即数赋值给指定的寄存器tmpReg，然后采用基址+寄存器的方式进行
+        // 偏移量超出范围，使用临时寄存器计算地址
+        std::string temp_reg_name = PlatformArm64::regName[tmp_reg_no + 32]; // 使用64位寄存器
+        std::string base_reg_name = PlatformArm64::regName[base_reg_no];
 
-        // ldr x9,=large_offset
-        load_imm(tmp_reg_no, disp);
+        // 确保基址寄存器也是64位
+        if (base_reg_name[0] == 'w') {
+            base_reg_name[0] = 'x';
+        }
 
-        // fp,x9
-        base += "," + PlatformArm64::regName[tmp_reg_no];
+        // 加载偏移量到临时寄存器（使用64位寄存器）
+        load_imm(tmp_reg_no + 32, disp);
+
+        // 计算最终地址：temp_reg = base + offset
+        emit("add", temp_reg_name, base_reg_name, temp_reg_name);
+
+        // 使用计算出的地址进行存储
+        base = "[" + temp_reg_name + "]";
+        emit("str", src_reg_name, base);
+        return; // 直接返回，避免后面的重复emit
     }
 
     // 内存间接寻址
@@ -371,7 +443,7 @@ void ILocArm64::store_base(int src_reg_no, int base_reg_no, int64_t disp, int tm
 
     // str x8,[fp,#-8]
     // str x8,[fp,x9]
-    emit("str", PlatformArm64::regName[src_reg_no], base);
+    emit("str", src_reg_name, base);
 }
 
 /// @brief 寄存器Mov操作
@@ -626,7 +698,12 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
     } else {
         // 栈空间超出立即数范围，使用临时寄存器
         load_imm(tmp_reg_no, totalSize);
-        emit("sub", "sp", "sp", PlatformArm64::regName[tmp_reg_no]);
+        std::string tmp_reg_name = PlatformArm64::regName[tmp_reg_no];
+        // 确保使用64位寄存器
+        if (tmp_reg_name[0] == 'w') {
+            tmp_reg_name[0] = 'x';
+        }
+        emit("sub", "sp", "sp", tmp_reg_name);
     }
 
     if (func->getExistFuncCall()) {
@@ -640,7 +717,12 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
             } else {
                 // 偏移量超出范围，使用临时寄存器
                 load_imm(tmp_reg_no, offset);
-                std::string off = "[sp, " + PlatformArm64::regName[tmp_reg_no] + "]";
+                std::string tmp_reg_name = PlatformArm64::regName[tmp_reg_no];
+                // 确保使用64位寄存器作为偏移
+                if (tmp_reg_name[0] == 'w') {
+                    tmp_reg_name[0] = 'x';
+                }
+                std::string off = "[sp, " + tmp_reg_name + "]";
                 emit("str", PlatformArm64::intRegVal[protectedRegNo[i]]->getName(), off);
             }
         }
@@ -650,7 +732,12 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
             emit("add", "x29", "sp", "#" + std::to_string(fpOffset));
         } else {
             load_imm(tmp_reg_no, fpOffset);
-            emit("add", "x29", "sp", PlatformArm64::regName[tmp_reg_no]);
+            std::string tmp_reg_name = PlatformArm64::regName[tmp_reg_no];
+            // 确保使用64位寄存器
+            if (tmp_reg_name[0] == 'w') {
+                tmp_reg_name[0] = 'x';
+            }
+            emit("add", "x29", "sp", tmp_reg_name);
         }
     }
 }
@@ -709,7 +796,12 @@ void ILocArm64::emitFunctionEpilogue(Function * func)
                 // 偏移量超出范围，使用临时寄存器
                 // 使用x9作为临时寄存器（ARM64_TMP_REG_NO对应的寄存器）
                 load_imm(ARM64_TMP_REG_NO, offset);
-                std::string off = "[sp, " + PlatformArm64::regName[ARM64_TMP_REG_NO] + "]";
+                std::string tmp_reg_name = PlatformArm64::regName[ARM64_TMP_REG_NO];
+                // 确保使用64位寄存器作为偏移
+                if (tmp_reg_name[0] == 'w') {
+                    tmp_reg_name[0] = 'x';
+                }
+                std::string off = "[sp, " + tmp_reg_name + "]";
                 emit("ldr", PlatformArm64::intRegVal[protectedRegNo[i]]->getName(), off);
             }
         }
@@ -723,7 +815,12 @@ void ILocArm64::emitFunctionEpilogue(Function * func)
     } else {
         // 栈空间超出立即数范围，使用临时寄存器
         load_imm(ARM64_TMP_REG_NO, size);
-        emit("add", "sp", "sp", PlatformArm64::regName[ARM64_TMP_REG_NO]);
+        std::string tmp_reg_name = PlatformArm64::regName[ARM64_TMP_REG_NO];
+        // 确保使用64位寄存器
+        if (tmp_reg_name[0] == 'w') {
+            tmp_reg_name[0] = 'x';
+        }
+        emit("add", "sp", "sp", tmp_reg_name);
     }
 
     // 返回
