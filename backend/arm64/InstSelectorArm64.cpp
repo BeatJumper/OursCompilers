@@ -894,12 +894,9 @@ void InstSelectorArm64::translate_store(Instruction * inst)
 
         return;
     }
-    if (MemVariable * constVal = dynamic_cast<MemVariable *>(arg1)) {
-        // 加载全局
-    }
 
     // 检查是否是常量
-    if (ConstInt * constVal = dynamic_cast<ConstInt *>(arg1)) {
+    else if (ConstInt * constVal = dynamic_cast<ConstInt *>(arg1)) {
         if (constVal->getVal() == 0) {
             // 常量0使用零寄存器，更高效
             int32_t dest_baseRegId = -1;
@@ -928,62 +925,20 @@ void InstSelectorArm64::translate_store(Instruction * inst)
             iloc.inst("str",
                       PlatformArm64::regName[arg1_regId],
                       "[" + PlatformArm64::regName[gepVal->getRegId() + 32] + "]");
+        } else if (LocalVariable * gepVal = dynamic_cast<LocalVariable *>(arg2)) {
+            int32_t dest_baseRegId = -1;
+            int64_t dest_offset = -1;
+            arg2->getMemoryAddr(&dest_baseRegId, &dest_offset);
+            iloc.store_base(arg1_regId, dest_baseRegId, dest_offset, ARM64_TMP_REG_NO);
+        } else {
+            iloc.store_var(arg1_regId, arg2, ARM64_TMP_REG_NO);
         }
-
-    } else if (GetelementptrInstruction * gepVal = dynamic_cast<GetelementptrInstruction *>(arg2)) {
     }
 }
 
-/// @brief ret指令翻译成ARM64汇编
-/// @param inst IR指令
 void InstSelectorArm64::translate_ret(Instruction * inst)
 {
-    printf("Debug: translate_ret - operands count: %d\n", inst->getOperandsNum());
-
-    // 检查ExitInstruction是否有返回值操作数
-    if (inst->getOperandsNum() > 0) {
-        // 获取返回值（应该是LoadInstruction的结果）
-        Value * returnValue = inst->getOperand(0);
-        int32_t resultRegId = returnValue->getRegId();
-
-        printf("Debug: translate_ret - returnValue regId: %d\n", resultRegId);
-
-        // 如果返回值未在x0中，进行寄存器移动
-        if (resultRegId != 0) {
-            printf("返回值未在x0中，进行寄存器移动:%d\n", resultRegId);
-            if (resultRegId != -1) {
-                iloc.inst("mov", PlatformArm64::regName[0], PlatformArm64::regName[resultRegId]);
-            } else {
-                // 返回值在内存中，需要加载到x0
-                LocalVariable * localResult = dynamic_cast<LocalVariable *>(returnValue);
-                if (localResult) {
-                    int off = localResult->getOffset();
-
-                    // 检查偏移量是否在ldr指令的有效范围内
-                    // 对于32位数据：有符号偏移-256到+255，或无符号偏移0到16380（4字节对齐）
-                    if ((off >= -256 && off <= 255) || (off >= 0 && off <= 16380 && (off % 4) == 0)) {
-                        // 偏移量在有效范围内，直接使用ldr指令
-                        std::string s = "[sp,#" + std::to_string(off) + "]";
-                        iloc.inst("ldr", PlatformArm64::regName[0], s);
-                    } else {
-                        // 偏移量超出范围，使用间接寻址
-                        iloc.load_imm(ARM64_TMP_REG_NO, off);
-                        iloc.inst("add",
-                                  PlatformArm64::regName[ARM64_TMP_REG_NO + 32],
-                                  "sp",
-                                  PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
-                        iloc.inst("ldr",
-                                  PlatformArm64::regName[0],
-                                  "[" + PlatformArm64::regName[ARM64_TMP_REG_NO + 32] + "]");
-                    }
-                }
-            }
-        } else {
-            printf("Debug: translate_ret - returnValue already in w0, no mov needed\n");
-        }
-    } else {
-        printf("Debug: translate_ret - no return value (void function)\n");
-    }
+    // 如果存在返回值，确保其位于x0寄存器
 
     iloc.emitFunctionEpilogue(func);
 }

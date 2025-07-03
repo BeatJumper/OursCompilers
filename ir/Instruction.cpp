@@ -86,6 +86,10 @@ void Instruction::transfer()
         // Alloc指令没有直接数据流，所以不做任何事
     } else if (Instanceof(inst, StoreInstruction *, this)) {
         use_set.insert(inst->getOperand(0));
+        auto * val2 = inst->getOperand(1);
+        if (Instanceof(inst, GetelementptrInstruction *, val2)) {
+            use_set.insert(val2);
+        }
     } else if (Instanceof(inst, LoadInstruction *, this)) {
         def_set.insert(inst);
         // Load指令使用其操作数（地址）
