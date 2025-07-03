@@ -751,7 +751,39 @@ void InstSelectorArm64::translate_cmp(Instruction * inst)
 
         if (Instanceof(constVal, ConstInt *, arg2)) {
             // 第二个操作数是常量
-            arg2_str = "#" + std::to_string(constVal->getVal());
+            int64_t const_value = constVal->getVal();
+
+            if (const_value >= 0 && const_value < 4096) {
+                // 小立即数，可以直接使用
+                arg2_str = "#" + std::to_string(const_value);
+            } else {
+                // 大立即数，需要加载到寄存器
+                printf("Debug: 大立即数 %ld 需要加载到寄存器\n", const_value);
+
+                // 选择临时寄存器（避免与arg1冲突）
+                int temp_reg =
+                    (arg1_str == PlatformArm64::regName[ARM64_TMP_REG_NO]) ? ARM64_TMP_REG_NO + 1 : ARM64_TMP_REG_NO;
+                std::string temp_reg_name = PlatformArm64::regName[temp_reg];
+
+                // 使用movz + movk指令加载32位常量
+                uint32_t value = static_cast<uint32_t>(const_value);
+                uint16_t low16 = value & 0xFFFF;          // 低16位
+                uint16_t high16 = (value >> 16) & 0xFFFF; // 高16位
+
+                // 生成movz指令加载低16位
+                char low16_hex[8];
+                sprintf(low16_hex, "#0x%04X", low16);
+                iloc.inst("movz", temp_reg_name, low16_hex);
+
+                // 如果高16位不为0，生成movk指令加载高16位
+                if (high16 != 0) {
+                    char high16_hex[16];
+                    sprintf(high16_hex, "#0x%04X, lsl #16", high16);
+                    iloc.inst("movk", temp_reg_name, high16_hex);
+                }
+
+                arg2_str = temp_reg_name;
+            }
         } else if (arg2_reg_no == -1) {
             // 第二个操作数在栈上，需要先加载到临时寄存器
             int temp_reg =
