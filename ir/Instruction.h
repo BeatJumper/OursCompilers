@@ -228,13 +228,8 @@ public:
     ///
     void setMemoryAddr(int32_t _regId, int64_t _offset)
     {
-        printf("Instruction::setMemoryAddr - 设置内存地址: regId=%d, offset=%ld, IRName=%s\n",
-               _regId,
-               _offset,
-               this->getIRName().c_str());
         baseRegNo = _regId;
         offset = _offset;
-        printf("Instruction::setMemoryAddr - 设置完成: baseRegNo=%d, offset=%ld\n", baseRegNo, offset);
     }
 
     std::set<Value *> & get_def_set()
