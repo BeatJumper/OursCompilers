@@ -73,6 +73,10 @@ struct InterferenceGraph {
     /// @return 对应的寄存器号码
     /// @note 染色中可使用的寄存器目前有X0-X15以及X19-X28，一共26个
     static int ColorToRegId(int color, bool is_float);
+    /// @brief 将寄存器号码转换为对应的颜色
+    /// @param regid 寄存器号码
+    /// @return 对应的颜色
+    static int RegIdToColor(int regid);
 };
 
 /// @brief 对一个干涉图节点，寻找其目前能染的编号最小的颜色

@@ -24,6 +24,7 @@
 #include "FuncCallInstruction.h"
 #include "GetelementptrInstruction.h"
 #include "PlatformArm64.h"
+#include "SextInstruction.h"
 
 /// @brief 构造函数
 /// @param op
@@ -84,10 +85,28 @@ void Instruction::transfer()
 {
     if (Instanceof(inst, AllocaInstruction *, this)) {
         // Alloc指令没有直接数据流，所以不做任何事
+    } else if (Instanceof(inst, GetelementptrInstruction *, this)) {
+        auto * val1 = inst->getOperand(1);
+        auto * val2 = inst->getOperand(2);
+        if (Instanceof(inst, SextInstruction *, val1)) {
+            use_set.insert(val1);
+        }
+        if (Instanceof(inst, SextInstruction *, val2)) {
+            use_set.insert(val2);
+        }
+
     } else if (Instanceof(inst, StoreInstruction *, this)) {
         use_set.insert(inst->getOperand(0));
+        auto * val2 = inst->getOperand(1);
+        if (Instanceof(inst, GetelementptrInstruction *, val2)) {
+            use_set.insert(val2);
+        }
     } else if (Instanceof(inst, LoadInstruction *, this)) {
         def_set.insert(inst);
+        auto * val = inst->getOperand(0);
+        if (Instanceof(inst, GetelementptrInstruction *, val)) {
+            use_set.insert(val);
+        }
     } else if (Instanceof(inst, MoveInstruction *, this)) {
         def_set.insert(inst->getOperand(0));
         Value * source = inst->getOperand(1);
@@ -99,10 +118,16 @@ void Instruction::transfer()
     } else if (Instanceof(inst, FuncCallInstruction *, this)) {
         // 在DEF集上，添加18个DEF，表示函数调用使得寄存器W0~W17都可能遭到修改
         for (int index = 0; index < PlatformArm64::CallerSaveRegNum; index++) {
-            Value * val = inst->getOperand(index);
-            val->setRegId(index);
-            def_set.insert(val);
+            // Value * val = inst->getOperand(index);
+            // val->setRegId(index);
+            def_set.insert(PlatformArm64::intRegVal[index]);
         }
+        // 在DEF集上，再添加32个DEF，表示函数调用使得寄存器S0~S31都可能遭到修改
+        for (int index = 0; index < PlatformArm64::maxVecRegNum; index++) {
+            def_set.insert(PlatformArm64::intRegVal[index + 63]);
+        }
+        // 最后再在DEF集上添加FuncCallInstruction自己
+        def_set.insert(this);
 
         // 接下来是USE集的添加
 

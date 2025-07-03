@@ -20,7 +20,7 @@
 ///
 /// @brief 唯一的VOID类型实例
 ///
-LabelType * LabelType::oneInstance = new LabelType();
+LabelType * LabelType::oneInstance = nullptr;
 
 ///
 /// @brief 获取类型
@@ -28,5 +28,8 @@ LabelType * LabelType::oneInstance = new LabelType();
 ///
 LabelType * LabelType::getType()
 {
+    if (!oneInstance) {
+        oneInstance = new LabelType();
+    }
     return oneInstance;
 }

@@ -20,7 +20,7 @@
 ///
 /// @brief 唯一的VOID类型实例
 ///
-VoidType * VoidType::oneInstance = new VoidType();
+VoidType * VoidType::oneInstance = nullptr;
 
 ///
 /// @brief 获取类型
@@ -28,5 +28,8 @@ VoidType * VoidType::oneInstance = new VoidType();
 ///
 VoidType * VoidType::getType()
 {
+    if (!oneInstance) {
+        oneInstance = new VoidType();
+    }
     return oneInstance;
 }

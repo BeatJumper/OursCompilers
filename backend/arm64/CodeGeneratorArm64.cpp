@@ -309,8 +309,12 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     // 给一些指令添加临时调整指令
     adjustSomeInsts(func);
 
+    // 目前renameIR在创建干涉图阶段产生，因为renameIR为了能给adjust新建的IR命名需要DEF和USE集
+    // 因此需要调用Instruction类的transfer()来更新DEF和USE集
+    /*
     // 加完新指令后也该重新调整IR编号
     func->renameIR();
+    */
 
     // 主要染色过程（不断尝试染色直至成功）
     bool forfloat[] = {false, true};
@@ -628,28 +632,12 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
 
                 // 更换实参变量为内存变量
                 callInst->setOperand(k, newVal);
-                /*
-                 * 这里添加一个新的VoidValue的理由：
-                 * 为了形式化添加DEF，之后翻译
-                 * 汇编时检测到void就不翻译即可。
-                 */
-                Value * voidvalue = new Value(VoidType::getType());
-                callInst->setOperand(k, voidvalue);
 
                 // 赋值指令插入到函数调用指令的前面
                 // 函数调用指令前插入后，pIter仍指向函数调用指令
                 pIter = insts.insert(pIter, assignInst);
                 printf("插入一条Store指令（给函数调用的第8个以后的参数）\n");
                 pIter++;
-            }
-            for (int32_t k = argNum; k < PlatformArm64::CallerSaveRegNum; k++) {
-                /*
-                 * 这里添加一个新的VoidValue的理由：
-                 * 为了形式化添加DEF，之后翻译
-                 * 汇编时检测到void就不翻译即可。
-                 */
-                Value * voidvalue = new Value(VoidType::getType());
-                callInst->addOperand(voidvalue);
             }
 
             // ARM64的函数调用约定，前8个参数通过寄存器传递
@@ -672,32 +660,18 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                     pIter = insts.insert(pIter, assignInst);
                     printf("为函数调用插入第%d个参数的赋值指令\n", k);
                     pIter++;
-                }
 
-                callInst->setOperand(k, regParam);
+                    callInst->setOperand(k, regParam);
+                } else {
+                    // 源操作数已经在目标寄存器中，直接使用原操作数
+                    printf("第%d个参数已在目标寄存器中，跳过赋值指令\n", k);
+                    callInst->setOperand(k, arg);
+                }
             }
 
             func->setMaxDep(esp);
             // 有arg指令后可不用参数，展示不删除
             // args.clear();
-            // 赋值指令
-            if (callInst->hasResultValue()) {
-                if (callInst->getRegId() == 0) {
-                    // 结果变量的寄存器和返回值寄存器一样，则什么都不需要做
-                    ;
-                } else {
-                    // 其它情况，需要产生赋值指令
-                    // 创建一个表示 x0 寄存器的临时变量
-                    Value * retRegVar = new Value(callInst->getType());
-                    retRegVar->setRegId(0);
-
-                    // 新建一个赋值操作
-                    Instruction * assignInst = new MoveInstruction(func, callInst, retRegVar);
-                    //  函数调用指令的下一个指令的前面插入指令，因为有Exit指令，+1肯定有效
-                    pIter = insts.insert(pIter + 1, assignInst);
-                    printf("插入一条赋值指令\n");
-                }
-            }
         }
     }
 }
