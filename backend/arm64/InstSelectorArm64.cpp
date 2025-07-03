@@ -1174,10 +1174,22 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
 
             // 计算偏移并添加到基地址
             int64_t offset = idx * element_size;
-            iloc.inst("add",
-                      PlatformArm64::regName[inst->getRegId() + 32],
-                      PlatformArm64::regName[gepBase->getRegId() + 32],
-                      "#" + std::to_string(offset));
+            std::string dest_reg_name = PlatformArm64::regName[inst->getRegId() + 32];
+            std::string base_reg_name = PlatformArm64::regName[gepBase->getRegId() + 32];
+
+            if (offset < 4096) {
+                iloc.inst("add", dest_reg_name, base_reg_name, "#" + std::to_string(offset));
+            } else {
+                int64_t remaining_offset = offset;
+                std::string current_reg = base_reg_name;
+
+                while (remaining_offset > 0) {
+                    int64_t current_add = std::min(remaining_offset, (int64_t) 4095);
+                    iloc.inst("add", dest_reg_name, current_reg, "#" + std::to_string(current_add));
+                    remaining_offset -= current_add;
+                    current_reg = dest_reg_name;
+                }
+            }
             return;
         }
 
@@ -1223,17 +1235,39 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             }
 
             int64_t element_offset = idx * element_size;
+            std::string dest_reg_name = PlatformArm64::regName[inst->getRegId() + 32];
+            std::string base_reg_name = PlatformArm64::regName[base_reg_id];
 
             // 只设置结果的内存地址信息，不生成地址计算指令
             // 地址计算将在load/store指令中进行
-            iloc.inst("add",
-                      PlatformArm64::regName[inst->getRegId() + 32],
-                      PlatformArm64::regName[base_reg_id],
-                      "#" + std::to_string(base_offset));
-            iloc.inst("add",
-                      PlatformArm64::regName[inst->getRegId() + 32],
-                      PlatformArm64::regName[inst->getRegId() + 32],
-                      "#" + std::to_string(element_offset));
+
+            // 处理基地址偏移
+            if (base_offset < 4096) {
+                iloc.inst("add", dest_reg_name, base_reg_name, "#" + std::to_string(base_offset));
+            } else {
+                int64_t remaining_offset = base_offset;
+                std::string current_reg = base_reg_name;
+
+                while (remaining_offset > 0) {
+                    int64_t current_add = std::min(remaining_offset, (int64_t) 4095);
+                    iloc.inst("add", dest_reg_name, current_reg, "#" + std::to_string(current_add));
+                    remaining_offset -= current_add;
+                    current_reg = dest_reg_name;
+                }
+            }
+
+            // 处理元素偏移
+            if (element_offset < 4096) {
+                iloc.inst("add", dest_reg_name, dest_reg_name, "#" + std::to_string(element_offset));
+            } else {
+                int64_t remaining_offset = element_offset;
+
+                while (remaining_offset > 0) {
+                    int64_t current_add = std::min(remaining_offset, (int64_t) 4095);
+                    iloc.inst("add", dest_reg_name, dest_reg_name, "#" + std::to_string(current_add));
+                    remaining_offset -= current_add;
+                }
+            }
             return;
 
             // 默认情况：只设置内存地址信息，不生成地址计算指令
@@ -1270,10 +1304,19 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             }
 
             int64_t off = idx * element_size;
-            iloc.inst("add",
-                      PlatformArm64::regName[res_reg_id + 32],
-                      PlatformArm64::regName[res_reg_id + 32],
-                      "#" + std::to_string(off));
+            std::string dest_reg_name = PlatformArm64::regName[res_reg_id + 32];
+
+            if (off < 4096) {
+                iloc.inst("add", dest_reg_name, dest_reg_name, "#" + std::to_string(off));
+            } else {
+                int64_t remaining_offset = off;
+
+                while (remaining_offset > 0) {
+                    int64_t current_add = std::min(remaining_offset, (int64_t) 4095);
+                    iloc.inst("add", dest_reg_name, dest_reg_name, "#" + std::to_string(current_add));
+                    remaining_offset -= current_add;
+                }
+            }
         } else if (auto * ptrType = static_cast<PointerType *>(basePtr->getType())) {
             // gep源为数组指针
             printf("Debug:gep源为指向栈中数组地址的指针\n");
@@ -1290,10 +1333,22 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             }
 
             size *= 4;
-            iloc.inst("add",
-                      PlatformArm64::regName[inst->getRegId() + 32],
-                      PlatformArm64::regName[basePtr->getRegId() + 32],
-                      "#" + std::to_string(size));
+            std::string dest_reg_name = PlatformArm64::regName[inst->getRegId() + 32];
+            std::string base_reg_name = PlatformArm64::regName[basePtr->getRegId() + 32];
+
+            if (size < 4096) {
+                iloc.inst("add", dest_reg_name, base_reg_name, "#" + std::to_string(size));
+            } else {
+                int64_t remaining_offset = size;
+                std::string current_reg = base_reg_name;
+
+                while (remaining_offset > 0) {
+                    int64_t current_add = std::min(remaining_offset, (int64_t) 4095);
+                    iloc.inst("add", dest_reg_name, current_reg, "#" + std::to_string(current_add));
+                    remaining_offset -= current_add;
+                    current_reg = dest_reg_name;
+                }
+            }
         }
     } else {
         // 索引为变量
@@ -1326,7 +1381,20 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             if (basePtr->getMemoryAddr(&base_reg_id, &base_offset)) {
                 // 数组在栈上，先计算数组基地址
                 printf("Debug: 数组在栈上，基地址计算: add %s, sp, #%ld\n", result_reg_name.c_str(), base_offset);
-                iloc.inst("add", result_reg_name, "sp", "#" + std::to_string(base_offset));
+
+                if (base_offset < 4096) {
+                    iloc.inst("add", result_reg_name, "sp", "#" + std::to_string(base_offset));
+                } else {
+                    int64_t remaining_offset = base_offset;
+                    std::string current_reg = "sp";
+
+                    while (remaining_offset > 0) {
+                        int64_t current_add = std::min(remaining_offset, (int64_t) 4095);
+                        iloc.inst("add", result_reg_name, current_reg, "#" + std::to_string(current_add));
+                        remaining_offset -= current_add;
+                        current_reg = result_reg_name;
+                    }
+                }
 
                 // 然后计算元素地址：add res_reg, res_reg, index_reg, lsl #shift
                 // 注意：这里需要确保index_reg和result_reg不是同一个寄存器
@@ -1387,19 +1455,43 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                 }
             }
 
-            // 计算 element_size 对应的左移位数 (element_size = 2^shift)
-            int shift = 0;
-            int temp_size = element_size;
-            while (temp_size > 1) {
-                temp_size >>= 1;
-                shift++;
-            }
+            // 检查是否是2的幂次，如果是则使用左移，否则使用乘法
+            bool is_power_of_2 = (element_size > 0) && ((element_size & (element_size - 1)) == 0);
 
-            // 生成地址计算指令: add res_reg, base_reg, index_reg, lsl #shift
-            iloc.inst("add",
-                      PlatformArm64::regName[res_reg_id + 32],
-                      PlatformArm64::regName[res_reg_id + 32],
-                      PlatformArm64::regName[index_reg_id + 32] + ",lsl #" + std::to_string(shift));
+            if (is_power_of_2) {
+                // element_size是2的幂次，使用左移优化
+                int shift = 0;
+                int temp_size = element_size;
+                while (temp_size > 1) {
+                    temp_size >>= 1;
+                    shift++;
+                }
+
+                printf("Debug: 使用左移优化，shift = %d\n", shift);
+                iloc.inst("add",
+                          PlatformArm64::regName[res_reg_id + 32],
+                          PlatformArm64::regName[res_reg_id + 32],
+                          PlatformArm64::regName[index_reg_id + 32] + ",lsl #" + std::to_string(shift));
+            } else {
+                // element_size不是2的幂次，使用乘法指令
+                printf("Debug: 使用乘法指令，element_size = %ld\n", element_size);
+
+                // 需要一个临时寄存器来存储element_size
+                // 使用ARM64_TMP_REG_NO作为临时寄存器
+                std::string temp_reg_name = "w" + std::to_string(ARM64_TMP_REG_NO);
+                std::string temp_reg_name_64 = "x" + std::to_string(ARM64_TMP_REG_NO);
+                std::string index_reg_name_64 = PlatformArm64::regName[index_reg_id + 32];
+                std::string result_reg_name_64 = PlatformArm64::regName[res_reg_id + 32];
+
+                // 加载element_size到临时寄存器
+                iloc.inst("mov", temp_reg_name, "#" + std::to_string(element_size));
+
+                // 执行64位乘法：result = index * element_size
+                iloc.inst("mul", temp_reg_name_64, index_reg_name_64, temp_reg_name_64);
+
+                // 将偏移量加到基地址上
+                iloc.inst("add", result_reg_name_64, result_reg_name_64, temp_reg_name_64);
+            }
         } else if (GetelementptrInstruction * gepBase = dynamic_cast<GetelementptrInstruction *>(basePtr)) {
             // 处理源是另一个getelementptr结果的变量索引情况
             printf("gep源是另一个gep的结果(变量索引)\n");
@@ -1470,7 +1562,21 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                 }
 
                 // 从内存加载基地址，然后计算偏移
-                iloc.inst("add", PlatformArm64::regName[res_reg_id + 32], "sp", "#" + std::to_string(base_offset));
+                std::string result_reg_name = PlatformArm64::regName[res_reg_id + 32];
+
+                if (base_offset < 4096) {
+                    iloc.inst("add", result_reg_name, "sp", "#" + std::to_string(base_offset));
+                } else {
+                    int64_t remaining_offset = base_offset;
+                    std::string current_reg = "sp";
+
+                    while (remaining_offset > 0) {
+                        int64_t current_add = std::min(remaining_offset, (int64_t) 4095);
+                        iloc.inst("add", result_reg_name, current_reg, "#" + std::to_string(current_add));
+                        remaining_offset -= current_add;
+                        current_reg = result_reg_name;
+                    }
+                }
                 iloc.inst("add",
                           PlatformArm64::regName[res_reg_id + 32],
                           PlatformArm64::regName[res_reg_id + 32],
@@ -1586,7 +1692,24 @@ void InstSelectorArm64::translate_bitcast(Instruction * inst)
                 base_reg_name[0] = 'x';
             }
 
-            iloc.inst("add", result_reg_name, base_reg_name, "#" + std::to_string(offset));
+            // 因为offset范围是0-4095，所以当offset小于4096时，可以直接使用立即数
+            // 否则拆分成多个add指令。将offset改成n*4095+r的形式，拆分成n+1条指令
+            if (offset < 4096) {
+                // 直接使用立即数
+                iloc.inst("add", result_reg_name, base_reg_name, "#" + std::to_string(offset));
+            } else {
+                // 拆分成多个add指令
+                int64_t remaining_offset = offset;
+                std::string current_reg = base_reg_name;
+
+                // 第一次add使用base_reg作为源，后续使用result_reg作为源和目标
+                while (remaining_offset > 0) {
+                    int64_t current_add = std::min(remaining_offset, (int64_t) 4095);
+                    iloc.inst("add", result_reg_name, current_reg, "#" + std::to_string(current_add));
+                    remaining_offset -= current_add;
+                    current_reg = result_reg_name; // 后续指令使用result_reg作为源
+                }
+            }
 
         } else if (result_reg != source_reg) {
             // 非alloca指令的普通寄存器移动
@@ -1715,6 +1838,8 @@ void InstSelectorArm64::translate_memset(Instruction * inst)
     // 获取目标地址的寄存器
     int32_t dest_reg = dest->getRegId();
 
+    printf("memset dest_reg_id: %d\n", dest_reg);
+
     // 如果地址不在寄存器中，需要先加载地址
     if (dest_reg == -1) {
         // 目标地址不在寄存器中，需要计算地址
@@ -1722,6 +1847,12 @@ void InstSelectorArm64::translate_memset(Instruction * inst)
         int64_t base_offset;
         if (dest->getMemoryAddr(&base_reg_id, &base_offset)) {
             // 目标在栈上，使用临时寄存器计算地址
+
+            // 打印获取的base_offset
+            printf("Debug: memset dest_reg_id: %d, base_reg_id: %d, base_offset: %ld\n",
+                   dest_reg,
+                   base_reg_id,
+                   base_offset);
             dest_reg = ARM64_TMP_REG_NO;
             std::string dest_reg_name = PlatformArm64::regName[dest_reg];
             std::string base_reg_name = PlatformArm64::regName[base_reg_id];
@@ -1732,7 +1863,24 @@ void InstSelectorArm64::translate_memset(Instruction * inst)
             if (base_reg_name[0] == 'w')
                 base_reg_name[0] = 'x';
 
-            iloc.inst("add", dest_reg_name, base_reg_name, "#" + std::to_string(base_offset));
+            // 因为base_offset范围是0-4095，所以当base_offset小于4096时，可以直接使用立即数
+            // 否则拆分成多个add指令。将base_offset改成n*4095+r的形式，拆分成n+1条指令
+            if (base_offset < 4096) {
+                // 直接使用立即数
+                iloc.inst("add", dest_reg_name, base_reg_name, "#" + std::to_string(base_offset));
+            } else {
+                // 拆分成多个add指令
+                int64_t remaining_offset = base_offset;
+                std::string current_reg = base_reg_name;
+
+                // 第一次add使用base_reg作为源，后续使用dest_reg作为源和目标
+                while (remaining_offset > 0) {
+                    int64_t current_add = std::min(remaining_offset, (int64_t) 4095);
+                    iloc.inst("add", dest_reg_name, current_reg, "#" + std::to_string(current_add));
+                    remaining_offset -= current_add;
+                    current_reg = dest_reg_name; // 后续指令使用dest_reg作为源
+                }
+            }
         }
     }
 

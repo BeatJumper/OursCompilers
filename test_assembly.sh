@@ -151,36 +151,34 @@ run_and_compare() {
     
     print_info "运行程序: qemu-aarch64-static $executable_file < $input_file"
     
-    # 运行程序并捕获输出
-    if qemu-aarch64-static "$executable_file" < "$input_file" > "$actual_output_file" 2>/dev/null; then
-        local exit_code=$?
-        print_success "程序运行完成，退出码: $exit_code"
-        
-        # 显示实际输出
-        print_info "实际输出:"
-        cat "$actual_output_file"
-        
-        # 显示期望输出
-        print_info "期望输出:"
-        cat "$expected_output_file"
-        
-        # 对比输出
-        if diff -q "$actual_output_file" "$expected_output_file" > /dev/null; then
-            print_success "✅ 输出对比成功！程序运行正确"
-        else
-            print_error "❌ 输出对比失败！"
-            print_info "详细差异:"
-            diff "$actual_output_file" "$expected_output_file" || true
-        fi
-        
-        # 清理临时文件
-        rm -f "$actual_output_file"
-        
+    # 运行程序并捕获输出和返回值
+    qemu-aarch64-static "$executable_file" < "$input_file" > "$actual_output_file" 2>/dev/null
+    local exit_code=$?
+
+    # 将返回值添加到输出文件中
+    echo "$exit_code" >> "$actual_output_file"
+
+    print_success "程序运行完成，退出码: $exit_code"
+
+    # 显示实际输出
+    print_info "实际输出:"
+    cat "$actual_output_file"
+
+    # 显示期望输出
+    print_info "期望输出:"
+    cat "$expected_output_file"
+
+    # 对比输出
+    if diff -q "$actual_output_file" "$expected_output_file" > /dev/null; then
+        print_success "✅ 输出对比成功！程序运行正确"
     else
-        print_error "程序运行失败"
-        rm -f "$actual_output_file"
-        exit 1
+        print_error "❌ 输出对比失败！"
+        print_info "详细差异:"
+        diff "$actual_output_file" "$expected_output_file" || true
     fi
+
+    # 清理临时文件
+    rm -f "$actual_output_file"
 }
 
 # 主函数
