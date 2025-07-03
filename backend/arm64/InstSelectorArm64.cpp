@@ -1455,9 +1455,21 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                 size *= dimensions[i];
             }
             size *= arrayType->getElementType()->getSize();
+
+            // 检查size是否是2的幂次
+            bool is_power_of_2 = (size > 0) && ((size & (size - 1)) == 0);
             int lsl = 0;
-            for (; size > 1; size >>= 1) {
-                lsl++;
+
+            if (is_power_of_2) {
+                // 计算左移位数
+                int temp_size = size;
+                while (temp_size > 1) {
+                    temp_size >>= 1;
+                    lsl++;
+                }
+                printf("Debug: 元素大小 %d 是2的幂次，使用左移 lsl #%d\n", size, lsl);
+            } else {
+                printf("Debug: 元素大小 %d 不是2的幂次，需要使用乘法\n", size);
             }
 
             int res_reg_id = inst->getRegId();
@@ -1493,25 +1505,63 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                        index_reg_name.c_str(),
                        lsl);
 
-                // 检查寄存器冲突：如果索引寄存器和结果寄存器相同，需要使用临时寄存器
-                if (index_reg_id == inst->getRegId()) {
-                    // 寄存器冲突：使用临时寄存器保存索引值
-                    std::string temp_reg_name = "x" + std::to_string(ARM64_TMP_REG_NO);
-                    printf("Debug: 检测到寄存器冲突，使用临时寄存器 %s 保存索引\n", temp_reg_name.c_str());
-                    iloc.inst("mov", temp_reg_name, index_reg_name);
-                    iloc.inst("add", result_reg_name, result_reg_name, temp_reg_name + ",lsl #" + std::to_string(lsl));
+                // 根据是否为2的幂次选择不同的计算方式
+                if (is_power_of_2) {
+                    // 使用左移优化
+                    if (index_reg_id == inst->getRegId()) {
+                        // 寄存器冲突：使用临时寄存器保存索引值
+                        std::string temp_reg_name = "x" + std::to_string(ARM64_TMP_REG_NO);
+                        printf("Debug: 检测到寄存器冲突，使用临时寄存器 %s 保存索引\n", temp_reg_name.c_str());
+                        iloc.inst("mov", temp_reg_name, index_reg_name);
+                        iloc.inst("add",
+                                  result_reg_name,
+                                  result_reg_name,
+                                  temp_reg_name + ",lsl #" + std::to_string(lsl));
+                    } else {
+                        iloc.inst("add",
+                                  result_reg_name,
+                                  result_reg_name,
+                                  index_reg_name + ",lsl #" + std::to_string(lsl));
+                    }
                 } else {
-                    iloc.inst("add", result_reg_name, result_reg_name, index_reg_name + ",lsl #" + std::to_string(lsl));
+                    // 使用乘法指令
+                    std::string temp_reg_name = "w" + std::to_string(ARM64_TMP_REG_NO);
+                    std::string temp_reg_name_64 = "x" + std::to_string(ARM64_TMP_REG_NO);
+
+                    // 加载元素大小到临时寄存器
+                    iloc.load_imm(ARM64_TMP_REG_NO, size);
+
+                    // 执行64位乘法：temp = index * size
+                    iloc.inst("mul", temp_reg_name_64, index_reg_name, temp_reg_name_64);
+
+                    // 将偏移量加到基地址上
+                    iloc.inst("add", result_reg_name, result_reg_name, temp_reg_name_64);
                 }
             } else {
                 // 数组在寄存器中（不太可能，但保留原逻辑）
                 std::string base_reg_name = PlatformArm64::regName[basePtr->getRegId() + 32];
-                printf("Debug: 数组变量索引地址计算: %s = %s + %s,lsl #%d\n",
-                       result_reg_name.c_str(),
-                       base_reg_name.c_str(),
-                       index_reg_name.c_str(),
-                       lsl);
-                iloc.inst("add", result_reg_name, base_reg_name, index_reg_name + ",lsl #" + std::to_string(lsl));
+
+                if (is_power_of_2) {
+                    // 使用左移优化
+                    printf("Debug: 数组变量索引地址计算: %s = %s + %s,lsl #%d\n",
+                           result_reg_name.c_str(),
+                           base_reg_name.c_str(),
+                           index_reg_name.c_str(),
+                           lsl);
+                    iloc.inst("add", result_reg_name, base_reg_name, index_reg_name + ",lsl #" + std::to_string(lsl));
+                } else {
+                    // 使用乘法指令
+                    std::string temp_reg_name_64 = "x" + std::to_string(ARM64_TMP_REG_NO);
+
+                    // 加载元素大小到临时寄存器
+                    iloc.load_imm(ARM64_TMP_REG_NO, size);
+
+                    // 执行64位乘法：temp = index * size
+                    iloc.inst("mul", temp_reg_name_64, index_reg_name, temp_reg_name_64);
+
+                    // 将偏移量加到基地址上
+                    iloc.inst("add", result_reg_name, base_reg_name, temp_reg_name_64);
+                }
             }
         } else if (auto * globalArr = dynamic_cast<GlobalVariable *>(basePtr)) {
             // 处理全局数组变量的变量索引情况
