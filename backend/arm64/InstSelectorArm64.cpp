@@ -234,7 +234,18 @@ void InstSelectorArm64::translate_assign(Instruction * inst)
         }
     } else if (Instanceof(gepRes, GetelementptrInstruction *, arg1)) {
         // 处理getelementptr的赋值
-        iloc.lea_var(result_regId, arg1);
+        // getelementptr指令的结果已经是计算好的地址，直接使用
+        if (result_regId != -1 && arg1->getRegId() != -1) {
+            // 寄存器到寄存器的移动
+            if (result_regId != arg1->getRegId()) {
+                iloc.inst("mov",
+                          PlatformArm64::regName[result_regId + 32],
+                          PlatformArm64::regName[arg1->getRegId() + 32]);
+            }
+        } else {
+            // 如果目标是内存变量，存储地址值
+            iloc.store_var(arg1->getRegId(), result, ARM64_TMP_REG_NO);
+        }
     } else if (arg1_regId != -1) {
         // 寄存器 => 内存
         // 寄存器 => 寄存器
@@ -300,6 +311,8 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
         s1 = PlatformArm64::regName[ARM64_TMP_REG_NO];
     }
 
+    printf("Debug: translate_two_operator - s1='%s', arg1_reg_no=%d\n", s1.c_str(), arg1_reg_no);
+
     // 处理第二个操作数
     if (Instanceof(constVal, ConstInt *, arg2)) {
         // 操作数2是常量
@@ -321,6 +334,21 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
         int temp_reg = (s1 == PlatformArm64::regName[ARM64_TMP_REG_NO]) ? ARM64_TMP_REG_NO + 1 : ARM64_TMP_REG_NO;
         iloc.load_var(temp_reg, arg2);
         s2 = PlatformArm64::regName[temp_reg];
+    }
+
+    printf("Debug: translate_two_operator - s2='%s', arg2_reg_no=%d\n", s2.c_str(), arg2_reg_no);
+    printf("Debug: translate_two_operator - generating instruction: %s %s,%s,%s\n",
+           operator_name.c_str(),
+           PlatformArm64::regName[result_reg_no].c_str(),
+           s1.c_str(),
+           s2.c_str());
+
+    // 检查操作数是否为空
+    if (s1.empty()) {
+        printf("ERROR: translate_two_operator - s1 is empty!\n");
+    }
+    if (s2.empty()) {
+        printf("ERROR: translate_two_operator - s2 is empty!\n");
     }
 
     iloc.inst(operator_name, PlatformArm64::regName[result_reg_no], s1, s2);
@@ -411,6 +439,23 @@ void InstSelectorArm64::translate_add_i(Instruction * inst)
 /// @param inst IR指令
 void InstSelectorArm64::translate_sub_i(Instruction * inst)
 {
+    printf("Debug: translate_sub_i - inst=%p\n", inst);
+    if (inst) {
+        printf("Debug: translate_sub_i - operands count=%d\n", inst->getOperandsNum());
+        if (inst->getOperandsNum() >= 2) {
+            Value * arg1 = inst->getOperand(0);
+            Value * arg2 = inst->getOperand(1);
+            printf("Debug: translate_sub_i - arg1=%p, arg2=%p\n", arg1, arg2);
+            if (arg1)
+                printf("Debug: translate_sub_i - arg1 IRName=%s, regId=%d\n",
+                       arg1->getIRName().c_str(),
+                       arg1->getRegId());
+            if (arg2)
+                printf("Debug: translate_sub_i - arg2 IRName=%s, regId=%d\n",
+                       arg2->getIRName().c_str(),
+                       arg2->getRegId());
+        }
+    }
     translate_two_operator(inst, "subs");
 }
 

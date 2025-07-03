@@ -546,6 +546,11 @@ void ILocArm64::store_var(int src_reg_no, Value * dest_var, int tmp_reg_no)
 /// @param off 偏移
 void ILocArm64::leaStack(int rs_reg_no, int base_reg_no, int64_t off)
 {
+    // 如果base_reg_no是-1，说明没有有效的基址寄存器，使用栈指针SP
+    if (base_reg_no == -1) {
+        base_reg_no = ARM64_SP_REG_NO; // 使用栈指针SP作为基址寄存器
+    }
+
     std::string rs_reg_name = PlatformArm64::regName[rs_reg_no];
     std::string base_reg_name = PlatformArm64::regName[base_reg_no];
 
@@ -563,7 +568,8 @@ void ILocArm64::leaStack(int rs_reg_no, int base_reg_no, int64_t off)
         emit("add", rs_reg_name, base_reg_name, toStr(off));
     } else if (off < 0 && (-off) <= 4095) {
         // 负偏移量在有效范围内，使用sub指令
-        emit("sub", rs_reg_name, base_reg_name, toStr(-off));
+        std::string offset_str = toStr(-off);
+        emit("sub", rs_reg_name, base_reg_name, offset_str);
     } else {
         // 偏移量超出范围，使用临时寄存器
         load_imm(rs_reg_no, off);
