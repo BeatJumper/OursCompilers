@@ -344,62 +344,52 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
                 }
                 break;
             } else {
-                assert(false);
-                // 完成变量溢出的工作
-                auto x = graph_ig->uncolored_node_set.end();
-                x--;
+                // 寄存器分配失败，实现寄存器溢出处理
+                printf("寄存器分配失败，开始寄存器溢出处理\n");
 
-                // 首先取出目前干涉图中度数最高的Value
-                Value * most_degree_val = (*x)->val;
-                int32_t reg_now = most_degree_val->getRegId();
-                auto & insts = func->getInterCode().getInsts();
+                // 选择溢出变量：选择度数最高的节点进行溢出
+                node_IG * spillNode = nullptr;
+                int maxDegree = -1;
+                for (node_IG * node: graph_ig->node_set) {
+                    // 跳过已经溢出的变量和alloca指令
+                    if (node->val->getRegId() == -2)
+                        continue;
 
-                // 接下来尝试把该Value的所有出现都替换为新的Value和LocalVariable
-                for (int i = 0; i < insts.size(); i++) {
-                    Value *regval_write = nullptr, *regval_read = nullptr;
-
-                    // 用的是同一份栈空间
-                    LocalVariable * localval = nullptr;
-
-                    // 这里假定了一个instrction的DEF变量只会在{它自己，它的各个操作数}中出现唯一一次
-                    if (insts[i] == most_degree_val) {
-                        // DEF是它自己的情况
-                        insts[i] = new Instruction(*insts[i]);
-                        insts[i]->setRegId(reg_now);
-                    } else if (insts[i]->get_def_set().count(most_degree_val)) {
-                        // DEF是其中某一个操作数的情况
-                        if (localval == nullptr) {
-                            localval = func->newLocalVarValue(IntegerType::getTypeInt());
-                        }
-                        regval_write = new Value(IntegerType::getTypeInt());
-                        regval_write->setRegId(reg_now);
-                        Instruction * strinst = new StoreInstruction(func, regval_write, localval);
-                        insts.insert(insts.begin() + i + 1, strinst);
-                        for (int k = 0; k < insts[i]->getOperandsNum(); k++) {
-                            if (insts[i]->getOperand(k) == most_degree_val) {
-                                insts[i]->getOperands()[k]->setUsee(regval_write);
-                                break;
-                            }
-                        }
+                    // 跳过alloca指令，它们本来就应该在内存中
+                    if (dynamic_cast<AllocaInstruction *>(node->val)) {
+                        continue;
                     }
 
-                    // 认定接下来剩下的Value都是USE出现的，也进行改写
-                    if (insts[i]->get_use_set().count(most_degree_val)) {
-                        if (localval == nullptr) {
-                            localval = func->newLocalVarValue(IntegerType::getTypeInt());
-                        }
-                        regval_read = new Value(IntegerType::getTypeInt());
-                        regval_read->setRegId(reg_now);
-                        Instruction * ldrinst = new LoadInstruction(func, regval_read, localval);
-                        insts.insert(insts.begin() + i, ldrinst);
-                        i++;
-                        for (int k = 0; k < insts[i]->getOperandsNum(); k++) {
-                            if (insts[i]->getOperand(k) == most_degree_val) {
-                                insts[i]->getOperands()[k]->setUsee(regval_read);
-                                break;
-                            }
+                    if ((int) node->neighbors.size() > maxDegree) {
+                        maxDegree = node->neighbors.size();
+                        spillNode = node;
+                    }
+                }
+
+                if (spillNode != nullptr) {
+                    printf("选择变量 %s (度数=%d) 进行溢出\n", spillNode->val->getName().c_str(), maxDegree);
+
+                    // 标记该变量为溢出变量（设置regId为-2表示在内存中）
+                    spillNode->val->setRegId(-2);
+
+                    // 删除当前干涉图，下一轮会重新创建
+                    delete graph_ig;
+
+                    // 继续下一轮分配
+                    continue;
+                } else {
+                    // 如果没有找到合适的溢出变量，说明剩余的都是必须的变量
+                    // 将所有非alloca变量标记为溢出
+                    printf("将所有剩余的非alloca变量标记为溢出到内存\n");
+                    for (node_IG * node: graph_ig->node_set) {
+                        if (node->val->getRegId() != -1 && node->val->getRegId() != -2 &&
+                            !dynamic_cast<AllocaInstruction *>(node->val)) {
+                            node->val->setRegId(-2);
+                            printf("变量 %s 溢出到内存\n", node->val->getName().c_str());
                         }
                     }
+                    delete graph_ig;
+                    break;
                 }
             }
         }
@@ -745,6 +735,45 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
 
         sp_esp += 4; // local->getType()->getSize()
     }
+
+    // 为所有溢出的临时变量分配栈空间
+    printf("Debug: 开始为溢出变量分配栈空间\n");
+    int inst_count = 0;
+    for (auto inst: func->getInterCode().getInsts()) {
+        inst_count++;
+        printf("Debug: 检查指令 %d, def_set大小: %zu\n", inst_count, inst->get_def_set().size());
+
+        // 检查指令的定义集合中的变量
+        for (Value * val: inst->get_def_set()) {
+            printf("Debug: 检查变量 %s, regId=%d\n", val->getIRName().c_str(), val->getRegId());
+
+            // 跳过alloca指令
+            if (dynamic_cast<AllocaInstruction *>(val)) {
+                printf("Debug: 跳过alloca指令: %s\n", val->getIRName().c_str());
+                continue;
+            }
+
+            // 只处理溢出的变量（regId=-2）且还没有分配内存地址的变量
+            if (val->getRegId() == -2) {
+                printf("Debug: 发现溢出变量: %s\n", val->getIRName().c_str());
+                int64_t offset;
+                if (!val->getMemoryAddr(nullptr, &offset)) {
+                    printf("Debug: 变量 %s 没有内存地址，准备分配\n", val->getIRName().c_str());
+                    // 为溢出变量分配栈空间
+                    if (Instruction * instVal = dynamic_cast<Instruction *>(val)) {
+                        instVal->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
+                        printf("为溢出变量 %s 分配栈空间: offset=%ld\n", val->getIRName().c_str(), sp_esp);
+                        sp_esp += 4; // 假设都是4字节的整数
+                    } else {
+                        printf("Debug: 变量 %s 不是Instruction类型\n", val->getIRName().c_str());
+                    }
+                } else {
+                    printf("Debug: 变量 %s 已有内存地址: offset=%ld\n", val->getIRName().c_str(), offset);
+                }
+            }
+        }
+    }
+    printf("Debug: 溢出变量分配完成，最终栈空间大小: %ld, 总共检查了 %d 条指令\n", sp_esp, inst_count);
 
     // 返回值占用的栈空间
     Value * returnVal = func->getReturnValue();
