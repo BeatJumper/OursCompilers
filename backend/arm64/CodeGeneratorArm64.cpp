@@ -384,7 +384,7 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
 
             InterferenceGraph * graph_ig = new InterferenceGraph(func, is_float);
 
-            spill(func, graph_ig);
+            // spill(func, graph_ig);
 
             std::cout << "完成干涉图构建" << std::endl;
 
