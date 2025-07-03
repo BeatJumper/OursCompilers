@@ -151,8 +151,8 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
 
     // 这是std::set版本的干涉图构建过程，时间复杂度是O(N * M * M * logN)，其中N为指令数目，M为活跃集合的size上限
     // 扫描函数里每条指令，获取每个时刻的活跃变量集合
-    int i = 1;
-    printf("size of insts:%zu\n", graph->get_func()->getInterCode().getCode().size());
+    // int i = 1;
+    // printf("size of insts:%zu\n", graph->get_func()->getInterCode().getCode().size());
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
         std::set<Value *> value_occupy = inst->get_liveout();
         merge_set(value_occupy, inst->get_def_set());
@@ -165,11 +165,11 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
             }
         }
 
-        printf("第%d次获取DEF、SET集合\n", i++);
-        // if (i == 2) {
-        // break;
-        //}
-        //  这些不同的量两两之间都是互斥的，不能在同一寄存器
+        // printf("第%d次获取DEF、SET集合\n", i++);
+        //  if (i == 2) {
+        //  break;
+        // }
+        //   这些不同的量两两之间都是互斥的，不能在同一寄存器
         FOR_EACH_PAIR_IN_SET(value_occupy)
         {
             // assert(it1 != it2);
@@ -304,8 +304,8 @@ static bool welsh_powell(InterferenceGraph * graph, int color_size)
         // printf("里程碑\n");
         //  中途有某个节点无颜色可用，则染色失败
         if (node->color == -1) {
-            printval(node->val);
-            // printf("%d\n", node->degree());
+            // printval(node->val);
+            //  printf("%d\n", node->degree());
             return false;
         }
     }

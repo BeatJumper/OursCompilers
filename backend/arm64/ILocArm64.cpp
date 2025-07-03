@@ -595,25 +595,40 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 
     func->setStackFrameSize(totalSize);
 
-    // 计算保存寄存器的偏移量
-    int64_t saveOffset = totalSize - protectedRegNum * 8;
-    std::string off;
-
-    off = "[sp, #" + std::to_string(saveOffset) + "]";
-
-    std::string s = "#" + std::to_string(totalSize);
-    emit("sub", "sp", "sp", s);
+    // 检查栈空间大小是否超出立即数范围
+    if (totalSize <= 4095) {
+        // 栈空间在立即数范围内，直接使用sub指令
+        std::string s = "#" + std::to_string(totalSize);
+        emit("sub", "sp", "sp", s);
+    } else {
+        // 栈空间超出立即数范围，使用临时寄存器
+        load_imm(tmp_reg_no, totalSize);
+        emit("sub", "sp", "sp", PlatformArm64::regName[tmp_reg_no]);
+    }
 
     if (func->getExistFuncCall()) {
         auto & protectedRegNo = func->getProtectedReg();
         for (int i = 0; i < protectedRegNo.size(); i++) {
-            std::string off = "[sp, #" + std::to_string(totalSize - (protectedRegNum - i) * 8) + "]";
-            // 非叶子函数：保存 FP 和 LR
-            // emit("stp", "x29", "x30", off);
-            emit("str", PlatformArm64::intRegVal[protectedRegNo[i]]->getName(), off);
+            int64_t offset = totalSize - (protectedRegNum - i) * 8;
+            // 检查偏移量是否在str指令的有效范围内
+            if ((offset >= -256 && offset <= 255) || (offset >= 0 && offset <= 16380 && (offset % 8) == 0)) {
+                std::string off = "[sp, #" + std::to_string(offset) + "]";
+                emit("str", PlatformArm64::intRegVal[protectedRegNo[i]]->getName(), off);
+            } else {
+                // 偏移量超出范围，使用临时寄存器
+                load_imm(tmp_reg_no, offset);
+                std::string off = "[sp, " + PlatformArm64::regName[tmp_reg_no] + "]";
+                emit("str", PlatformArm64::intRegVal[protectedRegNo[i]]->getName(), off);
+            }
         }
         // 设置新帧指针
-        emit("add", "x29", "sp", "#" + std::to_string(totalSize - protectedRegNum * 8));
+        int64_t fpOffset = totalSize - protectedRegNum * 8;
+        if (fpOffset <= 4095) {
+            emit("add", "x29", "sp", "#" + std::to_string(fpOffset));
+        } else {
+            load_imm(tmp_reg_no, fpOffset);
+            emit("add", "x29", "sp", PlatformArm64::regName[tmp_reg_no]);
+        }
     }
 }
 
@@ -654,13 +669,31 @@ void ILocArm64::emitFunctionEpilogue(Function * func)
     if (func->getExistFuncCall()) {
         auto & protectedRegNo = func->getProtectedReg();
         for (int i = 0; i < protectedRegNo.size(); i++) {
-            std::string off = "[sp, #" + std::to_string(size - (protectedRegNum - i) * 8) + "]";
-            emit("ldr", PlatformArm64::intRegVal[protectedRegNo[i]]->getName(), off);
+            int64_t offset = size - (protectedRegNum - i) * 8;
+            // 检查偏移量是否在ldr指令的有效范围内
+            if ((offset >= -256 && offset <= 255) || (offset >= 0 && offset <= 16380 && (offset % 8) == 0)) {
+                std::string off = "[sp, #" + std::to_string(offset) + "]";
+                emit("ldr", PlatformArm64::intRegVal[protectedRegNo[i]]->getName(), off);
+            } else {
+                // 偏移量超出范围，使用临时寄存器
+                // 使用x9作为临时寄存器（ARM64_TMP_REG_NO对应的寄存器）
+                load_imm(ARM64_TMP_REG_NO, offset);
+                std::string off = "[sp, " + PlatformArm64::regName[ARM64_TMP_REG_NO] + "]";
+                emit("ldr", PlatformArm64::intRegVal[protectedRegNo[i]]->getName(), off);
+            }
         }
     }
 
-    std::string s = "#" + std::to_string(size);
-    emit("add", "sp", "sp", s);
+    // 检查栈空间大小是否超出立即数范围
+    if (size <= 4095) {
+        // 栈空间在立即数范围内，直接使用add指令
+        std::string s = "#" + std::to_string(size);
+        emit("add", "sp", "sp", s);
+    } else {
+        // 栈空间超出立即数范围，使用临时寄存器
+        load_imm(ARM64_TMP_REG_NO, size);
+        emit("add", "sp", "sp", PlatformArm64::regName[ARM64_TMP_REG_NO]);
+    }
 
     // 返回
     emit("ret");
