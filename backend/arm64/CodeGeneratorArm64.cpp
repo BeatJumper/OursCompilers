@@ -574,11 +574,18 @@ void CodeGeneratorArm64::adjustFormalParamInsts(Function * func)
         FormalParam * resVal = new FormalParam(params[k]->getType(), params[k]->getName());
         LoadInstruction * ldrinst = new LoadInstruction(func, resVal, params[k]);
 
+        printf("Debug: adjustFormalParamInsts - 为第%d个参数创建LoadInstruction\n", k);
+        printf("Debug: adjustFormalParamInsts - 参数类型: %s\n", params[k]->getType()->toString().c_str());
+        printf("Debug: adjustFormalParamInsts - 参数名称: %s\n", params[k]->getName().c_str());
+        printf("Debug: adjustFormalParamInsts - 设置ldrinst寄存器ID为: %d\n", k);
+        printf("Debug: adjustFormalParamInsts - 设置params[%d]寄存器ID为: %d\n", k, k);
+
         ldrinst->setRegId(k);
         params[k]->setRegId(k);
         // 把原来引用形参的地方替换为ldrinst的引用
         // params[k]->replaceAllUsesWith(ldrinst);
         insts.insert(insts.begin(), ldrinst);
+        printf("Debug: adjustFormalParamInsts - LoadInstruction已插入到指令列表开始位置\n");
         if (FormalParam * val = dynamic_cast<FormalParam *>(ldrinst->getOperand(0))) {
             printf("Debug:形参判断逻辑正常\n");
         }

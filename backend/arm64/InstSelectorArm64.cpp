@@ -885,8 +885,38 @@ void InstSelectorArm64::translate_load(Instruction * inst)
         arg1->getMemoryAddr(&base_reg_id, &base_offset);
         if (val->getType()->isPointerType()) {
             printf("Debug: ldr源为形参,为数组指针\n");
-            iloc.load_base(actual_result_reg + 32, base_reg_id, base_offset);
+            printf("Debug: translate_load - 形参类型: %s\n", val->getType()->toString().c_str());
+            printf("Debug: translate_load - actual_result_reg: %d\n", actual_result_reg);
+
+            // 修复：指针是整数类型，必须使用整数寄存器加载
+            // 如果寄存器分配器错误地分配了浮点寄存器，需要转换为对应的整数寄存器
+            int target_reg = actual_result_reg;
+
+            if (actual_result_reg >= 63) {
+                // 如果分配了浮点寄存器（63-126），需要转换为对应的整数寄存器
+                // 浮点寄存器63对应整数寄存器0，64对应1，以此类推
+                target_reg = actual_result_reg - 63;
+                printf("Debug: translate_load - 指针错误分配了浮点寄存器%d，转换为整数寄存器%d\n",
+                       actual_result_reg,
+                       target_reg);
+
+                // 对于指针加载，使用64位整数寄存器（x寄存器）
+                target_reg = target_reg + 32; // 转换为x寄存器
+                printf("Debug: translate_load - 使用64位整数寄存器: %d\n", target_reg);
+            } else if (actual_result_reg >= 0 && actual_result_reg <= 31) {
+                // 如果分配了32位整数寄存器，转换为64位版本
+                target_reg = actual_result_reg + 32;
+                printf("Debug: translate_load - 32位整数寄存器转换为64位: %d -> %d\n", actual_result_reg, target_reg);
+            } else {
+                printf("Debug: translate_load - 使用原寄存器编号: %d\n", actual_result_reg);
+            }
+
+            printf("Debug: translate_load - 最终使用的寄存器编号: %d\n", target_reg);
+            printf("Debug: translate_load - base_reg_id: %d, base_offset: %ld\n", base_reg_id, base_offset);
+            iloc.load_base(target_reg, base_reg_id, base_offset);
         } else {
+            printf("Debug: translate_load - 形参不是指针类型\n");
+            printf("Debug: translate_load - actual_result_reg: %d\n", actual_result_reg);
             iloc.load_base(actual_result_reg, base_reg_id, base_offset);
         }
     }

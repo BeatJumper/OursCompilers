@@ -303,8 +303,12 @@ void ILocArm64::load_symbol(int rs_reg_no, std::string name)
 /// @param offset 偏移
 void ILocArm64::load_base(int rs_reg_no, int base_reg_no, int64_t offset)
 {
+    printf("Debug: load_base - 输入参数: rs_reg_no=%d, base_reg_no=%d, offset=%ld\n", rs_reg_no, base_reg_no, offset);
+
     std::string rsReg = PlatformArm64::regName[rs_reg_no];
     std::string base = PlatformArm64::regName[base_reg_no];
+
+    printf("Debug: load_base - 获取的寄存器名称: rsReg='%s', base='%s'\n", rsReg.c_str(), base.c_str());
     std::cout << "基址寻址中,结果寄存器" << rsReg << "\n";
 
     // 检查偏移量是否在ldr指令的有效范围内
