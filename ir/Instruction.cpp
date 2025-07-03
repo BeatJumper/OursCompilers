@@ -24,6 +24,7 @@
 #include "FuncCallInstruction.h"
 #include "GetelementptrInstruction.h"
 #include "PlatformArm64.h"
+#include "SextInstruction.h"
 
 /// @brief 构造函数
 /// @param op
@@ -84,6 +85,16 @@ void Instruction::transfer()
 {
     if (Instanceof(inst, AllocaInstruction *, this)) {
         // Alloc指令没有直接数据流，所以不做任何事
+    } else if (Instanceof(inst, GetelementptrInstruction *, this)) {
+        auto * val1 = inst->getOperand(1);
+        auto * val2 = inst->getOperand(2);
+        if (Instanceof(inst, SextInstruction *, val1)) {
+            use_set.insert(val1);
+        }
+        if (Instanceof(inst, SextInstruction *, val2)) {
+            use_set.insert(val2);
+        }
+
     } else if (Instanceof(inst, StoreInstruction *, this)) {
         use_set.insert(inst->getOperand(0));
         auto * val2 = inst->getOperand(1);

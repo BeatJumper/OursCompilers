@@ -660,9 +660,13 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                     pIter = insts.insert(pIter, assignInst);
                     printf("为函数调用插入第%d个参数的赋值指令\n", k);
                     pIter++;
-                }
 
-                callInst->setOperand(k, regParam);
+                    callInst->setOperand(k, regParam);
+                } else {
+                    // 源操作数已经在目标寄存器中，直接使用原操作数
+                    printf("第%d个参数已在目标寄存器中，跳过赋值指令\n", k);
+                    callInst->setOperand(k, arg);
+                }
             }
 
             func->setMaxDep(esp);
