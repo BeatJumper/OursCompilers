@@ -236,25 +236,48 @@ void InstSelectorArm64::translate_assign(Instruction * inst)
         // 处理getelementptr的赋值
         // getelementptr指令的结果已经是计算好的地址，直接使用
         if (result_regId != -1 && result_regId != -2 && arg1->getRegId() != -1 && arg1->getRegId() != -2) {
-            // 寄存器到寄存器的移动
+            // 寄存器到寄存器的移动，指针类型使用64位寄存器
             if (result_regId != arg1->getRegId()) {
-                iloc.inst("mov",
-                          PlatformArm64::regName[result_regId + 32],
-                          PlatformArm64::regName[arg1->getRegId() + 32]);
+                std::string result_reg_name, arg1_reg_name;
+                if (result->getType()->isPointerType()) {
+                    // 指针类型使用64位寄存器
+                    result_reg_name = PlatformArm64::regName[result_regId + 32];
+                    arg1_reg_name = PlatformArm64::regName[arg1->getRegId() + 32];
+                } else {
+                    // 非指针类型使用原始寄存器
+                    result_reg_name = PlatformArm64::regName[result_regId];
+                    arg1_reg_name = PlatformArm64::regName[arg1->getRegId()];
+                }
+                iloc.inst("mov", result_reg_name, arg1_reg_name);
             }
         } else {
             // 如果目标是内存变量，存储地址值
             iloc.store_var(arg1->getRegId(), result, ARM64_TMP_REG_NO);
         }
     } else if (arg1_regId != -1) {
-        // 寄存器 => 内存
-        // 寄存器 => 寄存器
-
-        // 修复：正确的参数顺序应该是 (源寄存器, 目标变量, 临时寄存器)
-        iloc.store_var(arg1_regId, result, ARM64_TMP_REG_NO);
+        // 寄存器 => 内存 或 寄存器 => 寄存器
+        if (result_regId != -1) {
+            // 寄存器 => 寄存器
+            if (result_regId != arg1_regId) {
+                // 根据类型选择正确的寄存器名
+                std::string result_reg_name, arg1_reg_name;
+                if (result->getType()->isPointerType() || arg1->getType()->isPointerType()) {
+                    // 指针类型使用64位寄存器
+                    result_reg_name = PlatformArm64::regName[result_regId + 32];
+                    arg1_reg_name = PlatformArm64::regName[arg1_regId + 32];
+                } else {
+                    // 非指针类型使用原始寄存器
+                    result_reg_name = PlatformArm64::regName[result_regId];
+                    arg1_reg_name = PlatformArm64::regName[arg1_regId];
+                }
+                iloc.inst("mov", result_reg_name, arg1_reg_name);
+            }
+        } else {
+            // 寄存器 => 内存
+            iloc.store_var(arg1_regId, result, ARM64_TMP_REG_NO);
+        }
     } else if (result_regId != -1) {
         // 内存变量 => 寄存器
-
         iloc.load_var(result_regId, arg1);
     }
 }
@@ -563,11 +586,15 @@ void InstSelectorArm64::translate_call(Instruction * inst)
             iloc.store_var(0, callInst, ARM64_TMP_REG_NO);
         } else {
             // 其它情况，需要产生赋值指令
-            // 创建一个表示 x0 寄存器的临时变量
+            // 根据返回值类型选择正确的返回寄存器
             if (callInst->getType()->isIntegerType()) {
                 iloc.inst("mov", PlatformArm64::regName[callInst->getRegId()], "w0");
             } else if (callInst->getType()->isFloatType()) {
                 iloc.inst("mov", PlatformArm64::regName[callInst->getRegId()], "s0");
+            } else if (callInst->getType()->isPointerType()) {
+                // 指针返回值使用64位寄存器x0
+                iloc.inst("mov", PlatformArm64::regName[callInst->getRegId()], "x0");
+                printf("Debug: 指针返回值从 x0 移动到 %s\n", PlatformArm64::regName[callInst->getRegId()].c_str());
             }
         }
     }

@@ -543,9 +543,13 @@ void CodeGeneratorArm64::adjustFormalParamInsts(Function * func)
     // 形参的前8个通过寄存器来传值X0-X7
     for (int k = 0; k < (int) params.size() && k <= 7; k++) {
 
-        // 前八个设置分配寄存器
-
+        // 前八个设置分配寄存器，统一使用0-7的ID
         params[k]->setRegId(k);
+        if (params[k]->getType()->isPointerType()) {
+            printf("形参%d是指针类型，分配寄存器ID %d (将生成x%d)\n", k, k, k);
+        } else {
+            printf("形参%d是整数类型，分配寄存器ID %d (将生成w%d)\n", k, k, k);
+        }
     }
 
     auto & insts = func->getInterCode().getInsts();
@@ -647,10 +651,17 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
 
                 // 创建一个新的临时变量来表示寄存器参数，并设置其寄存器ID
                 Value * regParam = new Value(arg->getType());
+
+                // 统一使用0-7的寄存器ID，在汇编生成时根据类型选择正确的寄存器名
                 regParam->setRegId(k);
+                if (arg->getType()->isPointerType()) {
+                    printf("第%d个参数是指针类型，分配寄存器ID %d (将生成x%d)\n", k, k, k);
+                } else {
+                    printf("第%d个参数是整数类型，分配寄存器ID %d (将生成w%d)\n", k, k, k);
+                }
 
                 // 检查源操作数是否已经在目标寄存器中，避免生成自赋值指令
-                if (arg->getRegId() != k) {
+                if (arg->getRegId() != regParam->getRegId()) {
                     Instruction * assignInst = new MoveInstruction(func, regParam, arg);
 
                     // 函数调用指令前插入后，pIter仍指向函数调用指令
