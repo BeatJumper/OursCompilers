@@ -79,10 +79,26 @@ InterferenceGraph::InterferenceGraph(Function * func, bool is_float)
     ExecuteCFG(graph_cfg);
 }
 
+InterferenceGraph::~InterferenceGraph()
+{
+    // 清理干涉图节点
+    for (node_IG * node: node_set) {
+        delete node;
+    }
+    node_set.clear();
+    uncolored_node_set.clear();
+
+    // 清理控制流图
+    if (graph_cfg) {
+        delete graph_cfg;
+        graph_cfg = nullptr;
+    }
+}
+
 void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
 {
     // 从Value到干涉图节点的映射
-    std::unordered_map<Value *, node_IG *> value_to_ig;
+    std::map<Value *, node_IG *> value_to_ig;
     std::set<Value *> all_value_in_cfg;
 
     // printf("所有指令列表:\n");
@@ -166,7 +182,9 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
     int i = 1;
     // printf("size of insts:%zu\n", graph->get_func()->getInterCode().getCode().size());
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
-        std::set<Value *> value_occupy = inst->get_liveout();
+        // 修复：使用livein而不是liveout来构建干涉图
+        // 在指令执行时，livein中的所有变量和新定义的变量都应该互相干涉
+        std::set<Value *> value_occupy = inst->get_livein();
         merge_set(value_occupy, inst->get_def_set());
         //  手动循环的安全版本
         for (auto it = value_occupy.begin(); it != value_occupy.end();) {
@@ -178,7 +196,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
         }
         // std::cout << "size of occupy:" << value_occupy.size() << std::endl;
 
-        printf("第%d次获取DEF、SET集合\n", i++);
+        // printf("第%d次获取DEF、SET集合\n", i++);
         //  if (i == 2) {
         //  break;
         // }

@@ -666,10 +666,12 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
 
                 // 创建一个新的临时变量来表示寄存器参数，并设置其寄存器ID
                 Value * regParam = new Value(arg->getType());
+
+                // 统一使用0-7的寄存器ID，在汇编生成时根据类型选择正确的寄存器名
                 regParam->setRegId(k);
 
                 // 检查源操作数是否已经在目标寄存器中，避免生成自赋值指令
-                if (arg->getRegId() != k) {
+                if (arg->getRegId() != regParam->getRegId()) {
                     Instruction * assignInst = new MoveInstruction(func, regParam, arg);
 
                     // 函数调用指令前插入后，pIter仍指向函数调用指令

@@ -8,7 +8,7 @@ struct node_IG {
     /// @brief 干涉图节点对应的Value
     Value * val;
     /// @brief 干涉图节点的邻接表
-    std::unordered_set<node_IG *> neighbors;
+    std::set<node_IG *> neighbors;
     /// @brief 构造函数
     /// @param _val 节点对应的Value
     node_IG(Value * _val);

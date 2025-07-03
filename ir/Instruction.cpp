@@ -88,9 +88,14 @@ void Instruction::transfer()
     if (Instanceof(inst, AllocaInstruction *, this)) {
         // Alloc指令没有直接数据流，所以不做任何事
     } else if (Instanceof(inst, GetelementptrInstruction *, this)) {
-        def_set.insert(this);
+        auto * basePtr = inst->getOperand(0);
         auto * val1 = inst->getOperand(1);
         auto * val2 = inst->getOperand(2);
+        if (inst->hasResultValue()) {
+            def_set.insert(inst);
+        }
+        use_set.insert(basePtr);
+        // 修复：正确添加所有操作数到use_set，不仅仅是SextInstruction
         if (Instanceof(inst, SextInstruction *, val1)) {
             use_set.insert(val1);
         }
