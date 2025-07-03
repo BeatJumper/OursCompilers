@@ -298,18 +298,35 @@ void ILocArm64::load_imm(int rs_reg_no, int64_t constant)
 */
 void ILocArm64::load_float_imm(int rs_reg_no, float val)
 {
-    // 对于浮点数常量，ARM64通常需要通过内存加载
-    // 这里我们使用一个简化的方法：将浮点数转换为整数位模式，然后移动到浮点寄存器
+    // 获取目标浮点寄存器名称
+    std::string float_reg_name = PlatformArm64::regName[rs_reg_no];
+
+    // 检查是否为特殊值
+    if (val == 0.0f) {
+        // 对于0.0，使用fmov从零寄存器加载
+        emit("fmov", float_reg_name, "wzr");
+        printf("Debug: load_float_imm - loaded 0.0 to %s using wzr\n", float_reg_name.c_str());
+        return;
+    }
 
     // 将float转换为uint32_t的位模式
     uint32_t bits;
     std::memcpy(&bits, &val, sizeof(float));
 
-    // 先将位模式加载到通用寄存器
-    emit("mov", "w" + std::to_string(rs_reg_no + 32), "#" + std::to_string(bits));
+    // 使用临时整数寄存器来传递位模式
+    std::string temp_int_reg = "w" + std::to_string(ARM64_TMP_REG_NO);
+
+    // 先将位模式加载到临时通用寄存器
+    load_imm(ARM64_TMP_REG_NO, bits);
 
     // 然后从通用寄存器移动到浮点寄存器
-    emit("fmov", "s" + std::to_string(rs_reg_no), "w" + std::to_string(rs_reg_no + 32));
+    emit("fmov", float_reg_name, temp_int_reg);
+
+    printf("Debug: load_float_imm - loaded %f (bits=0x%08X) to %s via %s\n",
+           val,
+           bits,
+           float_reg_name.c_str(),
+           temp_int_reg.c_str());
 }
 
 /// @brief 加载符号值 ldr r0,=g ldr r0,=.L1
@@ -317,12 +334,26 @@ void ILocArm64::load_float_imm(int rs_reg_no, float val)
 /// @param name 符号名
 void ILocArm64::load_symbol(int rs_reg_no, std::string name)
 {
+    // 检查寄存器编号有效性
+    if (rs_reg_no < 0 || rs_reg_no >= PlatformArm64::maxRegNum) {
+        printf("Error: load_symbol - invalid register number: %d\n", rs_reg_no);
+        return;
+    }
+
+    std::string reg_name = PlatformArm64::regName[rs_reg_no];
+    if (reg_name.empty()) {
+        printf("Error: load_symbol - empty register name for regId: %d\n", rs_reg_no);
+        return;
+    }
+
     // adrp 指令加载符号所在页的基地址到指定寄存器
-    emit("adrp", PlatformArm64::regName[rs_reg_no], name);
+    emit("adrp", reg_name, name);
 
     // add 指令将符号在页内的偏移量加到基地址上
     // :lo12: 表示取符号地址的低 12 位作为偏移量
-    emit("add", PlatformArm64::regName[rs_reg_no], PlatformArm64::regName[rs_reg_no], ":lo12:" + name);
+    emit("add", reg_name, reg_name, ":lo12:" + name);
+
+    printf("Debug: load_symbol - loaded symbol %s to register %s\n", name.c_str(), reg_name.c_str());
 }
 
 /// @brief 基址寻址 ldr r0,[fp,#100]
@@ -451,7 +482,19 @@ void ILocArm64::store_base(int src_reg_no, int base_reg_no, int64_t disp, int tm
 /// @param src_reg_no 源寄存器
 void ILocArm64::mov_reg(int rs_reg_no, int src_reg_no)
 {
-    emit("mov", PlatformArm64::regName[rs_reg_no], PlatformArm64::regName[src_reg_no]);
+    std::string rs_reg_name = PlatformArm64::regName[rs_reg_no];
+    std::string src_reg_name = PlatformArm64::regName[src_reg_no];
+
+    // 检查是否为浮点寄存器移动
+    if ((rs_reg_no >= 63 && rs_reg_no <= 126) || (src_reg_no >= 63 && src_reg_no <= 126)) {
+        // 浮点寄存器使用fmov指令
+        emit("fmov", rs_reg_name, src_reg_name);
+        printf("Debug: mov_reg - fmov %s, %s (float registers)\n", rs_reg_name.c_str(), src_reg_name.c_str());
+    } else {
+        // 整数寄存器使用mov指令
+        emit("mov", rs_reg_name, src_reg_name);
+        printf("Debug: mov_reg - mov %s, %s (integer registers)\n", rs_reg_name.c_str(), src_reg_name.c_str());
+    }
 }
 
 /// @brief 加载变量到寄存器，保证将变量放到reg中
@@ -527,12 +570,14 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
         // 全局变量
 
         // 读取全局变量的地址
-        // adrp x8, symbol@PAGE
-        // add x8, x8, symbol@PAGEOFF
-        load_symbol(rs_reg_no + 32, globalVar->getName());
+        // 使用临时寄存器来加载符号地址
+        int temp_reg = ARM64_TMP_REG_NO + 32; // 使用64位临时寄存器
+        load_symbol(temp_reg, globalVar->getName());
 
-        // ldr x8, [x8]
-        emit("ldr", PlatformArm64::regName[rs_reg_no], "[" + PlatformArm64::regName[rs_reg_no + 32] + "]");
+        // ldr 指令从全局变量地址加载值
+        std::string result_reg_name = PlatformArm64::regName[rs_reg_no];
+        std::string temp_reg_name = PlatformArm64::regName[temp_reg];
+        emit("ldr", result_reg_name, "[" + temp_reg_name + "]");
 
     } else {
 
@@ -602,12 +647,14 @@ void ILocArm64::store_var(int src_reg_no, Value * dest_var, int tmp_reg_no)
 
     } else if (Instanceof(globalVar, GlobalVariable *, dest_var)) {
         // 全局变量
+        // 使用临时寄存器来加载符号地址
+        int temp_reg = ARM64_TMP_REG_NO + 32; // 使用64位临时寄存器
+        load_symbol(temp_reg, globalVar->getName());
 
-        // 读取符号的地址到寄存器x10
-        load_symbol(tmp_reg_no + 32, globalVar->getName());
-
-        // str x8, [x10]
-        emit("str", PlatformArm64::regName[src_reg_no], "[" + PlatformArm64::regName[tmp_reg_no + 32] + "]");
+        // str 指令将值存储到全局变量地址
+        std::string src_reg_name = PlatformArm64::regName[src_reg_no];
+        std::string temp_reg_name = PlatformArm64::regName[temp_reg];
+        emit("str", src_reg_name, "[" + temp_reg_name + "]");
 
     } else {
 

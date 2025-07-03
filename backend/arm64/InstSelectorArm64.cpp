@@ -239,16 +239,27 @@ void InstSelectorArm64::translate_assign(Instruction * inst)
             // 寄存器到寄存器的移动，指针类型使用64位寄存器
             if (result_regId != arg1->getRegId()) {
                 std::string result_reg_name, arg1_reg_name;
+                std::string move_inst = "mov";
+
                 if (result->getType()->isPointerType()) {
                     // 指针类型使用64位寄存器
                     result_reg_name = PlatformArm64::regName[result_regId + 32];
                     arg1_reg_name = PlatformArm64::regName[arg1->getRegId() + 32];
+                } else if (result->getType()->isFloatType()) {
+                    // 浮点类型使用fmov指令
+                    result_reg_name = PlatformArm64::regName[result_regId];
+                    arg1_reg_name = PlatformArm64::regName[arg1->getRegId()];
+                    move_inst = "fmov";
                 } else {
-                    // 非指针类型使用原始寄存器
+                    // 整数类型使用原始寄存器
                     result_reg_name = PlatformArm64::regName[result_regId];
                     arg1_reg_name = PlatformArm64::regName[arg1->getRegId()];
                 }
-                iloc.inst("mov", result_reg_name, arg1_reg_name);
+                iloc.inst(move_inst, result_reg_name, arg1_reg_name);
+                printf("Debug: %s %s, %s (getelementptr assign)\n",
+                       move_inst.c_str(),
+                       result_reg_name.c_str(),
+                       arg1_reg_name.c_str());
             }
         } else {
             // 如果目标是内存变量，存储地址值
@@ -259,18 +270,29 @@ void InstSelectorArm64::translate_assign(Instruction * inst)
         if (result_regId != -1) {
             // 寄存器 => 寄存器
             if (result_regId != arg1_regId) {
-                // 根据类型选择正确的寄存器名
+                // 根据类型选择正确的寄存器名和指令
                 std::string result_reg_name, arg1_reg_name;
+                std::string move_inst = "mov";
+
                 if (result->getType()->isPointerType() || arg1->getType()->isPointerType()) {
                     // 指针类型使用64位寄存器
                     result_reg_name = PlatformArm64::regName[result_regId + 32];
                     arg1_reg_name = PlatformArm64::regName[arg1_regId + 32];
+                } else if (result->getType()->isFloatType() || arg1->getType()->isFloatType()) {
+                    // 浮点类型使用fmov指令
+                    result_reg_name = PlatformArm64::regName[result_regId];
+                    arg1_reg_name = PlatformArm64::regName[arg1_regId];
+                    move_inst = "fmov";
                 } else {
-                    // 非指针类型使用原始寄存器
+                    // 整数类型使用原始寄存器
                     result_reg_name = PlatformArm64::regName[result_regId];
                     arg1_reg_name = PlatformArm64::regName[arg1_regId];
                 }
-                iloc.inst("mov", result_reg_name, arg1_reg_name);
+                iloc.inst(move_inst, result_reg_name, arg1_reg_name);
+                printf("Debug: %s %s, %s (general assign)\n",
+                       move_inst.c_str(),
+                       result_reg_name.c_str(),
+                       arg1_reg_name.c_str());
             }
         } else {
             // 寄存器 => 内存
@@ -433,26 +455,32 @@ void InstSelectorArm64::translate_two_operator_float(Instruction * inst, string 
     std::string s1, s2;
 
     // 处理第一个操作数
-    if (is_regid_float(arg1_reg_no)) {
+    if (arg1_reg_no >= 0 && is_regid_float(arg1_reg_no)) {
         // 操作数1在浮点寄存器中
         s1 = PlatformArm64::regName[arg1_reg_no];
+        printf("Debug: arg1 in float register: %s\n", s1.c_str());
     } else {
-        // 操作数1不在寄存器中，需要加载到临时寄存器
-        printf("Debug: arg1 not in register, loading to temp register\n");
-        iloc.load_var(ARM64_TMP_REG_NO, arg1);
-        s1 = PlatformArm64::regName[ARM64_TMP_REG_NO];
+        // 操作数1不在寄存器中（可能是常量），需要加载到临时寄存器
+        printf("Debug: arg1 not in register (regId=%d), loading to temp register\n", arg1_reg_no);
+        int temp_float_reg = 63 + 17; // s17 浮点临时寄存器
+        iloc.load_var(temp_float_reg, arg1);
+        s1 = PlatformArm64::regName[temp_float_reg];
+        printf("Debug: arg1 loaded to temp float register: %s\n", s1.c_str());
     }
 
     // 处理第二个操作数
-    if (is_regid_float(arg2_reg_no)) {
+    if (arg2_reg_no >= 0 && is_regid_float(arg2_reg_no)) {
         // 操作数2在浮点寄存器中
         s2 = PlatformArm64::regName[arg2_reg_no];
+        printf("Debug: arg2 in float register: %s\n", s2.c_str());
     } else {
-        // 操作数2不在寄存器中，需要加载到另一个临时寄存器
-        printf("Debug: arg2 not in register, loading to temp register\n");
-        int temp_reg = (s1 == PlatformArm64::regName[ARM64_TMP_REG_NO]) ? ARM64_TMP_REG_NO + 1 : ARM64_TMP_REG_NO;
-        iloc.load_var(temp_reg, arg2);
-        s2 = PlatformArm64::regName[temp_reg];
+        // 操作数2不在寄存器中（可能是常量），需要加载到另一个临时寄存器
+        printf("Debug: arg2 not in register (regId=%d), loading to temp register\n", arg2_reg_no);
+        // 选择不同的临时寄存器，避免与第一个操作数冲突
+        int temp_float_reg = (s1 == PlatformArm64::regName[63 + 17]) ? 63 + 18 : 63 + 17; // s17 或 s18
+        iloc.load_var(temp_float_reg, arg2);
+        s2 = PlatformArm64::regName[temp_float_reg];
+        printf("Debug: arg2 loaded to temp float register: %s\n", s2.c_str());
     }
 
     printf("Debug: Generating %s %s, %s, %s\n",
@@ -589,8 +617,10 @@ void InstSelectorArm64::translate_call(Instruction * inst)
             // 根据返回值类型选择正确的返回寄存器
             if (callInst->getType()->isIntegerType()) {
                 iloc.inst("mov", PlatformArm64::regName[callInst->getRegId()], "w0");
+                printf("Debug: 整数返回值从 w0 移动到 %s\n", PlatformArm64::regName[callInst->getRegId()].c_str());
             } else if (callInst->getType()->isFloatType()) {
-                iloc.inst("mov", PlatformArm64::regName[callInst->getRegId()], "s0");
+                iloc.inst("fmov", PlatformArm64::regName[callInst->getRegId()], "s0");
+                printf("Debug: 浮点返回值从 s0 移动到 %s\n", PlatformArm64::regName[callInst->getRegId()].c_str());
             } else if (callInst->getType()->isPointerType()) {
                 // 指针返回值使用64位寄存器x0
                 iloc.inst("mov", PlatformArm64::regName[callInst->getRegId()], "x0");
@@ -758,13 +788,25 @@ void InstSelectorArm64::translate_cmp(Instruction * inst)
 
     if (isFloatComparison) {
         // 浮点数比较使用浮点寄存器名称
-        arg1_str = PlatformArm64::regName[arg1_reg_no];
+        if (arg1_reg_no != -1) {
+            arg1_str = PlatformArm64::regName[arg1_reg_no];
+        } else {
+            // 第一个操作数不在寄存器中，需要加载到临时浮点寄存器
+            int temp_float_reg = ARM64_TMP_REG_NO + 63;
+            iloc.load_var(temp_float_reg, arg1);
+            arg1_str = PlatformArm64::regName[temp_float_reg];
+            printf("Debug: fcmp arg1 loaded to temp register: %s\n", arg1_str.c_str());
+        }
 
-        if (Instanceof(constFloat, ConstFloat *, arg2)) {
-            // 浮点数常量需要先加载到寄存器
+        if (arg2_reg_no != -1) {
             arg2_str = PlatformArm64::regName[arg2_reg_no];
         } else {
-            arg2_str = PlatformArm64::regName[arg2_reg_no];
+            // 第二个操作数不在寄存器中，需要加载到另一个临时浮点寄存器
+            int temp_float_reg = (arg1_str == PlatformArm64::regName[ARM64_TMP_REG_NO + 63]) ? ARM64_TMP_REG_NO + 1 + 63
+                                                                                             : ARM64_TMP_REG_NO + 63;
+            iloc.load_var(temp_float_reg, arg2);
+            arg2_str = PlatformArm64::regName[temp_float_reg];
+            printf("Debug: fcmp arg2 loaded to temp register: %s\n", arg2_str.c_str());
         }
     } else {
         // 整数比较使用通用寄存器名称
@@ -1160,22 +1202,28 @@ void InstSelectorArm64::translate_ret(Instruction * inst)
             if (retValue->getType()->isIntegerType()) {
                 iloc.load_var(0, retValue);
             } else if (retValue->getType()->isFloatType()) {
-                // 浮点数处理
-                iloc.load_var(32, retValue); // s0对应寄存器ID 32
+                // 浮点数处理，s0对应寄存器ID 63
+                iloc.load_var(63, retValue);
+                printf("Debug: 浮点返回值从内存加载到 s0\n");
             }
-        } else if (retRegId != 0) {
-            // 返回值在其他寄存器中，需要移动到w0
+        } else if ((retValue->getType()->isIntegerType() && retRegId != 0) ||
+                   (retValue->getType()->isFloatType() && retRegId != 63)) {
+            // 返回值在其他寄存器中，需要移动到正确的返回寄存器
             if (retValue->getType()->isIntegerType()) {
                 std::string srcReg = PlatformArm64::regName[retRegId];
                 iloc.inst("mov", "w0", srcReg);
-                printf("Debug: 将返回值从 %s 移动到 w0\n", srcReg.c_str());
+                printf("Debug: 将整数返回值从 %s 移动到 w0\n", srcReg.c_str());
             } else if (retValue->getType()->isFloatType()) {
-                std::string srcReg = PlatformArm64::regName[retRegId + 32]; // 浮点寄存器
-                iloc.inst("mov", "s0", srcReg);
+                std::string srcReg = PlatformArm64::regName[retRegId];
+                iloc.inst("fmov", "s0", srcReg);
                 printf("Debug: 将浮点返回值从 %s 移动到 s0\n", srcReg.c_str());
             }
         } else {
-            printf("Debug: 返回值已在正确的寄存器中 (w0)\n");
+            if (retValue->getType()->isIntegerType()) {
+                printf("Debug: 整数返回值已在正确的寄存器中 (w0)\n");
+            } else if (retValue->getType()->isFloatType()) {
+                printf("Debug: 浮点返回值已在正确的寄存器中 (s0)\n");
+            }
         }
     }
 
@@ -1204,8 +1252,18 @@ void InstSelectorArm64::translate_sitofp(Instruction * inst)
     int src_reg_no = src->getRegId();
     int result_reg_no = inst->getRegId();
 
+    std::string src_reg_name;
+    if (src_reg_no != -1) {
+        src_reg_name = PlatformArm64::regName[src_reg_no];
+    } else {
+        // 源操作数不在寄存器中，需要先加载到临时寄存器
+        iloc.load_var(ARM64_TMP_REG_NO, src);
+        src_reg_name = PlatformArm64::regName[ARM64_TMP_REG_NO];
+        printf("Debug: sitofp src loaded to temp register: %s\n", src_reg_name.c_str());
+    }
+
     // 使用scvtf指令：有符号整数转浮点数
-    iloc.inst("scvtf", PlatformArm64::regName[result_reg_no], PlatformArm64::regName[src_reg_no]);
+    iloc.inst("scvtf", PlatformArm64::regName[result_reg_no], src_reg_name);
 }
 
 /// @brief getelementptr指令翻译成ARM64汇编
