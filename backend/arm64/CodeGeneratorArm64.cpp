@@ -335,7 +335,7 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
                     // assert(node->color != -1);
                     // std::cout << InterferenceGraph::ColorToRegId(node->color) << std::endl;
                     // printval(func->getParams()[0]);
-                    printval(node->val);
+                    // printval(node->val);
                     node->val->setRegId(
                         InterferenceGraph::ColorToRegId(node->color,
                                                         node->val->getType() == FloatType::getTypeFloat()));

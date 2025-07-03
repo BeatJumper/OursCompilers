@@ -156,11 +156,20 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
         std::set<Value *> value_occupy = inst->get_liveout();
         merge_set(value_occupy, inst->get_def_set());
+        //  手动循环的安全版本
+        for (auto it = value_occupy.begin(); it != value_occupy.end();) {
+            if (all_value_in_cfg.count(*it) == 0) {
+                it = value_occupy.erase(it); // erase 返回下一个有效迭代器
+            } else {
+                ++it;
+            }
+        }
 
-        // if (i == 2) {
-        // break;
-        //}
-        //  这些不同的量两两之间都是互斥的，不能在同一寄存器
+        // printf("第%d次获取DEF、SET集合\n", i++);
+        //  if (i == 2) {
+        //  break;
+        // }
+        //   这些不同的量两两之间都是互斥的，不能在同一寄存器
         FOR_EACH_PAIR_IN_SET(value_occupy)
         {
             // assert(it1 != it2);
