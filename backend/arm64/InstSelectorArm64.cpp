@@ -487,7 +487,12 @@ void InstSelectorArm64::translate_call(Instruction * inst)
             ;
         } else {
             // 其它情况，需要产生赋值指令
-            iloc.mov_reg(callInst->getRegId(), 0);
+            // 创建一个表示 x0 寄存器的临时变量
+            if (callInst->getType()->isIntegerType()) {
+                iloc.inst("mov", PlatformArm64::regName[callInst->getRegId()], "w0");
+            } else if (callInst->getType()->isFloatType()) {
+                iloc.inst("mov", PlatformArm64::regName[callInst->getRegId()], "s0");
+            }
         }
     }
 
