@@ -60,6 +60,9 @@ public:
         if (this->baseRegNo == -1) {
             return false;
         }
+        if (this->offset == -1) {
+            return false;
+        }
 
         if (_regId) {
             *_regId = this->baseRegNo;

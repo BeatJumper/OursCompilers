@@ -106,6 +106,5 @@ static bool is_regid_valid(int32_t regid)
 /// @return 是否在64个浮点寄存器id里
 static bool is_regid_float(int32_t regid)
 {
-    assert(is_regid_valid(regid));
     return regid >= 63 && regid < PlatformArm64::maxRegNum;
 }

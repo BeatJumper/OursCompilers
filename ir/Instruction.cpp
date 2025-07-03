@@ -130,8 +130,11 @@ void Instruction::transfer()
             // val->setRegId(index);
             def_set.insert(PlatformArm64::intRegVal[index]);
         }
-        // 在DEF集上，再添加32个DEF，表示函数调用使得寄存器S0~S31都可能遭到修改
+        // 在DEF集上，再添加24个DEF，表示函数调用使得寄存器S0~S7以及S16~S31都可能遭到修改
         for (int index = 0; index < PlatformArm64::maxVecRegNum; index++) {
+            if (index > 7 && index < 16) {
+                continue;
+            }
             def_set.insert(PlatformArm64::intRegVal[index + 63]);
         }
         // 最后再在DEF集上添加FuncCallInstruction自己
