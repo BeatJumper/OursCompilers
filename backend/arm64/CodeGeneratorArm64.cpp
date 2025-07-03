@@ -271,6 +271,66 @@ void CodeGeneratorArm64::genCodeSection(Function * func)
     fprintf(fp, "\n");
 }
 
+void CodeGeneratorArm64::spill(Function * func, InterferenceGraph * graph_ig)
+{
+    // 首先取出目前干涉图中度数最高的Value（未染色的）
+    node_IG * most_degree_node = nullptr;
+    // assert(graph_ig->uncolored_node_set.size());
+    for (node_IG * node: graph_ig->uncolored_node_set) {
+        if (node->val->getRegId() != -1) {
+            continue;
+        }
+        if (most_degree_node == nullptr || most_degree_node->degree() < node->degree()) {
+            most_degree_node = node;
+        }
+    }
+    if (most_degree_node == nullptr) {
+        return;
+    }
+    std::cout << "most degree = " << most_degree_node->degree() << std::endl;
+    printval(most_degree_node->val);
+    printf("neighbors:\n");
+    for (node_IG * neighbor: most_degree_node->neighbors) {
+        printval(neighbor->val);
+    }
+
+    // 为溢出该变量分配的栈空间
+    LocalVariable * localval = nullptr;
+
+    Value * most_degree_val = most_degree_node->val;
+    // int32_t reg_now = most_degree_val->getRegId();
+    auto & insts = func->getInterCode().getInsts();
+
+    // 接下来尝试把该Value的所有出现都替换为新的Value和LocalVariable
+    for (int i = 0; i < insts.size(); i++) {
+        // Value * regval_read = nullptr;
+
+        if (insts[i]->get_def_set().count(most_degree_val)) {
+            // DEF是其中某一个操作数的情况
+            if (localval == nullptr) {
+                localval = func->newLocalVarValue(most_degree_val->getType());
+            }
+            Instruction * strinst = new StoreInstruction(func, most_degree_val, localval);
+            insts.insert(insts.begin() + i + 1, strinst);
+        }
+        if (insts[i]->get_use_set().count(most_degree_val)) {
+            if (localval == nullptr) {
+                localval = func->newLocalVarValue(most_degree_val->getType());
+            }
+            // regval_read = new Value(most_degree_val->getType());
+            // regval_read->setRegId(reg_now);
+            Instruction * ldrinst = new LoadInstruction(func, nullptr, localval);
+            insts.insert(insts.begin() + i, ldrinst);
+            i++;
+            for (int k = 0; k < insts[i]->getOperandsNum(); k++) {
+                if (insts[i]->getOperand(k) == most_degree_val) {
+                    insts[i]->getOperands()[k]->setUsee(ldrinst);
+                }
+            }
+        }
+    }
+}
+
 /// @brief 寄存器分配
 /// @param func 函数指针
 void CodeGeneratorArm64::registerAllocation(Function * func)
@@ -301,9 +361,6 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     adjustFuncCallInsts(func);
     printf("调整函数调用指令\n");
 
-    // 为局部变量、数组、返回值、保护寄存器分配栈空间
-    stackAlloc(func);
-
     adjustFormalParamInsts(func);
 
     // 给一些指令添加临时调整指令
@@ -321,7 +378,15 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     for (bool is_float: forfloat) {
         while (true) {
             // 创建干涉图
+            // InterferenceGraph * graph_ig1 = new InterferenceGraph(func, is_float);
+
+            // spill(func, graph_ig1);
+
             InterferenceGraph * graph_ig = new InterferenceGraph(func, is_float);
+
+            // spill(func, graph_ig);
+
+            std::cout << "完成干涉图构建" << std::endl;
 
             // 尝试进行染色
             // 染色是否成功
@@ -335,65 +400,25 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
                     // assert(node->color != -1);
                     // std::cout << InterferenceGraph::ColorToRegId(node->color) << std::endl;
                     // printval(func->getParams()[0]);
-                    printval(node->val);
+                    // printval(node->val);
                     node->val->setRegId(
                         InterferenceGraph::ColorToRegId(node->color,
                                                         node->val->getType() == FloatType::getTypeFloat()));
 
                     // std::cout << node->val->getRegId() << std::endl;
                 }
+                // std::cout << "染色成功" << std::endl;
                 break;
             } else {
-                // 寄存器分配失败，实现寄存器溢出处理
-                printf("寄存器分配失败，开始寄存器溢出处理\n");
-
-                // 选择溢出变量：选择度数最高的节点进行溢出
-                node_IG * spillNode = nullptr;
-                int maxDegree = -1;
-                for (node_IG * node: graph_ig->node_set) {
-                    // 跳过已经溢出的变量和alloca指令
-                    if (node->val->getRegId() == -2)
-                        continue;
-
-                    // 跳过alloca指令，它们本来就应该在内存中
-                    if (dynamic_cast<AllocaInstruction *>(node->val)) {
-                        continue;
-                    }
-
-                    if ((int) node->neighbors.size() > maxDegree) {
-                        maxDegree = node->neighbors.size();
-                        spillNode = node;
-                    }
-                }
-
-                if (spillNode != nullptr) {
-                    printf("选择变量 %s (度数=%d) 进行溢出\n", spillNode->val->getName().c_str(), maxDegree);
-
-                    // 标记该变量为溢出变量（设置regId为-2表示在内存中）
-                    spillNode->val->setRegId(-2);
-
-                    // 删除当前干涉图，下一轮会重新创建
-                    delete graph_ig;
-
-                    // 继续下一轮分配
-                    continue;
-                } else {
-                    // 如果没有找到合适的溢出变量，说明剩余的都是必须的变量
-                    // 将所有非alloca变量标记为溢出
-                    printf("将所有剩余的非alloca变量标记为溢出到内存\n");
-                    for (node_IG * node: graph_ig->node_set) {
-                        if (node->val->getRegId() != -1 && node->val->getRegId() != -2 &&
-                            !dynamic_cast<AllocaInstruction *>(node->val)) {
-                            node->val->setRegId(-2);
-                            printf("变量 %s 溢出到内存\n", node->val->getName().c_str());
-                        }
-                    }
-                    delete graph_ig;
-                    break;
-                }
+                // assert(false);
+                spill(func, graph_ig);
+                // 完成变量溢出的工作
             }
         }
     }
+
+    // 为局部变量、数组、返回值、保护寄存器分配栈空间
+    stackAlloc(func);
 
     // 这里加一个set临时存储保护寄存器，因为同一个寄存器可能多次加入，这里用set可以去重。
     std::set<int32_t> protectedreg_set;
@@ -574,18 +599,12 @@ void CodeGeneratorArm64::adjustFormalParamInsts(Function * func)
         FormalParam * resVal = new FormalParam(params[k]->getType(), params[k]->getName());
         LoadInstruction * ldrinst = new LoadInstruction(func, resVal, params[k]);
 
-        printf("Debug: adjustFormalParamInsts - 为第%d个参数创建LoadInstruction\n", k);
-        printf("Debug: adjustFormalParamInsts - 参数类型: %s\n", params[k]->getType()->toString().c_str());
-        printf("Debug: adjustFormalParamInsts - 参数名称: %s\n", params[k]->getName().c_str());
-        printf("Debug: adjustFormalParamInsts - 设置ldrinst寄存器ID为: %d\n", k);
-        printf("Debug: adjustFormalParamInsts - 设置params[%d]寄存器ID为: %d\n", k, k);
 
         ldrinst->setRegId(k);
         params[k]->setRegId(k);
         // 把原来引用形参的地方替换为ldrinst的引用
         // params[k]->replaceAllUsesWith(ldrinst);
         insts.insert(insts.begin(), ldrinst);
-        printf("Debug: adjustFormalParamInsts - LoadInstruction已插入到指令列表开始位置\n");
         if (FormalParam * val = dynamic_cast<FormalParam *>(ldrinst->getOperand(0))) {
             printf("Debug:形参判断逻辑正常\n");
         }

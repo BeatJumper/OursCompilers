@@ -8,7 +8,6 @@
 
 #include "Function.h"
 #include "LabelInstruction.h"
-#include "CodeGeneratorArm64.h"
 
 class ControlFlowGraph;
 

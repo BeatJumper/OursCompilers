@@ -15,6 +15,7 @@
 ///
 #pragma once
 #include "CodeGeneratorAsm.h"
+#include "InterferenceGraph.h"
 
 class CodeGeneratorArm64 : public CodeGeneratorAsm {
 
@@ -75,6 +76,11 @@ protected:
     /// @param initValues 初始化值列表
     /// @return 实际元素个数
     int countExpandedInitValues(const std::vector<Value *> & initValues);
+
+    /// @brief 对一个有了干涉图的函数进行溢出操作
+    /// @param func 函数
+    /// @param graph_ig 函数目前的干涉图
+    void spill(Function * func, InterferenceGraph * graph_ig);
 
 private:
 };
