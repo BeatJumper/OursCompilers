@@ -33,6 +33,22 @@ ControlFlowGraph::ControlFlowGraph(Function * func)
     }
 }
 
+ControlFlowGraph::~ControlFlowGraph()
+{
+    // 清理所有CFG节点
+    for (Node_CFG * node: node_list) {
+        delete node;
+    }
+    node_list.clear();
+    LabelToNodeCFG.clear();
+}
+
+Node_CFG::~Node_CFG()
+{
+    // 清理资源，但不删除IRCode，因为它属于Function管理
+    son_labels.clear();
+}
+
 void Node_CFG::add_successor(Node_CFG * successor)
 {
     if (next_nodes[0]) {

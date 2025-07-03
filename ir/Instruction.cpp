@@ -86,25 +86,33 @@ void Instruction::transfer()
     if (Instanceof(inst, AllocaInstruction *, this)) {
         // Alloc指令没有直接数据流，所以不做任何事
     } else if (Instanceof(inst, GetelementptrInstruction *, this)) {
+        auto * basePtr = inst->getOperand(0);
         auto * val1 = inst->getOperand(1);
         auto * val2 = inst->getOperand(2);
-        if (Instanceof(inst, SextInstruction *, val1)) {
+        if (inst->hasResultValue()) {
+            def_set.insert(inst);
+        }
+        use_set.insert(basePtr);
+        // 修复：正确添加所有操作数到use_set，不仅仅是SextInstruction
+        if (val1 && !dynamic_cast<Constant *>(val1)) {
             use_set.insert(val1);
         }
-        if (Instanceof(inst, SextInstruction *, val2)) {
+        if (val2 && !dynamic_cast<Constant *>(val2)) {
             use_set.insert(val2);
         }
 
     } else if (Instanceof(inst, StoreInstruction *, this)) {
         use_set.insert(inst->getOperand(0));
         auto * val2 = inst->getOperand(1);
-        if (Instanceof(inst, GetelementptrInstruction *, val2)) {
+        // 修复：Store指令应该使用所有非常量操作数
+        if (val2 && !dynamic_cast<Constant *>(val2)) {
             use_set.insert(val2);
         }
     } else if (Instanceof(inst, LoadInstruction *, this)) {
         def_set.insert(inst);
         auto * val = inst->getOperand(0);
-        if (Instanceof(inst, GetelementptrInstruction *, val)) {
+        // 修复：Load指令应该使用所有非常量操作数
+        if (val && !dynamic_cast<Constant *>(val)) {
             use_set.insert(val);
         }
     } else if (Instanceof(inst, MoveInstruction *, this)) {
@@ -141,8 +149,9 @@ void Instruction::transfer()
         if (inst->hasResultValue()) {
             def_set.insert(inst);
         }
-
-        for (auto usee: inst->getOperandsValue()) {
+        // auto usee: inst->getOperandsValue()
+        for (int i = 0; i < inst->getOperandsNum() - 1; i++) {
+            auto * usee = inst->getOperand(i);
             // 除了store指令以外的立即数都不需要寄存器
             if (Instanceof(constusee, Constant *, usee) == nullptr && def_set.count(usee) == 0) {
                 // use集中不能包含刚刚def的元素

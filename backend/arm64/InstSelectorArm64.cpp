@@ -235,7 +235,7 @@ void InstSelectorArm64::translate_assign(Instruction * inst)
     } else if (Instanceof(gepRes, GetelementptrInstruction *, arg1)) {
         // 处理getelementptr的赋值
         // getelementptr指令的结果已经是计算好的地址，直接使用
-        if (result_regId != -1 && arg1->getRegId() != -1) {
+        if (result_regId != -1 && result_regId != -2 && arg1->getRegId() != -1 && arg1->getRegId() != -2) {
             // 寄存器到寄存器的移动
             if (result_regId != arg1->getRegId()) {
                 iloc.inst("mov",
@@ -282,10 +282,11 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
     int32_t arg2_reg_no = arg2->getRegId();
     int32_t result_reg_no = result->getRegId();
 
-    // 检查结果寄存器是否有效
+    // 检查结果寄存器是否有效，如果无效则使用临时寄存器
+    int actual_result_reg = result_reg_no;
     if (is_regid_valid(result_reg_no) == false) {
-        printf("Error: translate_two_operator - invalid result_reg_no=%d\n", result_reg_no);
-        return;
+        printf("Warning: translate_two_operator - result not in register, using temp register\n");
+        actual_result_reg = ARM64_TMP_REG_NO + 2; // 使用第三个临时寄存器避免冲突
     }
 
     // 处理操作数：如果不在寄存器中，需要先加载到临时寄存器
@@ -339,7 +340,7 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
     printf("Debug: translate_two_operator - s2='%s', arg2_reg_no=%d\n", s2.c_str(), arg2_reg_no);
     printf("Debug: translate_two_operator - generating instruction: %s %s,%s,%s\n",
            operator_name.c_str(),
-           PlatformArm64::regName[result_reg_no].c_str(),
+           PlatformArm64::regName[actual_result_reg].c_str(),
            s1.c_str(),
            s2.c_str());
 
@@ -351,7 +352,13 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
         printf("ERROR: translate_two_operator - s2 is empty!\n");
     }
 
-    iloc.inst(operator_name, PlatformArm64::regName[result_reg_no], s1, s2);
+    iloc.inst(operator_name, PlatformArm64::regName[actual_result_reg], s1, s2);
+
+    // 如果结果变量不在寄存器中，需要将结果存储到内存
+    if (result_reg_no == -2) {
+        printf("Debug: storing spilled result to memory\n");
+        iloc.store_var(actual_result_reg, result, ARM64_TMP_REG_NO + 3);
+    }
 }
 
 /// @brief 浮点数二元操作指令翻译成ARM64汇编
@@ -530,6 +537,10 @@ void InstSelectorArm64::translate_call(Instruction * inst)
         if (callInst->getRegId() == 0) {
             // 结果变量的寄存器和返回值寄存器一样，则什么都不需要做
             ;
+        } else if (callInst->getRegId() == -2) {
+            // 结果变量是溢出变量，需要将返回值存储到内存
+            printf("Debug: call result is spilled, storing to memory\n");
+            iloc.store_var(0, callInst, ARM64_TMP_REG_NO);
         } else {
             // 其它情况，需要产生赋值指令
             // 创建一个表示 x0 寄存器的临时变量
@@ -659,7 +670,7 @@ void InstSelectorArm64::translate_alloca(Instruction * inst)
     // alloca指令不应该生成地址加载指令
     // alloca的作用是分配栈空间，其结果是一个内存地址，不需要加载到寄存器
     // 如果alloca指令被错误地分配了寄存器ID，我们应该忽略它
-    if (result->getRegId() != -1) {
+    if (result->getRegId() != -1 && result->getRegId() != -2) {
         printf("Warning: alloca指令 %s 被错误地分配了寄存器ID=%d，忽略地址加载\n",
                result->getIRName().c_str(),
                result->getRegId());
@@ -806,6 +817,14 @@ void InstSelectorArm64::translate_load(Instruction * inst)
     Value * arg1 = inst->getOperand(0);
 
     int32_t result_regId = result->getRegId();
+
+    // 如果结果变量没有分配寄存器，使用临时寄存器
+    int32_t actual_result_reg = result_regId;
+    if (result_regId == -1) {
+        printf("Debug: load result not in register, using temp register\n");
+        actual_result_reg = ARM64_TMP_REG_NO;
+    }
+
     if (FormalParam * val = dynamic_cast<FormalParam *>(arg1)) {
         printf("Debug: ldr源为形参\n");
         // ldr源为形参
@@ -814,9 +833,9 @@ void InstSelectorArm64::translate_load(Instruction * inst)
         arg1->getMemoryAddr(&base_reg_id, &base_offset);
         if (val->getType()->isPointerType()) {
             printf("Debug: ldr源为形参,为数组指针\n");
-            iloc.load_base(result_regId + 32, base_reg_id, base_offset);
+            iloc.load_base(actual_result_reg + 32, base_reg_id, base_offset);
         } else {
-            iloc.load_base(result_regId, base_reg_id, base_offset);
+            iloc.load_base(actual_result_reg, base_reg_id, base_offset);
         }
     }
 
@@ -854,16 +873,26 @@ void InstSelectorArm64::translate_load(Instruction * inst)
                 int32_t gep_reg_id = gepResult->getRegId();
                 printf("Debug: 使用常量索引getelementptr的寄存器: %s\n", PlatformArm64::regName[gep_reg_id].c_str());
                 iloc.inst("ldr",
-                          PlatformArm64::regName[result_regId],
+                          PlatformArm64::regName[actual_result_reg],
                           "[" + PlatformArm64::regName[gep_reg_id + 32] + "]");
             }
         } else if (result->getType()->isPointerType()) {
             // 如果结果是指针类型，使用64位寄存器
-            iloc.load_var(result_regId + 32, arg1);
+            iloc.load_var(actual_result_reg + 32, arg1);
         }
         // 内存变量 => 寄存器
         else {
-            iloc.load_var(result_regId, arg1);
+            iloc.load_var(actual_result_reg, arg1);
+        }
+
+        // 如果结果变量不在寄存器中，需要将结果存储到内存
+        if (result_regId == -1) {
+            printf("Debug: storing load result to memory\n");
+            if (result->getType()->isPointerType()) {
+                iloc.store_var(actual_result_reg + 32, result, ARM64_TMP_REG_NO + 1);
+            } else {
+                iloc.store_var(actual_result_reg, result, ARM64_TMP_REG_NO + 1);
+            }
         }
     }
 }
@@ -978,12 +1007,68 @@ void InstSelectorArm64::translate_store(Instruction * inst)
         } else {
             iloc.store_var(arg1_regId, arg2, ARM64_TMP_REG_NO);
         }
+    } else {
+        // 源操作数不在寄存器中，需要先从内存加载到临时寄存器
+        printf("Debug: store source not in register, loading from memory first\n");
+        int32_t temp_reg = ARM64_TMP_REG_NO + 2;
+
+        // 先将源值加载到临时寄存器
+        if (arg1->getType()->isPointerType()) {
+            iloc.load_var(temp_reg + 32, arg1);
+            // 然后存储到目标位置
+            if (GetelementptrInstruction * gepVal = dynamic_cast<GetelementptrInstruction *>(arg2)) {
+                iloc.inst("str",
+                          PlatformArm64::regName[temp_reg + 32],
+                          "[" + PlatformArm64::regName[gepVal->getRegId() + 32] + "]");
+            } else {
+                iloc.store_var(temp_reg + 32, arg2, ARM64_TMP_REG_NO);
+            }
+        } else {
+            iloc.load_var(temp_reg, arg1);
+            // 然后存储到目标位置
+            if (GetelementptrInstruction * gepVal = dynamic_cast<GetelementptrInstruction *>(arg2)) {
+                iloc.inst("str",
+                          PlatformArm64::regName[temp_reg],
+                          "[" + PlatformArm64::regName[gepVal->getRegId() + 32] + "]");
+            } else {
+                iloc.store_var(temp_reg, arg2, ARM64_TMP_REG_NO);
+            }
+        }
     }
 }
 
 void InstSelectorArm64::translate_ret(Instruction * inst)
 {
-    // 如果存在返回值，确保其位于x0寄存器
+    // 如果存在返回值，确保其位于w0寄存器
+    if (inst->getOperandsNum() > 0) {
+        Value * retValue = inst->getOperand(0);
+        int32_t retRegId = retValue->getRegId();
+
+        // 检查返回值是否分配了有效的寄存器
+        if (retRegId == -1) {
+            // 返回值没有分配寄存器，需要从内存加载到w0
+            printf("Debug: 返回值未分配寄存器，从内存加载到 w0\n");
+            if (retValue->getType()->isIntegerType()) {
+                iloc.load_var(0, retValue);
+            } else if (retValue->getType()->isFloatType()) {
+                // 浮点数处理
+                iloc.load_var(32, retValue); // s0对应寄存器ID 32
+            }
+        } else if (retRegId != 0) {
+            // 返回值在其他寄存器中，需要移动到w0
+            if (retValue->getType()->isIntegerType()) {
+                std::string srcReg = PlatformArm64::regName[retRegId];
+                iloc.inst("mov", "w0", srcReg);
+                printf("Debug: 将返回值从 %s 移动到 w0\n", srcReg.c_str());
+            } else if (retValue->getType()->isFloatType()) {
+                std::string srcReg = PlatformArm64::regName[retRegId + 32]; // 浮点寄存器
+                iloc.inst("mov", "s0", srcReg);
+                printf("Debug: 将浮点返回值从 %s 移动到 s0\n", srcReg.c_str());
+            }
+        } else {
+            printf("Debug: 返回值已在正确的寄存器中 (w0)\n");
+        }
+    }
 
     iloc.emitFunctionEpilogue(func);
 }
@@ -1020,9 +1105,9 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
 {
     Value * basePtr = inst->getOperand(0); // 基址指针
                                            // 对于数组访问，我们需要计算偏移量
-    Value * index = inst->getOperand(1);
-    if (inst->getOperandsNum() > 3) {
-        index = inst->getOperand(2);
+    Value * index = inst->getOperand(2);
+    if (inst->getOperandsNum() == 3) {
+        index = inst->getOperand(1);
     }
     // 这里简化处理：如果基址在内存中，我们计算其地址
     int32_t base_reg_id = -1;
@@ -1224,12 +1309,23 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                 iloc.inst("add", result_reg_name, "sp", "#" + std::to_string(base_offset));
 
                 // 然后计算元素地址：add res_reg, res_reg, index_reg, lsl #shift
+                // 注意：这里需要确保index_reg和result_reg不是同一个寄存器
                 printf("Debug: 数组元素地址计算: %s = %s + %s,lsl #%d\n",
                        result_reg_name.c_str(),
                        result_reg_name.c_str(),
                        index_reg_name.c_str(),
                        lsl);
-                iloc.inst("add", result_reg_name, result_reg_name, index_reg_name + ",lsl #" + std::to_string(lsl));
+
+                // 检查寄存器冲突：如果索引寄存器和结果寄存器相同，需要使用临时寄存器
+                if (index_reg_id == inst->getRegId()) {
+                    // 寄存器冲突：使用临时寄存器保存索引值
+                    std::string temp_reg_name = "x" + std::to_string(ARM64_TMP_REG_NO);
+                    printf("Debug: 检测到寄存器冲突，使用临时寄存器 %s 保存索引\n", temp_reg_name.c_str());
+                    iloc.inst("mov", temp_reg_name, index_reg_name);
+                    iloc.inst("add", result_reg_name, result_reg_name, temp_reg_name + ",lsl #" + std::to_string(lsl));
+                } else {
+                    iloc.inst("add", result_reg_name, result_reg_name, index_reg_name + ",lsl #" + std::to_string(lsl));
+                }
             } else {
                 // 数组在寄存器中（不太可能，但保留原逻辑）
                 std::string base_reg_name = PlatformArm64::regName[basePtr->getRegId() + 32];
@@ -1682,19 +1778,32 @@ void InstSelectorArm64::translate_sext(Instruction * inst)
         destBitWidth = destIntType->getBitWidth();
     }
 
+    // 如果目标变量不在寄存器中，使用临时寄存器
+    int32_t actual_dest_reg = dest_reg_no;
+    if (dest_reg_no == -1) {
+        printf("Debug: sext result not in register, using temp register\n");
+        actual_dest_reg = ARM64_TMP_REG_NO + 1;
+    }
+
     // 根据源类型和目标类型选择合适的符号扩展指令
     std::string src_reg_name = PlatformArm64::regName[src_reg_no];
-    std::string dest_reg_name = PlatformArm64::regName[dest_reg_no];
+    std::string dest_reg_name = PlatformArm64::regName[actual_dest_reg];
 
     if (srcBitWidth == 32 && destBitWidth == 64) {
         // i32 -> i64: 使用sxtw指令（符号扩展字到双字）
         // 需要使用64位寄存器名
-        if (dest_reg_no < 32) {
-            dest_reg_name = "x" + std::to_string(dest_reg_no);
+        if (actual_dest_reg < 32) {
+            dest_reg_name = "x" + std::to_string(actual_dest_reg);
         }
         iloc.inst("sxtw", dest_reg_name, src_reg_name);
     } else {
         printf("sext暂时不支持这种转换\n");
+    }
+
+    // 如果目标变量不在寄存器中，需要将结果存储到内存
+    if (dest_reg_no == -1) {
+        printf("Debug: storing sext result to memory\n");
+        iloc.store_var(actual_dest_reg, inst, ARM64_TMP_REG_NO + 2);
     }
 }
 
@@ -1729,9 +1838,16 @@ void InstSelectorArm64::translate_zext(Instruction * inst)
         destBitWidth = destIntType->getBitWidth();
     }
 
+    // 如果目标变量不在寄存器中，使用临时寄存器
+    int32_t actual_dest_reg = dest_reg_no;
+    if (dest_reg_no == -1) {
+        printf("Debug: zext result not in register, using temp register\n");
+        actual_dest_reg = ARM64_TMP_REG_NO + 1;
+    }
+
     // 根据源类型和目标类型选择合适的零扩展指令
     std::string src_reg_name = PlatformArm64::regName[src_reg_no];
-    std::string dest_reg_name = PlatformArm64::regName[dest_reg_no];
+    std::string dest_reg_name = PlatformArm64::regName[actual_dest_reg];
 
     if (srcBitWidth == 1 && destBitWidth == 32) {
         // i1 -> i32: 布尔值零扩展到32位整数
@@ -1740,5 +1856,11 @@ void InstSelectorArm64::translate_zext(Instruction * inst)
     } else {
         // 其他情况,暂不支持
         printf("Debug: 暂不支持这种类型的zext\n");
+    }
+
+    // 如果目标变量不在寄存器中，需要将结果存储到内存
+    if (dest_reg_no == -1) {
+        printf("Debug: storing zext result to memory\n");
+        iloc.store_var(actual_dest_reg, inst, ARM64_TMP_REG_NO + 2);
     }
 }

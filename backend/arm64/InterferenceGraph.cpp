@@ -79,6 +79,22 @@ InterferenceGraph::InterferenceGraph(Function * func, bool is_float)
     ExecuteCFG(graph_cfg);
 }
 
+InterferenceGraph::~InterferenceGraph()
+{
+    // 清理干涉图节点
+    for (node_IG * node: node_set) {
+        delete node;
+    }
+    node_set.clear();
+    uncolored_node_set.clear();
+
+    // 清理控制流图
+    if (graph_cfg) {
+        delete graph_cfg;
+        graph_cfg = nullptr;
+    }
+}
+
 void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
 {
     // 从Value到干涉图节点的映射
@@ -88,6 +104,39 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
     // printf("所有指令列表:\n");
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
         printval(inst);
+
+        // 添加调试信息：显示sext和getelementptr指令的活跃性信息
+        std::string instStr;
+        inst->toString(instStr);
+        if (instStr.find("sext") != std::string::npos || instStr.find("getelementptr") != std::string::npos) {
+            printf("Debug: 指令 %s\n", instStr.c_str());
+            printf("  def_set size: %zu, use_set size: %zu\n", inst->get_def_set().size(), inst->get_use_set().size());
+            printf("  livein size: %zu, liveout size: %zu\n", inst->get_livein().size(), inst->get_liveout().size());
+
+            printf("  def_set: ");
+            for (Value * v: inst->get_def_set()) {
+                printf("%s ", v->getIRName().c_str());
+            }
+            printf("\n");
+
+            printf("  use_set: ");
+            for (Value * v: inst->get_use_set()) {
+                printf("%s ", v->getIRName().c_str());
+            }
+            printf("\n");
+
+            printf("  livein: ");
+            for (Value * v: inst->get_livein()) {
+                printf("%s ", v->getIRName().c_str());
+            }
+            printf("\n");
+
+            printf("  liveout: ");
+            for (Value * v: inst->get_liveout()) {
+                printf("%s ", v->getIRName().c_str());
+            }
+            printf("\n");
+        }
     }
     // printf("指令列表结束\n");
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
@@ -117,6 +166,16 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
     for (Value * val: all_value_in_cfg) {
         // 跳过alloca指令，它们不应该参与寄存器分配
         if (dynamic_cast<AllocaInstruction *>(val)) {
+            continue;
+        }
+
+        // 跳过已经溢出的变量（regId=-2）
+        if (val->getRegId() == -2) {
+            std::string name = val->getName();
+            if (name.empty()) {
+                name = val->getIRName();
+            }
+            printf("跳过已溢出的变量: %s\n", name.c_str());
             continue;
         }
 
@@ -154,7 +213,9 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
     // int i = 1;
     // printf("size of insts:%zu\n", graph->get_func()->getInterCode().getCode().size());
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
-        std::set<Value *> value_occupy = inst->get_liveout();
+        // 修复：使用livein而不是liveout来构建干涉图
+        // 在指令执行时，livein中的所有变量和新定义的变量都应该互相干涉
+        std::set<Value *> value_occupy = inst->get_livein();
         merge_set(value_occupy, inst->get_def_set());
         //  手动循环的安全版本
         for (auto it = value_occupy.begin(); it != value_occupy.end();) {
@@ -177,6 +238,10 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
                 continue;
             }
             if (all_value_in_cfg.count(*it1) == 0 || all_value_in_cfg.count(*it2) == 0) {
+                continue;
+            }
+            // 检查这两个Value是否都在value_to_ig映射中存在（即没有被溢出）
+            if (value_to_ig.find(*it1) == value_to_ig.end() || value_to_ig.find(*it2) == value_to_ig.end()) {
                 continue;
             }
             // 因此在干涉图中连上一条边
