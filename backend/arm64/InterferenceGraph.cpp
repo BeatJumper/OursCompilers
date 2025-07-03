@@ -5,6 +5,8 @@
 #include "InterferenceGraph.h"
 #include "PlatformArm64.h"
 #include "AllocaInstruction.h"
+#include "FuncCallInstruction.h"
+#include "FloatType.h"
 
 node_IG::node_IG(Value * _val) : val(_val)
 {}
@@ -14,7 +16,7 @@ int node_IG::degree()
     return neighbors.size();
 }
 
-void node_IG::add_neighbor(node_IG * neighbor)
+inline void node_IG::add_neighbor(node_IG * neighbor)
 {
     neighbors.insert(neighbor);
 }
@@ -24,7 +26,7 @@ void node_IG::remove_neighbor(node_IG * neighbor)
     neighbors.erase(neighbor);
 }
 
-void InterferenceGraph::add_edge(node_IG * node1, node_IG * node2)
+inline void InterferenceGraph::add_edge(node_IG * node1, node_IG * node2)
 {
     node1->add_neighbor(node2);
     node2->add_neighbor(node1);
@@ -60,12 +62,10 @@ InterferenceGraph::InterferenceGraph(Function * func, bool is_float)
     // 生成控制流图
     graph_cfg = new ControlFlowGraph(func);
 
-    /*
     // printf("已生成控制流图\n");
     //  用完基本块表之后就可以删了节省空间
     func->clearBasicBlocks();
     printf("已删除不用的基本块表\n");
-    */
 
     // 加完新指令后也该重新调整IR编号
     func->renameIR();
@@ -82,12 +82,24 @@ InterferenceGraph::InterferenceGraph(Function * func, bool is_float)
 void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
 {
     // 从Value到干涉图节点的映射
-    std::map<Value *, node_IG *> value_to_ig;
+    std::unordered_map<Value *, node_IG *> value_to_ig;
     std::set<Value *> all_value_in_cfg;
 
     // printf("所有指令列表:\n");
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
         printval(inst);
+        /*
+        printf("NUM OF OPERANDS:%d\n", inst->getOperandsNum());
+        printf("DEF:\n");
+        printset(inst->get_def_set());
+        printf("USE:\n");
+        printset(inst->get_use_set());
+        printf("LIVEOUT:\n");
+        printset(inst->get_liveout());
+        printf("LIVEIN\n");
+        printset(inst->get_livein());
+        printf("\n");
+        */
     }
     // printf("指令列表结束\n");
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
@@ -151,7 +163,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
 
     // 这是std::set版本的干涉图构建过程，时间复杂度是O(N * M * M * logN)，其中N为指令数目，M为活跃集合的size上限
     // 扫描函数里每条指令，获取每个时刻的活跃变量集合
-    // int i = 1;
+    int i = 1;
     // printf("size of insts:%zu\n", graph->get_func()->getInterCode().getCode().size());
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
         std::set<Value *> value_occupy = inst->get_liveout();
@@ -164,24 +176,38 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
                 ++it;
             }
         }
+        // std::cout << "size of occupy:" << value_occupy.size() << std::endl;
 
-        // printf("第%d次获取DEF、SET集合\n", i++);
+        printf("第%d次获取DEF、SET集合\n", i++);
         //  if (i == 2) {
         //  break;
         // }
         //   这些不同的量两两之间都是互斥的，不能在同一寄存器
         FOR_EACH_PAIR_IN_SET(value_occupy)
         {
-            // assert(it1 != it2);
-            if (it1 == it2) {
+            if (((*it1)->getRegId() != -1) && (*it2)->getRegId() != -1) {
                 continue;
             }
-            if (all_value_in_cfg.count(*it1) == 0 || all_value_in_cfg.count(*it2) == 0) {
-                continue;
-            }
-            // 因此在干涉图中连上一条边
+            // printval(*it1);
+            // printval(*it2);
+            // assert(value_to_ig[*it1] && value_to_ig[*it2]);
             add_edge(value_to_ig[*it1], value_to_ig[*it2]);
         }
+        /*
+        for (auto it1 = (value_occupy).begin(); it1 != (value_occupy).end(); ++it1) {
+            if ((*it1)->getRegId() != -1) {
+                continue;
+            }
+            for (auto it2 = (value_occupy).begin(); it2 != (value_occupy).end(); ++it2) {
+                // assert(it1 != it2);
+                if (it1 == it2) {
+                    continue;
+                }
+                // 因此在干涉图中连上一条边
+                add_edge(value_to_ig[*it1], value_to_ig[*it2]);
+            }
+        }
+        */
         // std::cout << "干涉边添加完毕" << std::endl;
     }
 
@@ -399,6 +425,9 @@ int InterferenceGraph::ColorToRegId(int color, bool is_float)
 
 int InterferenceGraph::RegIdToColor(int regid)
 {
+    if (regid == -1) {
+        return -1;
+    }
     if (regid >= 63) {
         return regid - 63;
     } else {

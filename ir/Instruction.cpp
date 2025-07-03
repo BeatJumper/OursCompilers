@@ -83,9 +83,12 @@ bool Instruction::hasResultValue()
 
 void Instruction::transfer()
 {
+    use_set.clear();
+    def_set.clear();
     if (Instanceof(inst, AllocaInstruction *, this)) {
         // Alloc指令没有直接数据流，所以不做任何事
     } else if (Instanceof(inst, GetelementptrInstruction *, this)) {
+        def_set.insert(this);
         auto * val1 = inst->getOperand(1);
         auto * val2 = inst->getOperand(2);
         if (Instanceof(inst, SextInstruction *, val1)) {
@@ -112,7 +115,7 @@ void Instruction::transfer()
         Value * source = inst->getOperand(1);
         if (Instanceof(constvar, Constant *, source)) {
             // 什么都不做
-        } else {
+        } else if (def_set.count(source) == 0) {
             use_set.insert(source);
         }
     } else if (Instanceof(inst, FuncCallInstruction *, this)) {
@@ -133,7 +136,9 @@ void Instruction::transfer()
 
         // 前8个数的临时变量被直接用到
         for (int index = 0; index < 8 && index < inst->getOperandsNum(); index++) {
-            use_set.insert(inst->getOperand(index));
+            if (def_set.count(inst->getOperand(index)) == 0) {
+                use_set.insert(inst->getOperand(index));
+            }
         }
         // 后8个数是仅仅在内存里的，不占寄存器，所以就不进USE了。
     } else if (Instanceof(inst, Instruction *, this)) {
@@ -151,6 +156,7 @@ void Instruction::transfer()
         }
     }
 
+    liveOUT.clear();
     // 提前初始化liveIN
     liveIN = use_set;
 }

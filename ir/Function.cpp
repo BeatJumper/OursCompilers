@@ -347,6 +347,12 @@ void Function::renameIR()
             variableCounter++;
         }
     }
+    for (Value * val: varsVector) {
+        if (val->getIRName().empty()) {
+            val->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(variableCounter));
+            variableCounter++;
+        }
+    }
     for (auto inst: this->getInterCode().getInsts()) {
         for (Value * val: inst->get_def_set()) {
             if (val->getIRName().empty()) {

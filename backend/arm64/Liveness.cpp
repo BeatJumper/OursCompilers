@@ -3,11 +3,41 @@
 
 bool update_live(Instruction * node, Instruction * succ1, Instruction * succ2)
 {
+    /*
+    printf("活跃分析\n");
+    printval(node);
+    printf("NUM OF OPERANDS:%d\n", node->getOperandsNum());
+    printf("DEF:\n");
+    printset(node->get_def_set());
+    printf("USE:\n");
+    printset(node->get_use_set());
+    printf("LIVEOUT:\n");
+    printset(node->get_liveout());
+    printf("LIVEIN\n");
+    printset(node->get_livein());
+    printf("\n");
+    */
     bool ret = false;
     if (succ1) {
+        /*
+        printf("SUCC1\n");
+        printval(succ1);
+        printf("改动前LIVEOUT\n");
+        printset(node->get_liveout());
+        */
+        // assert(node->get_liveout().size() < 2);
         ret |= merge_set(node->get_liveout(), succ1->get_livein());
+        /*
+        printf("改动后LIVEOUT\n");
+        printset(node->get_liveout());
+        */
+        // assert(node->get_liveout().size() < 2);
     }
     if (succ2) {
+        /*
+        printf("SUCC2\n");
+        printval(succ2);
+        */
         ret |= merge_set(node->get_liveout(), succ2->get_livein());
     }
     int original_livein_size = node->get_livein().size();
