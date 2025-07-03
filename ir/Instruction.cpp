@@ -88,6 +88,11 @@ void Instruction::transfer()
         use_set.insert(inst->getOperand(0));
     } else if (Instanceof(inst, LoadInstruction *, this)) {
         def_set.insert(inst);
+        // Load指令使用其操作数（地址）
+        Value * addr = inst->getOperand(0);
+        if (addr && !dynamic_cast<Constant *>(addr)) {
+            use_set.insert(addr);
+        }
     } else if (Instanceof(inst, MoveInstruction *, this)) {
         def_set.insert(inst->getOperand(0));
         Value * source = inst->getOperand(1);

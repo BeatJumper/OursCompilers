@@ -151,12 +151,12 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
 
     // 这是std::set版本的干涉图构建过程，时间复杂度是O(N * M * M * logN)，其中N为指令数目，M为活跃集合的size上限
     // 扫描函数里每条指令，获取每个时刻的活跃变量集合
-    int i = 1;
+    // int i = 1;
     printf("size of insts:%zu\n", graph->get_func()->getInterCode().getCode().size());
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
         std::set<Value *> value_occupy = inst->get_liveout();
         merge_set(value_occupy, inst->get_def_set());
-        printf("第%d次获取DEF、SET集合\n", i++);
+
         // if (i == 2) {
         // break;
         //}
@@ -170,6 +170,8 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
             if (all_value_in_cfg.count(*it1) == 0 || all_value_in_cfg.count(*it2) == 0) {
                 continue;
             }
+            // 调试输出：显示干涉边
+            // printf("添加干涉边: %s <-> %s\n", (*it1)->getIRName().c_str(), (*it2)->getIRName().c_str());
             // 因此在干涉图中连上一条边
             add_edge(value_to_ig[*it1], value_to_ig[*it2]);
         }

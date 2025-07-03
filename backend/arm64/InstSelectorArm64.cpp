@@ -116,6 +116,7 @@ void InstSelectorArm64::run()
     for (auto inst: ir) {
         // 逐个指令进行翻译
         if (!inst->isDead()) {
+            printf("Debug: 翻译第%d条指令: %s, 寄存器编号:%d\n", i, inst->getIRName().c_str(), inst->getRegId());
             translate(inst);
             printf("第%d条指令翻译成功,寄存器编号:%d\n", i, inst->getRegId());
             i++;
@@ -231,6 +232,9 @@ void InstSelectorArm64::translate_assign(Instruction * inst)
         } else {
             // 常量到内存
         }
+    } else if (Instanceof(gepRes, GetelementptrInstruction *, arg1)) {
+        // 处理getelementptr的赋值
+        iloc.lea_var(result_regId, arg1);
     } else if (arg1_regId != -1) {
         // 寄存器 => 内存
         // 寄存器 => 寄存器
@@ -802,18 +806,11 @@ void InstSelectorArm64::translate_load(Instruction * inst)
                 }
             } else {
                 // 常量索引的getelementptr，结果在内存中
-                int32_t base_reg_id = -1;
-                int64_t base_offset = -1;
-                if (gepResult->getMemoryAddr(&base_reg_id, &base_offset)) {
-                    printf("Debug: 使用常量索引getelementptr的内存地址: [%s,#%ld]\n",
-                           PlatformArm64::regName[base_reg_id].c_str(),
-                           base_offset);
-                    iloc.inst("ldr",
-                              PlatformArm64::regName[result_regId],
-                              "[" + PlatformArm64::regName[base_reg_id] + ",#" + std::to_string(base_offset) + "]");
-                } else {
-                    printf("Warning: 常量索引getelementptr没有内存地址信息\n");
-                }
+                int32_t gep_reg_id = gepResult->getRegId();
+                printf("Debug: 使用常量索引getelementptr的寄存器: %s\n", PlatformArm64::regName[gep_reg_id].c_str());
+                iloc.inst("ldr",
+                          PlatformArm64::regName[result_regId],
+                          "[" + PlatformArm64::regName[gep_reg_id + 32] + "]");
             }
         } else if (result->getType()->isPointerType()) {
             // 如果结果是指针类型，使用64位寄存器
@@ -911,6 +908,9 @@ void InstSelectorArm64::translate_store(Instruction * inst)
                 //使用str wzr指令
                 std::string s = "[" + PlatformArm64::regName[dest_baseRegId] + ",#" + std::to_string(dest_offset) + "]";
                 iloc.inst("str", "wzr", s);
+            } else if (GetelementptrInstruction * gepVal = dynamic_cast<GetelementptrInstruction *>(arg2)) {
+                // 检查目标是否是getelementptr的结果，需要重新计算地址
+                iloc.inst("str", "wzr", "[" + PlatformArm64::regName[gepVal->getRegId() + 32] + "]");
             }
         }
     } else if (arg1_regId != -1) {
@@ -923,34 +923,14 @@ void InstSelectorArm64::translate_store(Instruction * inst)
             arg2->getMemoryAddr(&dest_baseRegId, &dest_offset);
             std::string s = "[" + PlatformArm64::regName[dest_baseRegId] + ",#" + std::to_string(dest_offset) + "]";
             iloc.inst("str", PlatformArm64::regName[arg1_regId + 32], s);
-        } else {
+        } else if (GetelementptrInstruction * gepVal = dynamic_cast<GetelementptrInstruction *>(arg2)) {
             // 检查目标是否是getelementptr的结果，需要重新计算地址
-            int32_t dest_baseRegId = -1;
-            int64_t dest_offset = -1;
-            if (arg2->getMemoryAddr(&dest_baseRegId, &dest_offset)) {
-                printf("目标有内存地址信息\n");
-                // 目标有内存地址信息，重新计算地址到临时寄存器
-                int32_t temp_reg = ARM64_TMP_REG_NO;
-                std::string temp_reg_name = PlatformArm64::regName[temp_reg];
-                std::string base_reg_name = PlatformArm64::regName[dest_baseRegId];
-                std::string src_reg_name = PlatformArm64::regName[arg1_regId];
-
-                // 确保使用64位寄存器进行地址计算
-                if (temp_reg_name[0] == 'w')
-                    temp_reg_name[0] = 'x';
-                if (base_reg_name[0] == 'w')
-                    base_reg_name[0] = 'x';
-
-                // 重新计算目标地址，检查立即数范围
-                // if (dest_offset >= -512 && dest_offset <= 508)
-                std::string s = "[" + PlatformArm64::regName[dest_baseRegId] + ",#" + std::to_string(dest_offset) + "]";
-                iloc.inst("str", PlatformArm64::regName[arg1_regId], s);
-
-            } else {
-                // 使用原来的方法
-                iloc.store_var(arg1_regId, arg2, ARM64_TMP_REG_NO);
-            }
+            iloc.inst("str",
+                      PlatformArm64::regName[arg1_regId],
+                      "[" + PlatformArm64::regName[gepVal->getRegId() + 32] + "]");
         }
+
+    } else if (GetelementptrInstruction * gepVal = dynamic_cast<GetelementptrInstruction *>(arg2)) {
     }
 }
 
@@ -958,11 +938,15 @@ void InstSelectorArm64::translate_store(Instruction * inst)
 /// @param inst IR指令
 void InstSelectorArm64::translate_ret(Instruction * inst)
 {
-    Value * returnValue = func->getReturnValue();
+    printf("Debug: translate_ret - operands count: %d\n", inst->getOperandsNum());
 
-    // 如果存在返回值，确保其位于x0寄存器
-    if (returnValue != nullptr) {
+    // 检查ExitInstruction是否有返回值操作数
+    if (inst->getOperandsNum() > 0) {
+        // 获取返回值（应该是LoadInstruction的结果）
+        Value * returnValue = inst->getOperand(0);
         int32_t resultRegId = returnValue->getRegId();
+
+        printf("Debug: translate_ret - returnValue regId: %d\n", resultRegId);
 
         // 如果返回值未在x0中，进行寄存器移动
         if (resultRegId != 0) {
@@ -970,28 +954,35 @@ void InstSelectorArm64::translate_ret(Instruction * inst)
             if (resultRegId != -1) {
                 iloc.inst("mov", PlatformArm64::regName[0], PlatformArm64::regName[resultRegId]);
             } else {
+                // 返回值在内存中，需要加载到x0
                 LocalVariable * localResult = dynamic_cast<LocalVariable *>(returnValue);
-                int off = localResult->getOffset();
+                if (localResult) {
+                    int off = localResult->getOffset();
 
-                // 检查偏移量是否在ldr指令的有效范围内
-                // 对于32位数据：有符号偏移-256到+255，或无符号偏移0到16380（4字节对齐）
-                if ((off >= -256 && off <= 255) || (off >= 0 && off <= 16380 && (off % 4) == 0)) {
-                    // 偏移量在有效范围内，直接使用ldr指令
-                    std::string s = "[sp,#" + std::to_string(off) + "]";
-                    iloc.inst("ldr", PlatformArm64::regName[0], s);
-                } else {
-                    // 偏移量超出范围，使用间接寻址
-                    iloc.load_imm(ARM64_TMP_REG_NO, off);
-                    iloc.inst("add",
-                              PlatformArm64::regName[ARM64_TMP_REG_NO + 32],
-                              "sp",
-                              PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
-                    iloc.inst("ldr",
-                              PlatformArm64::regName[0],
-                              "[" + PlatformArm64::regName[ARM64_TMP_REG_NO + 32] + "]");
+                    // 检查偏移量是否在ldr指令的有效范围内
+                    // 对于32位数据：有符号偏移-256到+255，或无符号偏移0到16380（4字节对齐）
+                    if ((off >= -256 && off <= 255) || (off >= 0 && off <= 16380 && (off % 4) == 0)) {
+                        // 偏移量在有效范围内，直接使用ldr指令
+                        std::string s = "[sp,#" + std::to_string(off) + "]";
+                        iloc.inst("ldr", PlatformArm64::regName[0], s);
+                    } else {
+                        // 偏移量超出范围，使用间接寻址
+                        iloc.load_imm(ARM64_TMP_REG_NO, off);
+                        iloc.inst("add",
+                                  PlatformArm64::regName[ARM64_TMP_REG_NO + 32],
+                                  "sp",
+                                  PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
+                        iloc.inst("ldr",
+                                  PlatformArm64::regName[0],
+                                  "[" + PlatformArm64::regName[ARM64_TMP_REG_NO + 32] + "]");
+                    }
                 }
             }
+        } else {
+            printf("Debug: translate_ret - returnValue already in w0, no mov needed\n");
         }
+    } else {
+        printf("Debug: translate_ret - no return value (void function)\n");
     }
 
     iloc.emitFunctionEpilogue(func);
@@ -1034,15 +1025,12 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
         index = inst->getOperand(2);
     }
     // 这里简化处理：如果基址在内存中，我们计算其地址
-    int32_t base_reg_id;
-    int64_t base_offset;
+    int32_t base_reg_id = -1;
+    int64_t base_offset = -1;
     if (ConstInt * constIdx = dynamic_cast<ConstInt *>(index)) {
         // 索引为常量
         if (GetelementptrInstruction * gepBase = dynamic_cast<GetelementptrInstruction *>(basePtr)) {
             // 源是另一个getelementptr的结果
-            int32_t base_reg_id = -1;
-            int64_t base_offset = -1;
-            gepBase->getMemoryAddr(&base_reg_id, &base_offset);
             printf("gep源是另一个gep的结果\n");
 
             // 计算第二维的偏移
@@ -1081,8 +1069,10 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
 
             // 计算偏移并添加到基地址
             int64_t offset = idx * element_size;
-            base_offset += offset;
-            inst->setMemoryAddr(base_reg_id, base_offset);
+            iloc.inst("add",
+                      PlatformArm64::regName[inst->getRegId() + 32],
+                      PlatformArm64::regName[gepBase->getRegId() + 32],
+                      "#" + std::to_string(offset));
             return;
         }
 
@@ -1127,16 +1117,22 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                 }
             }
 
-            int64_t element_offset = base_offset + (idx * element_size);
+            int64_t element_offset = idx * element_size;
 
             // 只设置结果的内存地址信息，不生成地址计算指令
             // 地址计算将在load/store指令中进行
-            inst->setMemoryAddr(base_reg_id, element_offset);
+            iloc.inst("add",
+                      PlatformArm64::regName[inst->getRegId() + 32],
+                      PlatformArm64::regName[base_reg_id],
+                      "#" + std::to_string(base_offset));
+            iloc.inst("add",
+                      PlatformArm64::regName[inst->getRegId() + 32],
+                      PlatformArm64::regName[inst->getRegId() + 32],
+                      "#" + std::to_string(element_offset));
             return;
 
             // 默认情况：只设置内存地址信息，不生成地址计算指令
             // 地址计算将在load/store指令中进行
-            inst->setMemoryAddr(base_reg_id, base_offset);
         } else if (auto * globalArr = dynamic_cast<GlobalVariable *>(basePtr)) {
             // gep源是全局数组
             printf("gep源是全局数组: %s\n", globalArr->getName().c_str());
@@ -1169,7 +1165,10 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             }
 
             int64_t off = idx * element_size;
-            inst->setMemoryAddr(res_reg_id + 32, off);
+            iloc.inst("add",
+                      PlatformArm64::regName[res_reg_id + 32],
+                      PlatformArm64::regName[res_reg_id + 32],
+                      "#" + std::to_string(off));
         } else if (auto * ptrType = static_cast<PointerType *>(basePtr->getType())) {
             // gep源为数组指针
             printf("Debug:gep源为指向栈中数组地址的指针\n");
@@ -1186,7 +1185,10 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             }
 
             size *= 4;
-            inst->setMemoryAddr(inst->getRegId() + 32, size);
+            iloc.inst("add",
+                      PlatformArm64::regName[inst->getRegId() + 32],
+                      PlatformArm64::regName[basePtr->getRegId() + 32],
+                      "#" + std::to_string(size));
         }
     } else {
         // 索引为变量
