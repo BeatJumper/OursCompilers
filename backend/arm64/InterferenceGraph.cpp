@@ -156,6 +156,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
         // printval(val);
         // printf("寄存器ID：%d\n", val->getRegId());
         newnode->color = RegIdToColor(val->getRegId());
+        /*
         if (newnode->color == 28) {
             // printval(newnode->val);
             // std::cout << (is_float ? "true" : "false") << std::endl;
@@ -168,6 +169,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
             assert(PlatformArm64::intRegVal[91]->getType() == FloatType::getTypeFloat());
             assert(val->getType() == FloatType::getTypeFloat());
         }
+        */
         // assert(newnode->color != 28);
         // printf("newnode->color = val->getRegId(); %d\n", val->getRegId());
         if (newnode->color == -1) {
@@ -182,9 +184,7 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
     int i = 1;
     // printf("size of insts:%zu\n", graph->get_func()->getInterCode().getCode().size());
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
-        // 修复：使用livein而不是liveout来构建干涉图
-        // 在指令执行时，livein中的所有变量和新定义的变量都应该互相干涉
-        std::set<Value *> value_occupy = inst->get_livein();
+        std::set<Value *> value_occupy = inst->get_liveout();
         merge_set(value_occupy, inst->get_def_set());
         //  手动循环的安全版本
         for (auto it = value_occupy.begin(); it != value_occupy.end();) {

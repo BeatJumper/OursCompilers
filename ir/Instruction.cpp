@@ -95,11 +95,11 @@ void Instruction::transfer()
             def_set.insert(inst);
         }
         use_set.insert(basePtr);
-        // 修复：正确添加所有操作数到use_set，不仅仅是SextInstruction
         if (Instanceof(inst, SextInstruction *, val1)) {
             use_set.insert(val1);
         }
         if (Instanceof(inst, SextInstruction *, val2)) {
+            def_set.insert(val2);
             use_set.insert(val2);
         }
 
