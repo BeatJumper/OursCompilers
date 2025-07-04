@@ -586,19 +586,22 @@ void CodeGeneratorArm64::adjustFormalParamInsts(Function * func)
     printf("Debug:被调函数传参前检测栈帧大小:%d\n", int(fp_esp));
     for (int k = 8; k < (int) params.size(); k++) {
 
-        // 目前假定变量大小都是4字节。实际要根据类型来计算
+        // 第9个及之后的参数位于调用者栈帧中
+        // 计算相对于调用者栈帧的偏移：第k个参数的偏移 = (k-8) * 8
+        int64_t caller_stack_offset = (k - 8) * 8;
 
-        printf("Debug:8个以后形参的偏移量:%d\n", int(fp_esp));
-        params[k]->setMemoryAddr(ARM64_SP_REG_NO, fp_esp);
+        printf("Debug:第%d个形参位于调用者栈帧偏移:%d\n", k, int(caller_stack_offset));
 
-        // 增加8字节
-        fp_esp += 8;
+        // 设置特殊标记，表示这是调用者栈帧中的参数
+        // 我们使用负的基址寄存器编号来标记这种特殊情况
+        params[k]->setMemoryAddr(-ARM64_SP_REG_NO, caller_stack_offset);
+
+        // 不需要增加fp_esp，因为这些参数不占用当前函数的栈空间
 
         // 插入ldr指令
         // 这里创建的resVal仅用来翻译load时获取结果的类型
         FormalParam * resVal = new FormalParam(params[k]->getType(), params[k]->getName());
         LoadInstruction * ldrinst = new LoadInstruction(func, resVal, params[k]);
-
 
         ldrinst->setRegId(k);
         params[k]->setRegId(k);

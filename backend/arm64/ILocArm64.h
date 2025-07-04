@@ -90,6 +90,9 @@ class ILocArm64 {
     /// @brief 符号表
     Module * module;
 
+    /// @brief 当前函数的栈帧大小
+    int current_func_stack_size;
+
     /// @brief 加载符号值 ldr x0,=g; ldr x0,[x0]
     /// @param rsReg 结果寄存器号
     /// @param name Label名字
@@ -227,5 +230,9 @@ public:
     /// @brief 生成neg指令（取负）
     /// @param dest_reg 目标寄存器编号
     /// @param src_reg 源寄存器编号
+
+    /// @brief 设置当前函数的栈帧大小
+    /// @param stack_size 栈帧大小
+    void setCurrentFuncStackSize(int stack_size);
     void neg(int dest_reg, int src_reg);
 };

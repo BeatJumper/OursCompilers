@@ -122,6 +122,7 @@ std::string ArmInst::outPut()
 ILocArm64::ILocArm64(Module * _module)
 {
     this->module = _module;
+    this->current_func_stack_size = 0;
 }
 
 /// @brief 析构函数
@@ -332,6 +333,40 @@ void ILocArm64::load_symbol(int rs_reg_no, std::string name)
 void ILocArm64::load_base(int rs_reg_no, int base_reg_no, int64_t offset)
 {
     printf("Debug: load_base - 输入参数: rs_reg_no=%d, base_reg_no=%d, offset=%ld\n", rs_reg_no, base_reg_no, offset);
+
+    // 检查是否是调用者栈帧中的参数（使用负的基址寄存器编号标记）
+    if (base_reg_no < 0) {
+        // 这是调用者栈帧中的参数
+        int actual_base_reg_no = -base_reg_no; // 恢复实际的基址寄存器编号
+        std::string rsReg = PlatformArm64::regName[rs_reg_no];
+        std::string base = PlatformArm64::regName[actual_base_reg_no];
+
+        // 确保基址寄存器是64位
+        if (base[0] == 'w') {
+            base[0] = 'x';
+        }
+
+        // 计算调用者栈帧的实际偏移
+        // 当前函数分配了栈空间，所以调用者的参数位于 sp + 栈帧大小 + 参数偏移
+        int64_t actual_offset = current_func_stack_size + offset;
+
+        printf("Debug: load_base - 调用者栈帧参数: actual_offset=%ld (栈帧大小=%d + 参数偏移=%ld)\n",
+               actual_offset,
+               current_func_stack_size,
+               offset);
+
+        // 生成正确的ldr指令
+        if (actual_offset >= 0 && actual_offset <= 4095) {
+            emit("ldr", rsReg, "[" + base + ",#" + std::to_string(actual_offset) + "]");
+        } else {
+            // 偏移量太大，需要先计算地址
+            std::string temp_reg = "x" + std::to_string(ARM64_TMP_REG_NO + 32);
+            load_imm(ARM64_TMP_REG_NO + 32, actual_offset);
+            emit("add", temp_reg, base, temp_reg);
+            emit("ldr", rsReg, "[" + temp_reg + "]");
+        }
+        return;
+    }
 
     std::string rsReg = PlatformArm64::regName[rs_reg_no];
     std::string base = PlatformArm64::regName[base_reg_no];
@@ -690,6 +725,9 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 
     func->setStackFrameSize(totalSize);
 
+    // 设置当前函数的栈帧大小，用于处理调用者栈帧中的参数
+    setCurrentFuncStackSize(totalSize);
+
     // 检查栈空间大小是否超出立即数范围
     if (totalSize <= 4095) {
         // 栈空间在立即数范围内，直接使用sub指令
@@ -825,4 +863,10 @@ void ILocArm64::emitFunctionEpilogue(Function * func)
 
     // 返回
     emit("ret");
+}
+
+void ILocArm64::setCurrentFuncStackSize(int stack_size)
+{
+    this->current_func_stack_size = stack_size;
+    printf("Debug: 设置当前函数栈帧大小为 %d\n", stack_size);
 }
