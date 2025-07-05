@@ -150,7 +150,6 @@ void Instruction::transfer()
         }
         // 后8个数是仅仅在内存里的，不占寄存器，所以就不进USE了。
     } else if (Instanceof(inst, Instruction *, this)) {
-        // printf("其它指令\n");
         if (inst->hasResultValue()) {
             def_set.insert(inst);
         }

@@ -116,9 +116,8 @@ void InstSelectorArm64::run()
     for (auto inst: ir) {
         // 逐个指令进行翻译
         if (!inst->isDead()) {
-            printf("Debug: 翻译第%d条指令: %s, 寄存器编号:%d\n", i, inst->getIRName().c_str(), inst->getRegId());
+            // printf("Debug: 翻译第%d条指令: %s, 寄存器编号:%d\n", i, inst->getIRName().c_str(), inst->getRegId());
             translate(inst);
-            printf("第%d条指令翻译成功,寄存器编号:%d\n", i, inst->getRegId());
             i++;
         }
     }
@@ -129,7 +128,6 @@ void InstSelectorArm64::run()
 void InstSelectorArm64::translate(Instruction * inst)
 {
     if (inst == nullptr) {
-        printf("Error: inst is nullptr!\n");
         return;
     }
     // 操作符
@@ -187,7 +185,6 @@ void InstSelectorArm64::translate_label(Instruction * inst)
 void InstSelectorArm64::translate_goto(Instruction * inst)
 {
     if (inst->isDead()) {
-        printf("检测到一个br指令为Dead\n");
         return;
     }
     GotoInstruction * gotoInst = dynamic_cast<GotoInstruction *>(inst);
@@ -290,14 +287,11 @@ void InstSelectorArm64::translate_assign(Instruction * inst)
 /// @param op2_reg_no 源操作数2寄存器号
 void InstSelectorArm64::translate_two_operator(Instruction * inst, string operator_name)
 {
-    printf("Debug: translate_two_operator - inst=%p, operator=%s\n", inst, operator_name.c_str());
-
     Value * result = inst;
     Value * arg1 = inst->getOperand(0);
     Value * arg2 = inst->getOperand(1);
 
     if (!arg1 || !arg2) {
-        printf("Error: translate_two_operator - null operand detected\n");
         return;
     }
 
@@ -308,7 +302,6 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
     // 检查结果寄存器是否有效，如果无效则使用临时寄存器
     int actual_result_reg = result_reg_no;
     if (is_regid_valid(result_reg_no) == false) {
-        printf("Warning: translate_two_operator - result not in register, using temp register\n");
         actual_result_reg = ARM64_TMP_REG_NO + 2; // 使用第三个临时寄存器避免冲突
     }
 
@@ -317,7 +310,6 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
         ConstInt * constArg1 = dynamic_cast<ConstInt *>(arg1);
         if (constArg1 && constArg1->getVal() == 0) {
             // 这是取负操作，使用neg指令
-            printf("Debug: Detected sub 0, operand pattern, using neg instruction\n");
 
             // 确保第二个操作数在寄存器中
             if (arg2_reg_no >= 0 && arg2_reg_no < PlatformArm64::maxRegNum) {
@@ -350,12 +342,9 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
         s1 = PlatformArm64::regName[arg1_reg_no];
     } else {
         // 操作数1不在寄存器中，需要加载到临时寄存器
-        printf("Debug: arg1 not in register, loading to temp register\n");
         iloc.load_var(ARM64_TMP_REG_NO, arg1);
         s1 = PlatformArm64::regName[ARM64_TMP_REG_NO];
     }
-
-    printf("Debug: translate_two_operator - s1='%s', arg1_reg_no=%d\n", s1.c_str(), arg1_reg_no);
 
     // 处理第二个操作数
     if (Instanceof(constVal, ConstInt *, arg2)) {
@@ -373,33 +362,16 @@ void InstSelectorArm64::translate_two_operator(Instruction * inst, string operat
         s2 = PlatformArm64::regName[arg2_reg_no];
     } else {
         // 操作数2不在寄存器中，需要加载到另一个临时寄存器
-        printf("Debug: arg2 not in register, loading to temp register\n");
         // 使用不同的临时寄存器避免冲突
         int temp_reg = (s1 == PlatformArm64::regName[ARM64_TMP_REG_NO]) ? ARM64_TMP_REG_NO + 1 : ARM64_TMP_REG_NO;
         iloc.load_var(temp_reg, arg2);
         s2 = PlatformArm64::regName[temp_reg];
     }
 
-    printf("Debug: translate_two_operator - s2='%s', arg2_reg_no=%d\n", s2.c_str(), arg2_reg_no);
-    printf("Debug: translate_two_operator - generating instruction: %s %s,%s,%s\n",
-           operator_name.c_str(),
-           PlatformArm64::regName[actual_result_reg].c_str(),
-           s1.c_str(),
-           s2.c_str());
-
-    // 检查操作数是否为空
-    if (s1.empty()) {
-        printf("ERROR: translate_two_operator - s1 is empty!\n");
-    }
-    if (s2.empty()) {
-        printf("ERROR: translate_two_operator - s2 is empty!\n");
-    }
-
     iloc.inst(operator_name, PlatformArm64::regName[actual_result_reg], s1, s2);
 
     // 如果结果变量不在寄存器中，需要将结果存储到内存
     if (result_reg_no == -2) {
-        printf("Debug: storing spilled result to memory\n");
         iloc.store_var(actual_result_reg, result, ARM64_TMP_REG_NO + 3);
     }
 }
@@ -418,14 +390,8 @@ void InstSelectorArm64::translate_two_operator_float(Instruction * inst, string 
     int arg1_reg_no = arg1->getRegId();
     int arg2_reg_no = arg2->getRegId();
 
-    printf("Debug: translate_two_operator_float - result_reg=%d, arg1_reg=%d, arg2_reg=%d\n",
-           result_reg_no,
-           arg1_reg_no,
-           arg2_reg_no);
-
     // 检查结果寄存器编号有效性
     if (result_reg_no < 0 || result_reg_no >= PlatformArm64::maxRegNum) {
-        printf("Error: Invalid result register number: %d\n", result_reg_no);
         return;
     }
 
@@ -438,7 +404,6 @@ void InstSelectorArm64::translate_two_operator_float(Instruction * inst, string 
         s1 = PlatformArm64::regName[arg1_reg_no];
     } else {
         // 操作数1不在寄存器中，需要加载到临时寄存器
-        printf("Debug: arg1 not in register, loading to temp register\n");
         iloc.load_var(ARM64_TMP_REG_NO, arg1);
         s1 = PlatformArm64::regName[ARM64_TMP_REG_NO];
     }
@@ -449,17 +414,10 @@ void InstSelectorArm64::translate_two_operator_float(Instruction * inst, string 
         s2 = PlatformArm64::regName[arg2_reg_no];
     } else {
         // 操作数2不在寄存器中，需要加载到另一个临时寄存器
-        printf("Debug: arg2 not in register, loading to temp register\n");
         int temp_reg = (s1 == PlatformArm64::regName[ARM64_TMP_REG_NO]) ? ARM64_TMP_REG_NO + 1 : ARM64_TMP_REG_NO;
         iloc.load_var(temp_reg, arg2);
         s2 = PlatformArm64::regName[temp_reg];
     }
-
-    printf("Debug: Generating %s %s, %s, %s\n",
-           operator_name.c_str(),
-           PlatformArm64::regName[result_reg_no].c_str(),
-           s1.c_str(),
-           s2.c_str());
 
     // 生成浮点数运算指令
     iloc.inst(operator_name, PlatformArm64::regName[result_reg_no], s1, s2);
@@ -469,19 +427,6 @@ void InstSelectorArm64::translate_two_operator_float(Instruction * inst, string 
 /// @param inst IR指令
 void InstSelectorArm64::translate_add_i(Instruction * inst)
 {
-    printf("Debug: translate_add_i - inst=%p\n", inst);
-    if (inst) {
-        printf("Debug: translate_add_i - operands count=%d\n", inst->getOperandsNum());
-        if (inst->getOperandsNum() >= 2) {
-            Value * arg1 = inst->getOperand(0);
-            Value * arg2 = inst->getOperand(1);
-            printf("Debug: translate_add_i - arg1=%p, arg2=%p\n", arg1, arg2);
-            if (arg1)
-                printf("Debug: translate_add_i - arg1 IRName=%s\n", arg1->getIRName().c_str());
-            if (arg2)
-                printf("Debug: translate_add_i - arg2 IRName=%s\n", arg2->getIRName().c_str());
-        }
-    }
     translate_two_operator(inst, "add");
 }
 
@@ -489,23 +434,6 @@ void InstSelectorArm64::translate_add_i(Instruction * inst)
 /// @param inst IR指令
 void InstSelectorArm64::translate_sub_i(Instruction * inst)
 {
-    printf("Debug: translate_sub_i - inst=%p\n", inst);
-    if (inst) {
-        printf("Debug: translate_sub_i - operands count=%d\n", inst->getOperandsNum());
-        if (inst->getOperandsNum() >= 2) {
-            Value * arg1 = inst->getOperand(0);
-            Value * arg2 = inst->getOperand(1);
-            printf("Debug: translate_sub_i - arg1=%p, arg2=%p\n", arg1, arg2);
-            if (arg1)
-                printf("Debug: translate_sub_i - arg1 IRName=%s, regId=%d\n",
-                       arg1->getIRName().c_str(),
-                       arg1->getRegId());
-            if (arg2)
-                printf("Debug: translate_sub_i - arg2 IRName=%s, regId=%d\n",
-                       arg2->getIRName().c_str(),
-                       arg2->getRegId());
-        }
-    }
     translate_two_operator(inst, "subs");
 }
 
@@ -582,7 +510,6 @@ void InstSelectorArm64::translate_call(Instruction * inst)
             ;
         } else if (callInst->getRegId() == -2) {
             // 结果变量是溢出变量，需要将返回值存储到内存
-            printf("Debug: call result is spilled, storing to memory\n");
             iloc.store_var(0, callInst, ARM64_TMP_REG_NO);
         } else {
             // 其它情况，需要产生赋值指令
@@ -594,7 +521,6 @@ void InstSelectorArm64::translate_call(Instruction * inst)
             } else if (callInst->getType()->isPointerType()) {
                 // 指针返回值使用64位寄存器x0
                 iloc.inst("mov", PlatformArm64::regName[callInst->getRegId()], "x0");
-                printf("Debug: 指针返回值从 x0 移动到 %s\n", PlatformArm64::regName[callInst->getRegId()].c_str());
             }
         }
     }
@@ -610,7 +536,6 @@ void InstSelectorArm64::translate_call(Instruction * inst)
 void InstSelectorArm64::translate_arg(Instruction * inst)
 {
     // 翻译之前必须确保源操作数要么是寄存器，要么是内存，否则出错。
-    printf("开始翻译ARG指令, realArgCount：%d\n", realArgCount);
     Value * src = inst->getOperand(0);
 
     // 当前统计的ARG指令个数
@@ -655,7 +580,6 @@ void InstSelectorArm64::translate_br(Instruction * inst)
     // 尝试转换为 BranchInstruction
     BranchInstruction * branchInst = dynamic_cast<BranchInstruction *>(inst);
     if (!branchInst) {
-        printf("Error: Not a BranchInstruction\n");
         return;
     }
 
@@ -666,22 +590,18 @@ void InstSelectorArm64::translate_br(Instruction * inst)
 
     // 检查指针是否有效
     if (!cond || !iftrue || !iffalse) {
-        printf("Error: Invalid operands in br instruction\n");
         return;
     }
 
     // 获取条件操作数分配的寄存器号
     int32_t cond_reg_no = cond->getRegId();
-    printf("Debug: br instruction cond_reg_no = %d\n", cond_reg_no);
 
     // 生成符合标准的标签格式
     std::string trueLabel = ".L" + iftrue->getIRName();
     std::string falseLabel = ".L" + iffalse->getIRName();
-    printf("Debug: trueLabel = %s, falseLabel = %s\n", trueLabel.c_str(), falseLabel.c_str());
 
     if (cond_reg_no == -1) {
         // 条件操作数在栈上，需要先加载到临时寄存器
-        printf("Debug: Condition operand in memory, loading to temp register\n");
         iloc.load_var(ARM64_TMP_REG_NO, cond);
         iloc.inst("cmp", PlatformArm64::regName[ARM64_TMP_REG_NO], "#0");
     } else {
@@ -811,7 +731,6 @@ void InstSelectorArm64::translate_cmp(Instruction * inst)
                 arg2_str = "#" + std::to_string(const_value);
             } else {
                 // 大立即数，需要加载到寄存器
-                printf("Debug: 大立即数 %ld 需要加载到寄存器\n", const_value);
 
                 // 选择临时寄存器（避免与arg1冲突）
                 int temp_reg =
@@ -926,21 +845,15 @@ void InstSelectorArm64::translate_load(Instruction * inst)
     // 如果结果变量没有分配寄存器，使用临时寄存器
     int32_t actual_result_reg = result_regId;
     if (result_regId == -1) {
-        printf("Debug: load result not in register, using temp register\n");
         actual_result_reg = ARM64_TMP_REG_NO;
     }
 
     if (FormalParam * val = dynamic_cast<FormalParam *>(arg1)) {
-        printf("Debug: ldr源为形参\n");
         // ldr源为形参
         int32_t base_reg_id = -1;
         int64_t base_offset = -1;
         arg1->getMemoryAddr(&base_reg_id, &base_offset);
         if (val->getType()->isPointerType()) {
-            printf("Debug: ldr源为形参,为数组指针\n");
-            printf("Debug: translate_load - 形参类型: %s\n", val->getType()->toString().c_str());
-            printf("Debug: translate_load - actual_result_reg: %d\n", actual_result_reg);
-
             // 修复：指针是整数类型，必须使用整数寄存器加载
             // 如果寄存器分配器错误地分配了浮点寄存器，需要转换为对应的整数寄存器
             int target_reg = actual_result_reg;
@@ -949,27 +862,16 @@ void InstSelectorArm64::translate_load(Instruction * inst)
                 // 如果分配了浮点寄存器（63-126），需要转换为对应的整数寄存器
                 // 浮点寄存器63对应整数寄存器0，64对应1，以此类推
                 target_reg = actual_result_reg - 64;
-                printf("Debug: translate_load - 指针错误分配了浮点寄存器%d，转换为整数寄存器%d\n",
-                       actual_result_reg,
-                       target_reg);
 
                 // 对于指针加载，使用64位整数寄存器（x寄存器）
                 target_reg = target_reg + 32; // 转换为x寄存器
-                printf("Debug: translate_load - 使用64位整数寄存器: %d\n", target_reg);
             } else if (actual_result_reg >= 0 && actual_result_reg <= 31) {
                 // 如果分配了32位整数寄存器，转换为64位版本
                 target_reg = actual_result_reg + 32;
-                printf("Debug: translate_load - 32位整数寄存器转换为64位: %d -> %d\n", actual_result_reg, target_reg);
-            } else {
-                printf("Debug: translate_load - 使用原寄存器编号: %d\n", actual_result_reg);
             }
 
-            printf("Debug: translate_load - 最终使用的寄存器编号: %d\n", target_reg);
-            printf("Debug: translate_load - base_reg_id: %d, base_offset: %ld\n", base_reg_id, base_offset);
             iloc.load_base(target_reg, base_reg_id, base_offset);
         } else {
-            printf("Debug: translate_load - 形参不是指针类型\n");
-            printf("Debug: translate_load - actual_result_reg: %d\n", actual_result_reg);
             iloc.load_base(actual_result_reg, base_reg_id, base_offset);
         }
     }
@@ -977,7 +879,6 @@ void InstSelectorArm64::translate_load(Instruction * inst)
     else if (result_regId != -1) {
         // 检查arg1是否是getelementptr的结果，需要重新计算地址
         if (GetelementptrInstruction * gepResult = dynamic_cast<GetelementptrInstruction *>(arg1)) {
-            printf("Debug: load指令的源是getelementptr结果\n");
 
             // 检查getelementptr是否使用了变量索引
             // 第0个操作数是基址，从第1个操作数开始检查索引
@@ -995,8 +896,6 @@ void InstSelectorArm64::translate_load(Instruction * inst)
                 // 变量索引的getelementptr，结果在寄存器中
                 int gep_reg_id = gepResult->getRegId();
                 if (gep_reg_id >= 0) {
-                    printf("Debug: 使用变量索引getelementptr的寄存器结果: %s\n",
-                           PlatformArm64::regName[gep_reg_id + 32].c_str());
                     iloc.inst("ldr",
                               PlatformArm64::regName[result_regId],
                               "[" + PlatformArm64::regName[gep_reg_id + 32] + "]");
@@ -1006,7 +905,6 @@ void InstSelectorArm64::translate_load(Instruction * inst)
             } else {
                 // 常量索引的getelementptr，结果在内存中
                 int32_t gep_reg_id = gepResult->getRegId();
-                printf("Debug: 使用常量索引getelementptr的寄存器: %s\n", PlatformArm64::regName[gep_reg_id].c_str());
                 iloc.inst("ldr",
                           PlatformArm64::regName[actual_result_reg],
                           "[" + PlatformArm64::regName[gep_reg_id + 32] + "]");
@@ -1022,7 +920,6 @@ void InstSelectorArm64::translate_load(Instruction * inst)
 
         // 如果结果变量不在寄存器中，需要将结果存储到内存
         if (result_regId == -1) {
-            printf("Debug: storing load result to memory\n");
             if (result->getType()->isPointerType()) {
                 iloc.store_var(actual_result_reg + 32, result, ARM64_TMP_REG_NO + 1);
             } else {
@@ -1042,7 +939,6 @@ void InstSelectorArm64::translate_store(Instruction * inst)
     int32_t arg1_regId = arg1->getRegId();
 
     if (LoadInstruction * ldrVal = dynamic_cast<LoadInstruction *>(arg1)) {
-        printf("Debug: store指令的源是load指令的结果\n");
         auto * val = ldrVal->getOperand(0);
         if (FormalParam * param = dynamic_cast<FormalParam *>(val)) {
             // 检查形参的类型是否是指针类型
@@ -1056,9 +952,6 @@ void InstSelectorArm64::translate_store(Instruction * inst)
                 if (is_regid_float(arg1_regId)) {
                     // 如果被错误分配了浮点寄存器，转换为对应的整数寄存器
                     actual_reg_id = arg1_regId - 64;
-                    printf("Debug: translate_store - 指针load结果错误分配了浮点寄存器%d，转换为整数寄存器%d\n",
-                           arg1_regId,
-                           actual_reg_id);
                 }
 
                 // 对于指针类型，使用64位寄存器
@@ -1094,7 +987,6 @@ void InstSelectorArm64::translate_store(Instruction * inst)
             Value * loadSource = loadInst->getOperand(0);
             if (GlobalVariable * globalVar = dynamic_cast<GlobalVariable *>(loadSource)) {
                 globalVarName = globalVar->getName();
-                printf("Debug: translate_store - source is load from global variable %s\n", globalVarName.c_str());
             }
         }
 
@@ -1153,9 +1045,7 @@ void InstSelectorArm64::translate_store(Instruction * inst)
         }
     } else if (arg1_regId != -1) {
         // 寄存器 => 内存
-        printf("寄存器 => 内存,寄存器号:%d\n", arg1_regId);
         if (arg1->getType()->isPointerType()) {
-            printf("Debug:检测正在将数组地址store,寄存器号:%d\n", arg1->getRegId());
             int32_t dest_baseRegId = -1;
             int64_t dest_offset = -1;
             arg2->getMemoryAddr(&dest_baseRegId, &dest_offset);
@@ -1176,7 +1066,6 @@ void InstSelectorArm64::translate_store(Instruction * inst)
         }
     } else {
         // 源操作数不在寄存器中，需要先从内存加载到临时寄存器
-        printf("Debug: store source not in register, loading from memory first\n");
         int32_t temp_reg = ARM64_TMP_REG_NO + 2;
 
         // 先将源值加载到临时寄存器
@@ -1214,7 +1103,6 @@ void InstSelectorArm64::translate_ret(Instruction * inst)
         // 检查返回值是否分配了有效的寄存器
         if (retRegId == -1) {
             // 返回值没有分配寄存器，需要从内存加载到w0
-            printf("Debug: 返回值未分配寄存器，从内存加载到 w0\n");
             if (retValue->getType()->isIntegerType()) {
                 iloc.load_var(0, retValue);
             } else if (retValue->getType()->isFloatType()) {
@@ -1226,14 +1114,9 @@ void InstSelectorArm64::translate_ret(Instruction * inst)
             if (retValue->getType()->isIntegerType()) {
                 std::string srcReg = PlatformArm64::regName[retRegId];
                 iloc.inst("mov", "w0", srcReg);
-                printf("Debug: 将返回值从 %s 移动到 w0\n", srcReg.c_str());
             } else if (retValue->getType()->isFloatType()) {
                 std::string srcReg = PlatformArm64::regName[retRegId + 32]; // 浮点寄存器
-                iloc.inst("mov", "s0", srcReg);
-                printf("Debug: 将浮点返回值从 %s 移动到 s0\n", srcReg.c_str());
             }
-        } else {
-            printf("Debug: 返回值已在正确的寄存器中 (w0)\n");
         }
     }
 
@@ -1283,7 +1166,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
         // 索引为常量
         if (GetelementptrInstruction * gepBase = dynamic_cast<GetelementptrInstruction *>(basePtr)) {
             // 源是另一个getelementptr的结果
-            printf("gep源是另一个gep的结果\n");
 
             // 计算第二维的偏移
             int64_t idx = constIdx->getVal();
@@ -1291,7 +1173,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                                       // 检查gep源的类型来确定元素大小
             Type * baseType = basePtr->getType();
             if (baseType->isArrayType()) {
-                printf("计算数组地址时检测到内部元素类型为数组类型\n");
                 const ArrayType * arrayType = static_cast<const ArrayType *>(baseType);
                 const std::vector<int> & dimensions = arrayType->getDimensions();
 
@@ -1308,7 +1189,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                     element_size = arrayType->getElementType()->getSize();
                 }
             } else if (baseType->isPointerType()) {
-                printf("计算数组地址时检测到内部元素类型为指针类型\n");
                 const PointerType * ptrType = static_cast<const PointerType *>(baseType);
                 const Type * pointeeType = ptrType->getPointeeType();
                 if (pointeeType->isArrayType()) {
@@ -1341,7 +1221,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
         }
 
         else if (basePtr->getMemoryAddr(&base_reg_id, &base_offset)) {
-            printf("gep源在栈上\n");
             // gep源在栈上，计算其地址
 
             // 偏移为常量的情况
@@ -1353,7 +1232,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             // 检查gep源的类型来确定元素大小
             Type * baseType = basePtr->getType();
             if (baseType->isArrayType()) {
-                printf("计算数组地址时检测到内部元素类型为数组类型\n");
                 const ArrayType * arrayType = static_cast<const ArrayType *>(baseType);
                 const std::vector<int> & dimensions = arrayType->getDimensions();
 
@@ -1370,7 +1248,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                     element_size = arrayType->getElementType()->getSize();
                 }
             } else if (baseType->isPointerType()) {
-                printf("计算数组地址时检测到内部元素类型为指针类型\n");
                 const PointerType * ptrType = static_cast<const PointerType *>(baseType);
                 const Type * pointeeType = ptrType->getPointeeType();
                 if (pointeeType->isArrayType()) {
@@ -1421,7 +1298,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             // 地址计算将在load/store指令中进行
         } else if (auto * globalArr = dynamic_cast<GlobalVariable *>(basePtr)) {
             // gep源是全局数组
-            printf("gep源是全局数组: %s\n", globalArr->getName().c_str());
             int res_reg_id = inst->getRegId();
 
             // 加载全局数组的基地址
@@ -1443,7 +1319,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                 if (elementType->isArrayType()) {
                     // 多维数组：第一个gep计算行偏移，元素大小是整行的大小
                     element_size = elementType->getSize();
-                    printf("Debug: 多维数组第一个gep，行大小: %ld 字节\n", element_size);
                 } else {
                     // 一维数组：元素大小是基本类型大小
                     element_size = elementType->getSize();
@@ -1466,11 +1341,9 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             }
         } else if (auto * ptrType = static_cast<PointerType *>(basePtr->getType())) {
             // gep源为数组指针
-            printf("Debug:gep源为指向栈中数组地址的指针\n");
             // 先计算索引偏移
             int size = constIdx->getVal();
             if (ptrType->getPointeeType()->isArrayType()) {
-                printf("Debug:gep源为指向多维数组的指针\n");
                 // 获取维度
                 const ArrayType * arrayType = static_cast<const ArrayType *>(ptrType->getPointeeType());
                 const std::vector<int> & dimensions = arrayType->getDimensions();
@@ -1499,11 +1372,9 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
         }
     } else {
         // 索引为变量
-        printf("检测到变量索引: %s\n", index->getName().c_str());
 
         if (basePtr->getType()->isArrayType()) {
             // 检测到源为数组类型
-            printf("源为数组类型\n");
             int index_reg_id = index->getRegId();
             const ArrayType * arrayType = static_cast<const ArrayType *>(basePtr->getType());
             const std::vector<int> & dimensions = arrayType->getDimensions();
@@ -1525,9 +1396,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                     temp_size >>= 1;
                     lsl++;
                 }
-                printf("Debug: 元素大小 %d 是2的幂次，使用左移 lsl #%d\n", size, lsl);
-            } else {
-                printf("Debug: 元素大小 %d 不是2的幂次，需要使用乘法\n", size);
             }
 
             int res_reg_id = inst->getRegId();
@@ -1539,7 +1407,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             int64_t base_offset = -1;
             if (basePtr->getMemoryAddr(&base_reg_id, &base_offset)) {
                 // 数组在栈上，先计算数组基地址
-                printf("Debug: 数组在栈上，基地址计算: add %s, sp, #%ld\n", result_reg_name.c_str(), base_offset);
 
                 if (base_offset < 4096) {
                     iloc.inst("add", result_reg_name, "sp", "#" + std::to_string(base_offset));
@@ -1557,11 +1424,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
 
                 // 然后计算元素地址：add res_reg, res_reg, index_reg, lsl #shift
                 // 注意：这里需要确保index_reg和result_reg不是同一个寄存器
-                printf("Debug: 数组元素地址计算: %s = %s + %s,lsl #%d\n",
-                       result_reg_name.c_str(),
-                       result_reg_name.c_str(),
-                       index_reg_name.c_str(),
-                       lsl);
 
                 // 根据是否为2的幂次选择不同的计算方式
                 if (is_power_of_2) {
@@ -1569,7 +1431,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                     if (index_reg_id == inst->getRegId()) {
                         // 寄存器冲突：使用临时寄存器保存索引值
                         std::string temp_reg_name = "x" + std::to_string(ARM64_TMP_REG_NO);
-                        printf("Debug: 检测到寄存器冲突，使用临时寄存器 %s 保存索引\n", temp_reg_name.c_str());
                         iloc.inst("mov", temp_reg_name, index_reg_name);
                         iloc.inst("add",
                                   result_reg_name,
@@ -1601,11 +1462,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
 
                 if (is_power_of_2) {
                     // 使用左移优化
-                    printf("Debug: 数组变量索引地址计算: %s = %s + %s,lsl #%d\n",
-                           result_reg_name.c_str(),
-                           base_reg_name.c_str(),
-                           index_reg_name.c_str(),
-                           lsl);
                     iloc.inst("add", result_reg_name, base_reg_name, index_reg_name + ",lsl #" + std::to_string(lsl));
                 } else {
                     // 使用乘法指令
@@ -1623,7 +1479,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             }
         } else if (auto * globalArr = dynamic_cast<GlobalVariable *>(basePtr)) {
             // 处理全局数组变量的变量索引情况
-            printf("gep源是全局数组(变量索引): %s\n", globalArr->getName().c_str());
             int res_reg_id = inst->getRegId();
             int index_reg_id = index->getRegId();
 
@@ -1645,7 +1500,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                 if (elementType->isArrayType()) {
                     // 多维数组：第一个gep计算行偏移，元素大小是整行的大小
                     element_size = elementType->getSize();
-                    printf("Debug: 多维数组第一个gep(变量索引)，行大小: %ld 字节\n", element_size);
                 } else {
                     // 一维数组：元素大小是基本类型大小
                     element_size = elementType->getSize();
@@ -1664,14 +1518,12 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                     shift++;
                 }
 
-                printf("Debug: 使用左移优化，shift = %d\n", shift);
                 iloc.inst("add",
                           PlatformArm64::regName[res_reg_id + 32],
                           PlatformArm64::regName[res_reg_id + 32],
                           PlatformArm64::regName[index_reg_id + 32] + ",lsl #" + std::to_string(shift));
             } else {
                 // element_size不是2的幂次，使用乘法指令
-                printf("Debug: 使用乘法指令，element_size = %ld\n", element_size);
 
                 // 需要一个临时寄存器来存储element_size
                 // 使用ARM64_TMP_REG_NO作为临时寄存器
@@ -1691,7 +1543,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             }
         } else if (GetelementptrInstruction * gepBase = dynamic_cast<GetelementptrInstruction *>(basePtr)) {
             // 处理源是另一个getelementptr结果的变量索引情况
-            printf("gep源是另一个gep的结果(变量索引)\n");
             int32_t base_reg_id = -1;
             int64_t base_offset = -1;
 
@@ -1716,8 +1567,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                     }
                 }
 
-                printf("Debug: 第二个gep(变量索引)，元素大小: %ld 字节\n", element_size);
-
                 // 计算 element_size 对应的左移位数
                 int shift = 0;
                 int temp_size = element_size;
@@ -1726,7 +1575,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                     shift++;
                 }
 
-                printf("Debug: 使用第一个gep的寄存器结果: %s\n", PlatformArm64::regName[base_gep_reg + 32].c_str());
                 iloc.inst("add",
                           PlatformArm64::regName[res_reg_id + 32],
                           PlatformArm64::regName[base_gep_reg + 32],
@@ -1778,12 +1626,9 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                           PlatformArm64::regName[res_reg_id + 32],
                           PlatformArm64::regName[res_reg_id + 32],
                           PlatformArm64::regName[index_reg_id + 32] + ",lsl #" + std::to_string(shift));
-            } else {
-                printf("Warning: gep基址不在寄存器或内存中，无法处理变量索引\n");
             }
         } else if (basePtr->getType()->isPointerType()) {
             // 处理指针类型的basePtr（如函数参数i32*）
-            printf("gep源是指针类型(变量索引): %s\n", basePtr->getType()->toString().c_str());
             int res_reg_id = inst->getRegId();
             int index_reg_id = index->getRegId();
 
@@ -1803,9 +1648,6 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                     temp_size >>= 1;
                     shift++;
                 }
-                printf("Debug: 指针类型变量索引，元素大小: %d 字节是2的幂次，左移位数: %d\n", element_size, shift);
-            } else {
-                printf("Debug: 指针类型变量索引，元素大小: %d 字节不是2的幂次，使用乘法\n", element_size);
             }
 
             // 检查basePtr是否在寄存器中
@@ -1818,18 +1660,9 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
 
                 if (is_power_of_2) {
                     // 使用左移优化
-                    printf("Debug: 指针在寄存器中，地址计算: %s = %s + %s,lsl #%d\n",
-                           result_reg_name.c_str(),
-                           base_reg_name.c_str(),
-                           index_reg_name.c_str(),
-                           shift);
                     iloc.inst("add", result_reg_name, base_reg_name, index_reg_name + ",lsl #" + std::to_string(shift));
                 } else {
                     // 使用乘法指令
-                    printf("Debug: 指针在寄存器中，使用乘法: %s = %s + index * %d\n",
-                           result_reg_name.c_str(),
-                           base_reg_name.c_str(),
-                           element_size);
 
                     // 加载element_size到临时寄存器
                     iloc.load_imm(ARM64_TMP_REG_NO, element_size);
@@ -1849,30 +1682,17 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                     std::string result_reg_name = PlatformArm64::regName[res_reg_id + 32];
                     std::string index_reg_name = PlatformArm64::regName[index_reg_id + 32];
 
-                    printf("Debug: 指针在内存中，先加载指针值: ldr %s, [sp, #%ld]\n",
-                           result_reg_name.c_str(),
-                           base_offset);
-
                     // 先从内存加载指针值
                     iloc.load_base(res_reg_id + 32, base_reg_id_mem, base_offset);
 
                     // 然后计算元素地址
-                    printf("Debug: 计算元素地址: %s = %s + %s,lsl #%d\n",
-                           result_reg_name.c_str(),
-                           result_reg_name.c_str(),
-                           index_reg_name.c_str(),
-                           shift);
 
                     iloc.inst("add",
                               result_reg_name,
                               result_reg_name,
                               index_reg_name + ",lsl #" + std::to_string(shift));
-                } else {
-                    printf("Warning: 指针类型basePtr既不在寄存器也不在内存中\n");
                 }
             }
-        } else {
-            printf("Warning: 未处理的变量索引情况，basePtr类型: %s\n", basePtr->getType()->toString().c_str());
         }
     }
 }
@@ -2059,8 +1879,6 @@ void InstSelectorArm64::translate_memset(Instruction * inst)
     // 获取目标地址的寄存器
     int32_t dest_reg = dest->getRegId();
 
-    printf("memset dest_reg_id: %d\n", dest_reg);
-
     // 如果地址不在寄存器中，需要先加载地址
     if (dest_reg == -1) {
         // 目标地址不在寄存器中，需要计算地址
@@ -2069,11 +1887,6 @@ void InstSelectorArm64::translate_memset(Instruction * inst)
         if (dest->getMemoryAddr(&base_reg_id, &base_offset)) {
             // 目标在栈上，使用临时寄存器计算地址
 
-            // 打印获取的base_offset
-            printf("Debug: memset dest_reg_id: %d, base_reg_id: %d, base_offset: %ld\n",
-                   dest_reg,
-                   base_reg_id,
-                   base_offset);
             dest_reg = ARM64_TMP_REG_NO;
             std::string dest_reg_name = PlatformArm64::regName[dest_reg];
             std::string base_reg_name = PlatformArm64::regName[base_reg_id];
@@ -2108,13 +1921,11 @@ void InstSelectorArm64::translate_memset(Instruction * inst)
     // 检查设置的值（通常是0）
     ConstInt * constValue = dynamic_cast<ConstInt *>(value);
     if (!constValue) {
-        printf("Warning: memset with non-constant value not implemented\n");
         return;
     }
 
     int setValue = constValue->getVal();
     if (setValue != 0) {
-        printf("Warning: memset with non-zero value not implemented\n");
         return;
     }
 
@@ -2170,7 +1981,6 @@ void InstSelectorArm64::translate_sext(Instruction * inst)
     // 如果目标变量不在寄存器中，使用临时寄存器
     int32_t actual_dest_reg = dest_reg_no;
     if (dest_reg_no == -1) {
-        printf("Debug: sext result not in register, using temp register\n");
         actual_dest_reg = ARM64_TMP_REG_NO + 1;
     }
 
@@ -2185,13 +1995,10 @@ void InstSelectorArm64::translate_sext(Instruction * inst)
             dest_reg_name = "x" + std::to_string(actual_dest_reg);
         }
         iloc.inst("sxtw", dest_reg_name, src_reg_name);
-    } else {
-        printf("sext暂时不支持这种转换\n");
     }
 
     // 如果目标变量不在寄存器中，需要将结果存储到内存
     if (dest_reg_no == -1) {
-        printf("Debug: storing sext result to memory\n");
         iloc.store_var(actual_dest_reg, inst, ARM64_TMP_REG_NO + 2);
     }
 }
@@ -2230,7 +2037,6 @@ void InstSelectorArm64::translate_zext(Instruction * inst)
     // 如果目标变量不在寄存器中，使用临时寄存器
     int32_t actual_dest_reg = dest_reg_no;
     if (dest_reg_no == -1) {
-        printf("Debug: zext result not in register, using temp register\n");
         actual_dest_reg = ARM64_TMP_REG_NO + 1;
     }
 
@@ -2240,16 +2046,11 @@ void InstSelectorArm64::translate_zext(Instruction * inst)
 
     if (srcBitWidth == 1 && destBitWidth == 32) {
         // i1 -> i32: 布尔值零扩展到32位整数
-        printf("Debug: Generating mov instruction for i1->i32 (zext)\n");
         iloc.inst("mov", dest_reg_name, src_reg_name);
-    } else {
-        // 其他情况,暂不支持
-        printf("Debug: 暂不支持这种类型的zext\n");
     }
 
     // 如果目标变量不在寄存器中，需要将结果存储到内存
     if (dest_reg_no == -1) {
-        printf("Debug: storing zext result to memory\n");
         iloc.store_var(actual_dest_reg, inst, ARM64_TMP_REG_NO + 2);
     }
 }

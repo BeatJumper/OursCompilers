@@ -26,7 +26,7 @@ ControlFlowGraph::ControlFlowGraph(Function * func)
         for (LabelInstruction * label: node->get_son_label_list()) {
             Node_CFG * son = get_CFG_from_label(label);
             assert(son != nullptr);
-            // std::cout << node->getIRCode()->getCode().size() << std::endl;
+
             node->get_next_nodes()[i++] = son;
             assert(node->get_next_nodes()[0]);
         }
@@ -117,42 +117,13 @@ Node_CFG::Node_CFG(ControlFlowGraph * _graph, InterCode * BasicIRBlock)
     for (auto inst: IRCode->getCode()) {
         std::string s;
         inst->toString(s);
-        // std::cout << s << "\n";
+
     }
 
-    /*
-    auto insts = BasicIRBlock->getInsts();
-    // 遍历，寻找溢出变量并处理
-    for (int i = 0; i < insts.size();) {
-        Instruction * inst = insts[i];
-
-        // 对溢出变量的每次USE，都用一个新Value代替，这个新Value即为StackLdrInstruction的返回值Value
-        for (int op_index = 0; op_index < inst->getOperandsNum(); op_index++) {
-            Value * op_val = inst->getOperand(op_index);
-            if (op_val->get_isleaked()) {
-                // 新的Value
-                StackLdrInstruction * newval = new StackLdrInstruction(_graph->get_func(), op_val, op_val->getType());
-                // 插入新Value的取内存指令
-                insts.insert(insts.begin() + i, newval);
-                // 是在i位置前面插入的，所以插入后i位置是新插入的Value，需要把i额外加1
-                i++;
-                // 溢出变量的出现也替换为新Value了
-                inst->getOperands()[op_index]->setUsee(newval);
-            }
-        }
-        i++;
-    }
-    */
 
     for (Instruction * inst: (BasicIRBlock->getInsts())) {
         // 计算DEF和USE
         inst->transfer();
-
-        // get_value_list()方法弃用
-        /*
-        // 记录到Value表
-        _graph->get_value_list().insert(inst);
-        */
 
         switch (inst->getOp()) {
             case IRInstOperator::IRINST_OP_GOTO: {
@@ -160,13 +131,11 @@ Node_CFG::Node_CFG(ControlFlowGraph * _graph, InterCode * BasicIRBlock)
                 LabelInstruction * target_label = ((GotoInstruction *) inst)->getTarget();
                 // 记录子节点Label名
                 add_label_for_successor(target_label);
-                // printf("有Goto\n");
                 break;
             }
             case IRInstOperator::IRINST_OP_LABEL: {
                 // 将基本块自己的Label指令和自己的控制流节点联系起来
                 _graph->add_label_for_CFG((LabelInstruction *) inst, this);
-                // printf("有Label\n");
                 break;
             }
             case IRInstOperator::IRINST_OP_BRANCH: {

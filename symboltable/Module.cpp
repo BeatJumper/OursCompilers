@@ -330,7 +330,6 @@ bool Module::registerVariableToCurrentScope(const std::string & name, Value * va
     if (existingVar) {
         // 当前作用域已有同名变量，这在预分配模式下是错误的
         // 因为每个变量声明都应该对应一个唯一的预分配变量
-        printf("Error: Variable '%s' already registered in current scope (duplicate declaration)\n", name.c_str());
         return false;
     }
 
@@ -429,7 +428,6 @@ void Module::outputIR(const std::string & filePath)
 
     FILE * fp = fopen(filePath.c_str(), "w");
     if (nullptr == fp) {
-        printf("fopen() failed\n");
         return;
     }
 
@@ -501,14 +499,12 @@ GlobalVariable * Module::newGlobalConstant(Type * type, std::string name, Value 
     // 检查是否已存在
     GlobalVariable * existingVar = findGlobalVariable(name);
     if (existingVar) {
-        printf("Error: Global constant '%s' already exists.\n", name.c_str());
         return nullptr;
     }
 
     // 创建全局变量作为常量
     GlobalVariable * constVar = newGlobalVariable(type, name);
     if (!constVar) {
-        printf("Error: Failed to create global variable for constant '%s'.\n", name.c_str());
         return nullptr;
     }
 

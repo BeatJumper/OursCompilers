@@ -135,12 +135,6 @@ bool IRGenerator::run()
     // 从根节点进行遍历
     node = ir_visit_ast_node(root);
 
-    if (node) {
-        printf("Debug: Successfully processed root node.\n");
-    } else {
-        printf("Debug: Failed to process root node.\n");
-    }
-
     return node != nullptr;
 }
 
@@ -180,7 +174,6 @@ ast_node * IRGenerator::ir_visit_ast_node(ast_node * node)
 bool IRGenerator::ir_default(ast_node * node)
 {
     // 未知的节点
-    printf("Unkown node(%d)\n", (int) node->node_type);
     return true;
 }
 
@@ -209,11 +202,9 @@ bool IRGenerator::ir_compile_unit(ast_node * node)
 /// @return 翻译是否成功，true：成功，false：失败
 bool IRGenerator::ir_function_define(ast_node * node)
 {
-    // printf("==== ENTER ir_function_define ====\n");
 
     // 检查是否有嵌套函数定义（不允许）
     if (module->getCurrentFunction()) {
-        printf("Error: Nested function definition is not allowed.\n");
         return false;
     }
 
@@ -230,7 +221,6 @@ bool IRGenerator::ir_function_define(ast_node * node)
     // 创建新函数
     Function * newFunc = module->newFunction(name_node->name, type_node->type);
     if (!newFunc) {
-        printf("Error: Function %s already exists.\n", name_node->name.c_str());
         return false;
     }
 
@@ -249,7 +239,6 @@ bool IRGenerator::ir_function_define(ast_node * node)
 
     // 处理函数形参
     if (!ir_function_formal_params(param_node)) {
-        printf("Error: Failed to process function parameters.\n");
         return false;
     }
     irCode.addInst(param_node->blockInsts);
@@ -281,23 +270,17 @@ bool IRGenerator::ir_function_define(ast_node * node)
     // 预扫描所有作用域，收集所有变量声明（包括同名变量）
     std::vector<LocalVarInfo> localVars;
     if (!collectLocalVariables(block_node, localVars)) {
-        printf("Error: Failed to collect local variables in function '%s'.\n", name_node->name.c_str());
         return false;
     }
 
     // 在函数开始时生成所有局部变量的alloca指令
     if (!generateAllocaInstructions(localVars, irCode)) {
-        printf("Error: Failed to generate alloca instructions in function '%s'.\n", name_node->name.c_str());
         return false;
     }
-
-    // printf("Debug: Generated %zu alloca instructions for function '%s'\n", localVars.size(),
-    // name_node->name.c_str());
 
     // 处理函数体（不需要新的作用域，因为函数本身就是一个作用域）
     block_node->needScope = false;
     if (!ir_block(block_node)) {
-        printf("Error: Failed to process function body.\n");
         return false;
     }
 
@@ -338,18 +321,15 @@ bool IRGenerator::ir_function_define(ast_node * node)
     DeadCodeElimination dce;
     bool optimized = dce.eliminateDeadCode(newFunc);
     if (optimized) {
-        // printf("Dead code elimination applied to function %s\n", name_node->name.c_str());
     }
 
     // 恢复外部状态
     module->setCurrentFunction(nullptr);
     module->leaveScope();
 
-    // printf("==== EXIT ir_function_define ====\n");
-    // printf("Function has %zu instructions\n", irCode.getInsts().size());
     std::string fullIR;
     newFunc->toString(fullIR);
-    // printf("Final IR after rename:\n%s\n", fullIR.c_str());
+
     return true;
 }
 
@@ -368,7 +348,6 @@ bool IRGenerator::ir_function_formal_params(ast_node * node)
     // 获取当前正在处理的函数
     Function * currentFunc = module->getCurrentFunction();
     if (!currentFunc) {
-        printf("Error: No current function in ir_function_formal_params.\n");
         return false;
     }
 
@@ -379,7 +358,6 @@ bool IRGenerator::ir_function_formal_params(ast_node * node)
     for (auto & paramNode: node->sons) {
         // 每个形参节点应该有两个子节点：类型节点和变量名节点
         if (paramNode->sons.size() != 2) {
-            printf("Error: Invalid parameter node structure in ir_function_formal_params.\n");
             return false;
         }
 
@@ -410,7 +388,6 @@ bool IRGenerator::ir_function_formal_params(ast_node * node)
         Value * paramVar = module->newVarValue(localVarType, nameNode->name);
 
         if (!paramVar) {
-            printf("Error: Failed to create local variable for parameter '%s'.\n", nameNode->name.c_str());
             return false;
         }
 
@@ -461,7 +438,6 @@ bool IRGenerator::ir_function_call(ast_node * node)
     // 根据函数名查找函数，看是否存在。若不存在则出错
     auto calledFunction = module->findFunction(funcName);
     if (nullptr == calledFunction) {
-        printf("Error: Function '%s' not found at line %ld.\n", funcName.c_str(), lineno);
         return false;
     }
 
@@ -541,7 +517,6 @@ bool IRGenerator::ir_function_call(ast_node * node)
                 if (expectedType->isFloatType() && paramValue->getType()->isIntegerType()) {
                     paramValue = convertToFloat(paramValue, currentFunc, node->blockInsts);
                     if (!paramValue) {
-                        printf("Error: Failed to convert parameter to float type in function call.\n");
                         return false;
                     }
                 }
@@ -549,7 +524,6 @@ bool IRGenerator::ir_function_call(ast_node * node)
                 else if (expectedType->isIntegerType() && paramValue->getType()->isFloatType()) {
                     paramValue = convertToInt(paramValue, currentFunc, node->blockInsts);
                     if (!paramValue) {
-                        printf("Error: Failed to convert parameter to integer type in function call.\n");
                         return false;
                     }
                 }
@@ -562,11 +536,6 @@ bool IRGenerator::ir_function_call(ast_node * node)
 
     // 参数个数检查
     if (loadedParams.size() != calledFunction->getParams().size()) {
-        printf("Error: Function '%s' parameter count mismatch at line %ld. Expected %zu, got %zu.\n",
-               funcName.c_str(),
-               lineno,
-               calledFunction->getParams().size(),
-               loadedParams.size());
         return false;
     }
 
@@ -866,11 +835,9 @@ bool IRGenerator::ir_div_or_fdiv(ast_node * node)
 
     if ((leftConstInt || leftConstFloat) && (rightConstInt || rightConstFloat)) {
         // 常量折叠：两个操作数都是常量
-        // printf("Debug: Performing constant folding for division\n");
 
         // 检查除零错误
         if ((rightConstInt && rightConstInt->getVal() == 0) || (rightConstFloat && rightConstFloat->getVal() == 0.0f)) {
-            printf("Error: Division by zero in constant folding\n");
             return false;
         }
 
@@ -1531,14 +1498,12 @@ bool IRGenerator::ir_assign(ast_node * node)
     // 赋值运算符的左侧操作数
     ast_node * left = ir_visit_ast_node(son1_node);
     if (!left || !left->val) {
-        printf("Error: Left operand has no Value in ir_assign.\n");
         return false;
     }
 
     // 赋值运算符的右侧操作数
     ast_node * right = ir_visit_ast_node(son2_node);
     if (!right || !right->val) {
-        printf("Error: Right operand has no Value in ir_assign.\n");
         return false;
     }
 
@@ -1566,9 +1531,6 @@ bool IRGenerator::ir_assign(ast_node * node)
 
     // 检查 rightValue 的类型
     if (rightValue->getType()->isPointerType()) {
-        printf("Error: Attempting to store pointer value instead of actual value in ir_assign.\n");
-        // printf("Debug: Right operand type: %s\n", rightValue->getType()->toString().c_str());
-        // printf("Debug: Right operand IR name: %s\n", rightValue->getIRName().c_str());
         return false;
     }
 
@@ -1584,14 +1546,12 @@ bool IRGenerator::ir_assign(ast_node * node)
         // 目标类型是浮点数，源类型不是，需要转换
         rightValue = convertToFloat(rightValue, module->getCurrentFunction(), node->blockInsts);
         if (!rightValue) {
-            printf("Error: Failed to convert right operand to float type in ir_assign.\n");
             return false;
         }
     } else if (targetType->isIntegerType() && !rightValue->getType()->isIntegerType()) {
         // 目标类型是整数，源类型不是，需要转换
         rightValue = convertToInt(rightValue, module->getCurrentFunction(), node->blockInsts);
         if (!rightValue) {
-            printf("Error: Failed to convert right operand to integer type in ir_assign.\n");
             return false;
         }
     }
@@ -1620,7 +1580,6 @@ Value * IRGenerator::convertToFloat(Value * val, Function * func, InterCode & bl
         return convInst;
     }
 
-    printf("Error: Cannot convert value to float type\n");
     return nullptr;
 }
 
@@ -1636,8 +1595,6 @@ Value * IRGenerator::convertToInt(Value * val, Function * func, InterCode & bloc
         blockInsts.addInst(convInst);
         return convInst;
     }
-
-    printf("Error: Cannot convert value to integer type\n");
     return nullptr;
 }
 /// @brief return节点翻译成线性中间IR
@@ -1648,7 +1605,6 @@ bool IRGenerator::ir_return(ast_node * node)
     // 获取当前函数
     Function * currentFunc = module->getCurrentFunction();
     if (!currentFunc) {
-        printf("Error: Return statement outside function.\n");
         return false;
     }
 
@@ -1662,7 +1618,6 @@ bool IRGenerator::ir_return(ast_node * node)
         ast_node * son_node = node->sons[0];
         right = ir_visit_ast_node(son_node);
         if (!right) {
-            printf("Error: Failed to evaluate return expression.\n");
             return false;
         }
         node->blockInsts.addInst(right->blockInsts);
@@ -1704,7 +1659,6 @@ bool IRGenerator::ir_return(ast_node * node)
             }
         }
     } else if (!returnType->isVoidType()) {
-        printf("Error: Non-void function should return a value.\n");
         return false;
     }
 
@@ -1719,7 +1673,6 @@ bool IRGenerator::ir_return(ast_node * node)
     // 跳转到函数出口
     Instruction * exitLabel = currentFunc->getExitLabel();
     if (!exitLabel) {
-        printf("Error: No exit label defined for function.\n");
         return false;
     }
 
@@ -1784,7 +1737,6 @@ bool IRGenerator::ir_leaf_node_uint(ast_node * node)
             value = static_cast<int32_t>(static_cast<uint32_t>(temp));
         }
     } catch (const std::exception & e) {
-        printf("Error: Failed to parse integer literal '%s': %s\n", numStr.c_str(), e.what());
         return false;
     }
 
@@ -1841,8 +1793,6 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
 {
     // 确保节点有两个子节点：类型节点和变量名或赋值节点
     if (node->sons.size() < 2) {
-        printf("Error: Invalid node structure in ir_variable_declare. Expected 2 children, got %zu.\n",
-               node->sons.size());
         return false;
     }
 
@@ -1850,7 +1800,6 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
     ast_node * varOrAssignNode = node->sons[1];
 
     if (!typeNode || !varOrAssignNode) {
-        printf("Error: Null typeNode or varOrAssignNode in ir_variable_declare.\n");
         return false;
     }
 
@@ -1861,7 +1810,6 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
     if (varOrAssignNode->node_type == ast_operator_type::AST_OP_ASSIGN) {
         // 带初始化的声明
         if (varOrAssignNode->sons.size() < 2) {
-            printf("Error: Invalid assignment structure in ir_variable_declare.\n");
             return false;
         }
 
@@ -1869,7 +1817,6 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
         initExprNode = varOrAssignNode->sons[1];
 
         if (!varNode || !initExprNode) {
-            printf("Error: Null varNode or initExprNode in assignment.\n");
             return false;
         }
     } else {
@@ -1886,7 +1833,6 @@ bool IRGenerator::ir_variable_declare(ast_node * node)
             if (dimNode->node_type == ast_operator_type::AST_OP_LEAF_LITERAL_UINT) {
                 dimensions.push_back(dimNode->integer_val);
             } else {
-                printf("Error: Non-constant array dimension in variable declaration.\n");
                 return false;
             }
         }
