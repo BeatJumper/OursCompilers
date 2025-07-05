@@ -277,7 +277,7 @@ void CodeGeneratorArm64::spill(Function * func, InterferenceGraph * graph_ig)
     node_IG * most_degree_node = nullptr;
     // assert(graph_ig->uncolored_node_set.size());
     for (node_IG * node: graph_ig->uncolored_node_set) {
-        if (node->val->getRegId() != -1) {
+        if (node->val->getRegId() != -1 || node->val->get_isleaked()) {
             continue;
         }
         if (most_degree_node == nullptr || most_degree_node->degree() < node->degree()) {
@@ -295,9 +295,13 @@ void CodeGeneratorArm64::spill(Function * func, InterferenceGraph * graph_ig)
     }
 
     // 为溢出该变量分配的栈空间
-    LocalVariable * localval = nullptr;
+    MemVariable * memval = nullptr;
 
     Value * most_degree_val = most_degree_node->val;
+
+    // 将其设置为已经溢出，此后就不再溢出了
+    most_degree_val->set_leaked();
+
     // int32_t reg_now = most_degree_val->getRegId();
     auto & insts = func->getInterCode().getInsts();
 
@@ -307,19 +311,23 @@ void CodeGeneratorArm64::spill(Function * func, InterferenceGraph * graph_ig)
 
         if (insts[i]->get_def_set().count(most_degree_val)) {
             // DEF是其中某一个操作数的情况
-            if (localval == nullptr) {
-                localval = func->newLocalVarValue(most_degree_val->getType());
+            if (memval == nullptr) {
+                memval = func->newMemVariable(most_degree_val->getType());
             }
-            Instruction * strinst = new StoreInstruction(func, most_degree_val, localval);
+            Instruction * strinst = new StoreInstruction(func, most_degree_val, memval);
             insts.insert(insts.begin() + i + 1, strinst);
         }
         if (insts[i]->get_use_set().count(most_degree_val)) {
-            if (localval == nullptr) {
-                localval = func->newLocalVarValue(most_degree_val->getType());
+            if (memval == nullptr) {
+                memval = func->newMemVariable(most_degree_val->getType());
             }
             // regval_read = new Value(most_degree_val->getType());
             // regval_read->setRegId(reg_now);
-            Instruction * ldrinst = new LoadInstruction(func, nullptr, localval);
+            Instruction * ldrinst = new LoadInstruction(func, nullptr, memval);
+
+            // 同样设置为已经溢出，此后不再溢出它
+            ldrinst->set_leaked();
+
             insts.insert(insts.begin() + i, ldrinst);
             i++;
             for (int k = 0; k < insts[i]->getOperandsNum(); k++) {
@@ -354,6 +362,9 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     protectedRegNo.push_back(ARM64_LX_REG_NO);
     printf("寄存器分配中段\n");
 
+    // 将一开始IR代码里的局部变量优化，将其彻底当成寄存器变量使用
+    adjustLocalToReg(func);
+
     // 调整函数调用指令，主要是前8个寄存器传值，后面用栈传递
     // 为了更好的进行寄存器分配，可以进行对函数调用的指令进行预处理
     // 当然也可以不做处理，不过性能更差。这个处理是可选的。
@@ -378,9 +389,9 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     for (bool is_float: forfloat) {
         while (true) {
             // 创建干涉图
-            // InterferenceGraph * graph_ig1 = new InterferenceGraph(func, is_float);
+            InterferenceGraph * graph_ig1 = new InterferenceGraph(func, is_float);
 
-            // spill(func, graph_ig1);
+            spill(func, graph_ig1);
 
             InterferenceGraph * graph_ig = new InterferenceGraph(func, is_float);
 
@@ -417,6 +428,12 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
         }
     }
 
+    printf("所有指令列表\n");
+    for (Instruction * inst: func->getInterCode().getCode()) {
+        printval(inst);
+    }
+    printf("指令列表结束\n");
+
     // 为局部变量、数组、返回值、保护寄存器分配栈空间
     stackAlloc(func);
 
@@ -444,6 +461,52 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     // 保护寄存器的内存分配见ILocArm64::allocStack和ILocArm64::emitFunctionEpilogue处改动
 
     printf("为局部变量和临时变量在栈内分配空间\n");
+}
+
+void CodeGeneratorArm64::adjustLocalToReg(Function * func)
+{
+    auto & insts = func->getInterCode().getInsts();
+    map<Value *, Value *> replace_list;
+
+    // 先扫描出IR里所有对局部变量进行存取的指令并删除，得出哪些临时变量需要替换为原始的局部变量
+    for (size_t i = 0; i < insts.size(); i++) {
+        if (Instanceof(inst, StoreInstruction *, insts[i])) {
+            Value * ptr = insts[i]->getOperand(1);
+            if (Instanceof(localval, LocalVariable *, ptr)) {
+                Value * val = insts[i]->getOperand(0);
+                MoveInstruction * movinst = new MoveInstruction(func, ptr, val);
+                insts[i] = movinst;
+            }
+        } else if (Instanceof(inst, LoadInstruction *, insts[i])) {
+            Value * ptr = insts[i]->getOperand(0);
+            if (Instanceof(localval, LocalVariable *, ptr)) {
+                replace_list[inst] = localval;
+            }
+            printval(insts[i]);
+            insts.erase(insts.begin() + i);
+            i--;
+        }
+    }
+
+    // 然后根据替换表进行替换
+    for (size_t i = 0; i < insts.size(); i++) {
+        for (int index = 0; index < insts[i]->getOperandsNum(); index++) {
+            Value * operand = insts[i]->getOperand(index);
+            if (replace_list.count(operand)) {
+                // printf("被替换的:");
+                // printval(operand);
+                insts[i]->getOperands()[index]->setUsee(replace_list[operand]);
+            }
+        }
+    }
+
+    /*
+    func->renameIR();
+    printf("调整局部变量的str和ldr后所有指令列表\n");
+    for (Instruction * inst: insts) {
+        printval(inst);
+    }
+    */
 }
 
 /// @brief 寄存器分配前对常数进行扫描，对一些常数提前追加MOV指令
@@ -599,7 +662,6 @@ void CodeGeneratorArm64::adjustFormalParamInsts(Function * func)
         FormalParam * resVal = new FormalParam(params[k]->getType(), params[k]->getName());
         LoadInstruction * ldrinst = new LoadInstruction(func, resVal, params[k]);
 
-
         ldrinst->setRegId(k);
         params[k]->setRegId(k);
         // 把原来引用形参的地方替换为ldrinst的引用
@@ -625,6 +687,10 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
         // 检查是否是函数调用指令，并且含有返回值
         if (Instanceof(callInst, FuncCallInstruction *, *pIter)) {
 
+            MoveInstruction * movinst = new MoveInstruction(func, callInst, PlatformArm64::intRegVal[0]);
+            pIter = insts.insert(pIter + 1, movinst);
+            pIter++;
+
             // 实参前8个要寄存器传值，其它参数通过栈传递
             Function * f = module->findFunction(callInst->getCalledName());
             int32_t argNum = f->getParams().size();
@@ -640,6 +706,7 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 // 新建一个内存变量，把实参的值保存到栈中，以便栈传值，其寻址为SP + 非负偏移
 
                 MemVariable * newVal = func->newMemVariable(arg->getType());
+
                 newVal->setMemoryAddr(ARM64_SP_REG_NO, esp);
                 esp += 8;
 
@@ -664,11 +731,16 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
 
                 auto arg = callInst->getOperand(k);
 
+                /*
                 // 创建一个新的临时变量来表示寄存器参数，并设置其寄存器ID
                 Value * regParam = new Value(arg->getType());
 
                 // 统一使用0-7的寄存器ID，在汇编生成时根据类型选择正确的寄存器名
                 regParam->setRegId(k);
+                */
+
+                // 这里直接用RegVariable了，不用新建Value
+                Value * regParam = PlatformArm64::intRegVal[k];
 
                 // 检查源操作数是否已经在目标寄存器中，避免生成自赋值指令
                 if (arg->getRegId() != regParam->getRegId()) {

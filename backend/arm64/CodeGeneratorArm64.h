@@ -62,6 +62,10 @@ protected:
     /// @param func 要处理的函数
     void adjustSomeInsts(Function * func);
 
+    /// @brief 扫描所有局部变量并调整指令，此后将局部变量完全当做寄存器变量使用
+    /// @param func 要处理的函数
+    void adjustLocalToReg(Function * func);
+
     ///
     /// @brief 获取IR变量相关信息字符串
     /// @param str

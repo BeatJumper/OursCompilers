@@ -137,8 +137,12 @@ void Instruction::transfer()
             }
             def_set.insert(PlatformArm64::intRegVal[index + 63]);
         }
+
+        // Funccall指令拆解后，这个不用加了
+        /*
         // 最后再在DEF集上添加FuncCallInstruction自己
         def_set.insert(this);
+        */
 
         // 接下来是USE集的添加
 

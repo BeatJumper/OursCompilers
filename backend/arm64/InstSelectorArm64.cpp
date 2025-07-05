@@ -581,10 +581,15 @@ void InstSelectorArm64::translate_call(Instruction * inst)
             // 结果变量的寄存器和返回值寄存器一样，则什么都不需要做
             ;
         } else if (callInst->getRegId() == -2) {
+            // 把溢出的变量存进内存已经在编译器分配时弄了
+            /*
             // 结果变量是溢出变量，需要将返回值存储到内存
             printf("Debug: call result is spilled, storing to memory\n");
             iloc.store_var(0, callInst, ARM64_TMP_REG_NO);
+            */
         } else {
+            // 不需要了
+            /*
             // 其它情况，需要产生赋值指令
             // 根据返回值类型选择正确的返回寄存器
             if (callInst->getType()->isIntegerType()) {
@@ -596,6 +601,7 @@ void InstSelectorArm64::translate_call(Instruction * inst)
                 iloc.inst("mov", PlatformArm64::regName[callInst->getRegId()], "x0");
                 printf("Debug: 指针返回值从 x0 移动到 %s\n", PlatformArm64::regName[callInst->getRegId()].c_str());
             }
+            */
         }
     }
 

@@ -51,6 +51,9 @@ protected:
 
     int32_t regId = -1;
 
+    /// @brief 该变量是否已溢出，初始全都没溢出（即使是局部变量，一开始也先不溢出）
+    bool spilled = false;
+
 public:
     /// @brief 构造函数
     /// @param _type
@@ -135,4 +138,7 @@ public:
     /// @brief 获取一个变量是否被设置为溢出的
     /// @return 是否溢出到栈
     bool get_isleaked();
+
+    /// @brief 设置一个变量的溢出标志
+    void set_leaked();
 };

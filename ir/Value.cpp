@@ -155,3 +155,13 @@ void Value::setRegId(int32_t _regId)
     regId = _regId;
     // std::cout << "setRegId " << regId << std::endl;
 }
+
+bool Value::get_isleaked()
+{
+    return spilled;
+}
+
+void Value::set_leaked()
+{
+    spilled = true;
+}
