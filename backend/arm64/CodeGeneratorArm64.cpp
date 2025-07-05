@@ -56,18 +56,12 @@ void CodeGeneratorArm64::genHeader()
 /// @brief 全局变量Section，主要包含初始化的和未初始化过的
 void CodeGeneratorArm64::genDataSection()
 {
-    printf("genDataSection\n");
     // 生成数据段
     bool bssStarted = false;
     bool dataStarted = false;
 
     // 全局变量分两种情况：初始化的全局变量和未初始化的全局变量
     for (auto var: module->getGlobalVariables()) {
-        printf("Debug: Processing global variable '%s', isInBSSSection=%d, initValueList.size()=%zu, hasInitValue=%d\n",
-               var->getName().c_str(),
-               var->isInBSSSection(),
-               var->getInitValueList().size(),
-               var->getInitValue() != nullptr);
         // 检查变量是否真的应该放在BSS段（没有任何初始化值）
         bool shouldBeInBSS = var->isInBSSSection() && var->getInitValueList().empty() && !var->getInitValue();
 
@@ -89,15 +83,12 @@ void CodeGeneratorArm64::genDataSection()
             Type * actualType = var->getStorageType() ? var->getStorageType() : var->getType();
 
             if (actualType->isArrayType()) {
-                printf("Debug: BSS段数组 %s，实际类型: %s\n", var->getName().c_str(), actualType->toString().c_str());
                 int totalSize = actualType->getSize();
                 int wordCount = (totalSize + 3) / 4; // 向上取整到字边界
-                printf("Debug: 总大小: %d字节，需要 %d 个word\n", totalSize, wordCount);
 
                 // 对于大数组，使用.space指令而不是逐个.word 0
                 if (wordCount > 1000) {
                     fprintf(fp, "	.space %d\n", totalSize);
-                    printf("Debug: BSS段使用.space指令分配 %d 字节的零初始化内存\n", totalSize);
                 } else {
                     for (int i = 0; i < wordCount; i++) {
                         fprintf(fp, "	.word 0\n");
@@ -137,9 +128,7 @@ void CodeGeneratorArm64::genDataSection()
 
                 if (isArrayType || !var->getInitValueList().empty()) {
                     // 处理数组类型全局变量的初始化值列表
-                    printf("处理数组类型全局变量的初始化值列表\n");
                     if (!var->getInitValueList().empty()) {
-                        printf("数组初始化值列表非空\n");
                         auto & initValues = var->getInitValueList();
                         expandAndOutputInitValues(initValues);
 
@@ -167,7 +156,6 @@ void CodeGeneratorArm64::genDataSection()
                             if (totalElements > 1000) {
                                 int totalBytes = totalElements * 4; // 每个元素4字节
                                 fprintf(fp, "	.space %d\n", totalBytes);
-                                printf("Debug: 使用.space指令分配 %d 字节的零初始化内存\n", totalBytes);
                             } else {
                                 for (int i = 0; i < totalElements; i++) {
                                     fprintf(fp, "	.word 0\n");
@@ -180,7 +168,6 @@ void CodeGeneratorArm64::genDataSection()
                             if (totalElements > 1000) {
                                 int totalBytes = totalElements * 4; // 每个元素4字节
                                 fprintf(fp, "	.space %d\n", totalBytes);
-                                printf("Debug: 使用.space指令分配 %d 字节的零初始化内存\n", totalBytes);
                             } else {
                                 for (int i = 0; i < totalElements; i++) {
                                     fprintf(fp, "	.word 0\n");
@@ -255,7 +242,6 @@ void CodeGeneratorArm64::genCodeSection(Function * func)
 
     // 删除无用的Label指令
     iloc.deleteUsedLabel();
-    printf("删除无用的Label指令\n");
 
     // ILOC代码输出为汇编代码
     // 函数入口标签 - 直接生成全局标签
@@ -263,7 +249,6 @@ void CodeGeneratorArm64::genCodeSection(Function * func)
     fprintf(fp, ".type %s, %%function\n", func->getName().c_str());
     fprintf(fp, ".align %d\n", func->getAlignment());
     fprintf(fp, "%s:\n", func->getName().c_str()); // 直接输出函数名标签
-    printf("函数入口标签\n");
 
     // 开启时输出IR指令作为注释
     if (this->showLinearIR) {
@@ -286,7 +271,6 @@ void CodeGeneratorArm64::genCodeSection(Function * func)
                 }
             }
         }
-        printf("输出指令关联的临时变量信息\n");
     }
     iloc.outPut(fp);
     fprintf(fp, "\n");
@@ -307,12 +291,6 @@ void CodeGeneratorArm64::spill(Function * func, InterferenceGraph * graph_ig)
     }
     if (most_degree_node == nullptr) {
         return;
-    }
-    std::cout << "most degree = " << most_degree_node->degree() << std::endl;
-    printval(most_degree_node->val);
-    printf("neighbors:\n");
-    for (node_IG * neighbor: most_degree_node->neighbors) {
-        printval(neighbor->val);
     }
 
     // 为溢出该变量分配的栈空间
@@ -373,26 +351,26 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
 
     protectedRegNo.push_back(ARM64_FP_REG_NO);
     protectedRegNo.push_back(ARM64_LX_REG_NO);
-    printf("寄存器分配中段\n");
 
     // 调整函数调用指令，主要是前8个寄存器传值，后面用栈传递
     // 为了更好的进行寄存器分配，可以进行对函数调用的指令进行预处理
     // 当然也可以不做处理，不过性能更差。这个处理是可选的。
     // 当前函数的指令列表
     adjustFuncCallInsts(func);
-    printf("调整函数调用指令\n");
 
-    adjustFormalParamInsts(func);
+    auto & params = func->getParams();
+    printf("params: %d\n", int(params.size()));
+
+    // 形参的前8个通过寄存器来传值X0-X7
+    for (int k = 0; k < (int) params.size() && k <= 7; k++) {
+
+        // 前八个设置分配寄存器
+
+        params[k]->setRegId(k);
+    }
 
     // 给一些指令添加临时调整指令
     adjustSomeInsts(func);
-
-    // 目前renameIR在创建干涉图阶段产生，因为renameIR为了能给adjust新建的IR命名需要DEF和USE集
-    // 因此需要调用Instruction类的transfer()来更新DEF和USE集
-    /*
-    // 加完新指令后也该重新调整IR编号
-    func->renameIR();
-    */
 
     // 主要染色过程（不断尝试染色直至成功）
     bool forfloat[] = {false, true};
@@ -406,8 +384,6 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
             InterferenceGraph * graph_ig = new InterferenceGraph(func, is_float);
 
             // spill(func, graph_ig);
-
-            std::cout << "完成干涉图构建" << std::endl;
 
             // 尝试进行染色
             // 染色是否成功
@@ -438,9 +414,6 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
         }
     }
 
-    // 为局部变量、数组、返回值、保护寄存器分配栈空间
-    stackAlloc(func);
-
     // 这里加一个set临时存储保护寄存器，因为同一个寄存器可能多次加入，这里用set可以去重。
     std::set<int32_t> protectedreg_set;
     // 如果用到了保护寄存器，就加进保护寄存器集合
@@ -463,6 +436,11 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     }
 
     // 保护寄存器的内存分配见ILocArm64::allocStack和ILocArm64::emitFunctionEpilogue处改动
+
+    // 为局部变量、数组、返回值、保护寄存器分配栈空间
+    stackAlloc(func);
+
+    adjustFormalParamInsts(func);
 
     printf("为局部变量和临时变量在栈内分配空间\n");
 }
@@ -496,46 +474,49 @@ void CodeGeneratorArm64::adjustSomeInsts(Function * func)
                     //插入后当前位置变为新插入的指令，故i额外+1
                     i++;
                 }
+            } else if (Instanceof(param_val, FormalParam *, val1)) {
+                if (val1->getRegId() == -1) {
+                    // 创建load指令，LoadInstruction本身就是结果Value
+                    // LoadInstruction的构造函数会自动设置正确的类型
+                    LoadInstruction * ldrinst = new LoadInstruction(func, nullptr, param_val);
+                    insts[i]->getOperands()[0] = new Use(ldrinst, inst);
+
+                    //插入到当前位置
+                    insts.insert(insts.begin() + i, (Instruction *) ldrinst);
+                    //插入后当前位置变为新插入的指令，故i额外+1
+                    i++;
+                }
             }
         }
         if (Instanceof(binaryInst, BinaryInstruction *, inst)) {
-            printf("检测到两元指令\n");
             if (binaryInst->getOp() == IRInstOperator::IRINST_OP_MUL_I ||
                 binaryInst->getOp() == IRInstOperator::IRINST_OP_DIV_I ||
                 binaryInst->getOp() == IRInstOperator::IRINST_OP_MOD_I) {
-                printf("检测到两元乘法除法指令\n");
                 Value * arg1 = binaryInst->getOperand(0);
                 Value * arg2 = binaryInst->getOperand(1);
                 if (dynamic_cast<ConstInt *>(arg1)) {
-                    printf("检测到操作数1为常量\n");
                     Value * newval = new Value(arg1->getType());
                     Instruction * assignInst = new MoveInstruction(func, newval, arg1);
                     binaryInst->getOperands()[0] = new Use(newval, binaryInst);
                     insts.insert(insts.begin() + i, (Instruction *) assignInst);
-                    printf("插入一条赋值指令\n");
                     //插入后当前位置变为新插入的指令，故i额外+1
                     i++;
                 }
                 if (dynamic_cast<ConstInt *>(arg2)) {
-                    printf("检测到操作数2为常量\n");
                     Value * newval = new Value(arg2->getType());
                     Instruction * assignInst = new MoveInstruction(func, newval, arg2);
                     binaryInst->getOperands()[1] = new Use(newval, binaryInst);
                     insts.insert(insts.begin() + i, (Instruction *) assignInst);
-                    printf("插入一条赋值指令\n");
                     i++;
                 }
             } else if (binaryInst->getOp() == IRInstOperator::IRINST_OP_ADD_I ||
                        binaryInst->getOp() == IRInstOperator::IRINST_OP_SUB_I) {
-                printf("检测到两元加法减法指令\n");
                 Value * arg1 = binaryInst->getOperand(0);
                 if (dynamic_cast<ConstInt *>(arg1)) {
-                    printf("检测到操作数1为常量\n");
                     Value * newval = new Value(arg1->getType());
                     Instruction * assignInst = new MoveInstruction(func, newval, arg1);
                     binaryInst->getOperands()[0] = new Use(newval, binaryInst);
                     insts.insert(insts.begin() + i, (Instruction *) assignInst);
-                    printf("插入一条赋值指令\n");
                     i++;
                 }
             }
@@ -543,7 +524,6 @@ void CodeGeneratorArm64::adjustSomeInsts(Function * func)
         if (inst->getOp() == IRInstOperator::IRINST_OP_MOD_I) {
             // 对于mod指令，将其转化成乘法除法和减法指令
             // a % b => a - (a / b) * b
-            printf("检测到取余指令\n");
             Value * arg1 = inst->getOperand(0);
             Value * arg2 = inst->getOperand(1);
 
@@ -555,14 +535,11 @@ void CodeGeneratorArm64::adjustSomeInsts(Function * func)
                 new BinaryInstruction(func, IRInstOperator::IRINST_OP_SUB_I, arg1, mulInst, arg1->getType());
 
             // 关键修复：在删除原指令之前，先替换所有对原指令的引用
-            printf("替换所有对mod指令结果的引用\n");
             inst->replaceAllUsesWith(subInst);
 
             // 删除原来的mod指令
-            printf("删除原来的mod指令\n");
             insts.erase(insts.begin() + i);
             // 替换成如下的指令序列
-            printf("替换成如下的指令序列\n");
             insts.insert(insts.begin() + i, (Instruction *) divInst);
             i++;
             insts.insert(insts.begin() + i, (Instruction *) mulInst);
@@ -584,54 +561,20 @@ void CodeGeneratorArm64::adjustFormalParamInsts(Function * func)
     // 请注意这里所得的所有形参都是对应的实参的值关联的临时变量
     // 如果不是不能使用这里的代码
     auto & params = func->getParams();
-    printf("params：%d\n", int(params.size()));
 
-    // 形参的前8个通过寄存器来传值X0-X7
-    for (int k = 0; k < (int) params.size() && k <= 7; k++) {
-
-        // 前八个设置分配寄存器
-
-        params[k]->setRegId(k);
-    }
-
-    auto & insts = func->getInterCode().getInsts();
     // 根据ARM版C语言的调用约定，除前8个外的实参进行值传递，逆序入栈
     int64_t maxOffset = func->getMaxDep();
     int64_t fp_esp = maxOffset;
-    int protectedRegNum = 0;
-    // 保存寄存器空间
-    if (func->getExistFuncCall()) {
-        protectedRegNum = func->getProtectedReg().size();
-        fp_esp += protectedRegNum * 8;
-    }
-    printf("Debug:被调函数传参前检测栈帧大小:%d\n", int(fp_esp));
+
     for (int k = 8; k < (int) params.size(); k++) {
 
-        // 第9个及之后的参数位于调用者栈帧中
-        // 计算相对于调用者栈帧的偏移：第k个参数的偏移 = (k-8) * 8
-        int64_t caller_stack_offset = (k - 8) * 8;
+        // 第9个及之后的参数位于被调用函数栈帧中
 
-        printf("Debug:第%d个形参位于调用者栈帧偏移:%d\n", k, int(caller_stack_offset));
+        // 设置为被调用函数栈帧中的参数
+        params[k]->setMemoryAddr(ARM64_SP_REG_NO, fp_esp);
 
-        // 设置特殊标记，表示这是调用者栈帧中的参数
-        // 我们使用负的基址寄存器编号来标记这种特殊情况
-        params[k]->setMemoryAddr(-ARM64_SP_REG_NO, caller_stack_offset);
-
-        // 不需要增加fp_esp，因为这些参数不占用当前函数的栈空间
-
-        // 插入ldr指令
-        // 这里创建的resVal仅用来翻译load时获取结果的类型
-        FormalParam * resVal = new FormalParam(params[k]->getType(), params[k]->getName());
-        LoadInstruction * ldrinst = new LoadInstruction(func, resVal, params[k]);
-
-        ldrinst->setRegId(k);
-        params[k]->setRegId(k);
-        // 把原来引用形参的地方替换为ldrinst的引用
-        // params[k]->replaceAllUsesWith(ldrinst);
-        insts.insert(insts.begin(), ldrinst);
-        if (FormalParam * val = dynamic_cast<FormalParam *>(ldrinst->getOperand(0))) {
-            printf("Debug:形参判断逻辑正常\n");
-        }
+        // 更新栈帧大小以包含这些参数 (每个参数占用 8 字节)
+        fp_esp += 8;
     }
 }
 
@@ -657,7 +600,6 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
             // 除前8个整数寄存器外，后面的参数采用栈传递
             int esp = 0;
             for (int32_t k = 8; k < argNum; k++) {
-                printf("检测到8个以后的函数参数\n");
 
                 // 获取实参的值
                 auto * arg = callInst->getOperand(k);
@@ -676,7 +618,6 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 // 赋值指令插入到函数调用指令的前面
                 // 函数调用指令前插入后，pIter仍指向函数调用指令
                 pIter = insts.insert(pIter, assignInst);
-                printf("插入一条Store指令（给函数调用的第8个以后的参数）\n");
                 pIter++;
             }
 
@@ -700,18 +641,18 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
 
                     // 函数调用指令前插入后，pIter仍指向函数调用指令
                     pIter = insts.insert(pIter, assignInst);
-                    printf("为函数调用插入第%d个参数的赋值指令\n", k);
                     pIter++;
 
                     callInst->setOperand(k, regParam);
                 } else {
                     // 源操作数已经在目标寄存器中，直接使用原操作数
-                    printf("第%d个参数已在目标寄存器中，跳过赋值指令\n", k);
                     callInst->setOperand(k, arg);
                 }
             }
 
-            func->setMaxDep(esp);
+            if (esp > func->getmaxExtraStackSize()) {
+                func->setmaxExtraStackSize(esp);
+            }
             // 有arg指令后可不用参数，展示不删除
             // args.clear();
         }
@@ -726,8 +667,8 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
 
     // 这里对临时变量和局部变量都在栈上进行分配,但形参对应实参的临时变量(FormalParam类型)不需要考虑
 
-    int64_t sp_esp = func->getMaxDep();
-    printf("stackAlloc开始时,已建立的栈空间大小:%d\n", int(sp_esp));
+    int64_t sp_esp = func->getmaxExtraStackSize();
+    printf("stackAlloc开始时,由于栈传参数所造成的栈空间大小:%d\n", int(sp_esp));
 
     // 为数组分配栈空间
     for (auto inst: func->getInterCode().getInsts()) {
@@ -740,30 +681,20 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
             int64_t size = 4; // 默认大小
             if (Instanceof(arr, ArrayType *, allocatedType)) {
                 // alloca对象为数组
-                printf("局部变量数组首地址:%d\n", int(sp_esp));
                 inst->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
                 // 为alloca指令的结果变量设置相同的内存地址
                 // 尝试将结果变量转换为LocalVariable并设置内存地址
                 if (LocalVariable * localVar = dynamic_cast<LocalVariable *>(result)) {
                     localVar->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
-                    printf("Debug: stackAlloc - 局部变量 %s 设置内存地址: offset=%ld\n",
-                           localVar->getName().c_str(),
-                           sp_esp);
                 }
                 // 使用ArrayType的getSize()方法，它会正确计算所有维度的总大小
                 size = arr->getSize();
-                printf("Debug: stackAlloc - 数组 %s 类型: %s, 总大小: %ld 字节\n",
-                       result->getName().c_str(),
-                       arr->toString().c_str(),
-                       size);
                 sp_esp += size;
             } else if (Instanceof(val, PointerType *, allocatedType)) {
-                printf("检测到Alloca对象为指针类型\n");
                 auto * pointeeType = val->getPointeeType();
                 size = pointeeType->getSize();
                 LocalVariable * localVar = dynamic_cast<LocalVariable *>(result);
                 localVar->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
-                printf("Alloca指向的数据类型的大小:%d\n", int(size));
                 sp_esp += size;
             }
         }
@@ -789,43 +720,33 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
     }
 
     // 为所有溢出的临时变量分配栈空间
-    printf("Debug: 开始为溢出变量分配栈空间\n");
+    // printf("Debug: 开始为溢出变量分配栈空间\n");
     int inst_count = 0;
     for (auto inst: func->getInterCode().getInsts()) {
         inst_count++;
-        printf("Debug: 检查指令 %d, def_set大小: %zu\n", inst_count, inst->get_def_set().size());
 
         // 检查指令的定义集合中的变量
         for (Value * val: inst->get_def_set()) {
-            printf("Debug: 检查变量 %s, regId=%d\n", val->getIRName().c_str(), val->getRegId());
 
             // 跳过alloca指令
             if (dynamic_cast<AllocaInstruction *>(val)) {
-                printf("Debug: 跳过alloca指令: %s\n", val->getIRName().c_str());
                 continue;
             }
 
             // 只处理溢出的变量（regId=-2）且还没有分配内存地址的变量
             if (val->getRegId() == -2) {
-                printf("Debug: 发现溢出变量: %s\n", val->getIRName().c_str());
                 int64_t offset;
                 if (!val->getMemoryAddr(nullptr, &offset)) {
-                    printf("Debug: 变量 %s 没有内存地址，准备分配\n", val->getIRName().c_str());
                     // 为溢出变量分配栈空间
                     if (Instruction * instVal = dynamic_cast<Instruction *>(val)) {
                         instVal->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
-                        printf("为溢出变量 %s 分配栈空间: offset=%ld\n", val->getIRName().c_str(), sp_esp);
                         sp_esp += 4; // 假设都是4字节的整数
-                    } else {
-                        printf("Debug: 变量 %s 不是Instruction类型\n", val->getIRName().c_str());
                     }
-                } else {
-                    printf("Debug: 变量 %s 已有内存地址: offset=%ld\n", val->getIRName().c_str(), offset);
                 }
             }
         }
     }
-    printf("Debug: 溢出变量分配完成，最终栈空间大小: %ld, 总共检查了 %d 条指令\n", sp_esp, inst_count);
+    // printf("Debug: 溢出变量分配完成，最终栈空间大小: %ld, 总共检查了 %d 条指令\n", sp_esp, inst_count);
 
     // 返回值占用的栈空间
     Value * returnVal = func->getReturnValue();
@@ -834,7 +755,14 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
         sp_esp += 4;
     }
 
-    // 保护寄存器占用的栈空间在生成函数序言中计算
+    // 保护寄存器
+    int protectedRegNum = 0;
+
+    // 保存寄存器空间
+    if (func->getExistFuncCall()) {
+        protectedRegNum = func->getProtectedReg().size();
+    }
+    sp_esp += protectedRegNum * 8;
 
     //栈空间16字节对齐
     sp_esp = (sp_esp + 15) & ~15;
@@ -849,7 +777,6 @@ void CodeGeneratorArm64::expandAndOutputInitValues(const std::vector<Value *> & 
 {
     for (auto element: initValues) {
         if (auto constIntElement = dynamic_cast<ConstInt *>(element)) {
-            printf("检测到整数元素\n");
             fprintf(fp, "	.word %d\n", constIntElement->getVal());
         } else if (auto constFloatElement = dynamic_cast<ConstFloat *>(element)) {
             uint32_t floatBits;
@@ -858,7 +785,6 @@ void CodeGeneratorArm64::expandAndOutputInitValues(const std::vector<Value *> & 
             fprintf(fp, "	.word %u\n", floatBits);
         } else if (auto globalVarElement = dynamic_cast<GlobalVariable *>(element)) {
             // 递归处理嵌套的全局变量（嵌套数组）
-            printf("检测到嵌套数组元素\n");
             if (!globalVarElement->getInitValueList().empty()) {
                 expandAndOutputInitValues(globalVarElement->getInitValueList());
             } else {
@@ -866,17 +792,16 @@ void CodeGeneratorArm64::expandAndOutputInitValues(const std::vector<Value *> & 
                 if (globalVarElement->getType()->isArrayType()) {
                     ArrayType * nestedArrayType = static_cast<ArrayType *>(globalVarElement->getType());
 
-                    printf("Debug: Element type: %s\n", nestedArrayType->getElementType()->toString().c_str());
+                    // printf("Debug: Element type: %s\n", nestedArrayType->getElementType()->toString().c_str());
 
                     int totalElements = nestedArrayType->getTotalElements();
-                    printf("Debug: zeroinitializer对应的数组元素个数:%d\n", totalElements);
+                    // printf("Debug: zeroinitializer对应的数组元素个数:%d\n", totalElements);
 
                     // 对于大数组，使用.space指令而不是逐个.word 0
                     if (totalElements > 1000) {
                         // 使用.space指令分配大块零初始化内存
                         int totalBytes = totalElements * 4; // 每个元素4字节
                         fprintf(fp, "	.space %d\n", totalBytes);
-                        printf("Debug: 使用.space指令分配 %d 字节的零初始化内存\n", totalBytes);
                     } else {
                         // 对于小数组，仍然使用.word 0
                         for (int i = 0; i < totalElements; i++) {

@@ -20,11 +20,11 @@
 
 const std::string PlatformArm64::regName[PlatformArm64::maxRegNum] = {
     "w0",  "w1",  "w2",  "w3",  "w4",  "w5",  "w6",  "w7",  "w8",  "w9",  "w10", "w11", "w12", "w13", "w14", "w15",
-    "w16", "w17", "w18", "w19", "w20", "w21", "w22", "w23", "w24", "w25", "w26", "w27", "w28", "x29", "x30", "sp",
+    "w16", "w17", "w18", "w19", "w20", "w21", "w22", "w23", "w24", "w25", "w26", "w27", "w28", "w29", "w30", "w31",
     "x0",  "x1",  "x2",  "x3",  "x4",  "x5",  "x6",  "x7",  "x8",  "x9",  "x10", "x11", "x12", "x13", "x14", "x15",
-    "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30", "s0",
-    "s1",  "s2",  "s3",  "s4",  "s5",  "s6",  "s7",  "s8",  "s9",  "s10", "s11", "s12", "s13", "s14", "s15", "s16",
-    "s17", "s18", "s19", "s20", "s21", "s22", "s23", "s24", "s25", "s26", "s27", "s28", "s29", "s30", "s31"};
+    "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30", "sp",
+    "s0",  "s1",  "s2",  "s3",  "s4",  "s5",  "s6",  "s7",  "s8",  "s9",  "s10", "s11", "s12", "s13", "s14", "s15",
+    "s16", "s17", "s18", "s19", "s20", "s21", "s22", "s23", "s24", "s25", "s26", "s27", "s28", "s29", "s30", "s31"};
 
 const std::string PlatformArm64::floatRegName[PlatformArm64::maxVecRegNum] = {
     "s0",  "s1",  "s2",  "s3",  "s4",  "s5",  "s6",  "s7",  "s8",  "s9",  "s10", "s11", "s12", "s13", "s14", "s15",
@@ -94,7 +94,7 @@ RegVariable * PlatformArm64::intRegVal[PlatformArm64::maxRegNum] = {
     new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[60], 60),
     new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[61], 61),
     new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[62], 62),
-    new RegVariable(FloatType::getTypeFloat(), PlatformArm64::regName[63], 63),
+    new RegVariable(IntegerType::getTypeInt(), PlatformArm64::regName[63], 63),
     new RegVariable(FloatType::getTypeFloat(), PlatformArm64::regName[64], 64),
     new RegVariable(FloatType::getTypeFloat(), PlatformArm64::regName[65], 65),
     new RegVariable(FloatType::getTypeFloat(), PlatformArm64::regName[66], 66),
@@ -126,7 +126,8 @@ RegVariable * PlatformArm64::intRegVal[PlatformArm64::maxRegNum] = {
     new RegVariable(FloatType::getTypeFloat(), PlatformArm64::regName[92], 92),
     new RegVariable(FloatType::getTypeFloat(), PlatformArm64::regName[93], 93),
     new RegVariable(FloatType::getTypeFloat(), PlatformArm64::regName[94], 94),
-    new RegVariable(FloatType::getTypeFloat(), PlatformArm64::regName[95], 95)};
+    new RegVariable(FloatType::getTypeFloat(), PlatformArm64::regName[95], 95),
+    new RegVariable(FloatType::getTypeFloat(), PlatformArm64::regName[96], 96)};
 
 /// @brief 循环左移两位
 /// @param num

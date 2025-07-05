@@ -47,7 +47,6 @@ bool DeadCodeElimination::eliminateDeadCode(InterCode & code)
     // 第一步：移除冗余的跳转指令
     if (removeRedundantJumps(instructions)) {
         optimized = true;
-        std::cout << "Dead code elimination: Removed redundant jumps" << std::endl;
     }
 
     // 第二步：构建控制流图并移除不可达代码
@@ -62,8 +61,6 @@ bool DeadCodeElimination::eliminateDeadCode(InterCode & code)
         if (newInstructions.size() < instructions.size()) {
             instructions = newInstructions;
             optimized = true;
-            std::cout << "Dead code elimination: Removed unreachable blocks (from " << instructions.size() << " to "
-                      << newInstructions.size() << " instructions)" << std::endl;
         }
 
         // 清理内存
@@ -73,7 +70,6 @@ bool DeadCodeElimination::eliminateDeadCode(InterCode & code)
     // 第三步：再次移除冗余跳转（可能在移除不可达代码后产生新的冗余跳转）
     if (removeRedundantJumps(instructions)) {
         optimized = true;
-        std::cout << "Dead code elimination: Removed additional redundant jumps" << std::endl;
     }
 
     return optimized;
@@ -93,28 +89,12 @@ bool DeadCodeElimination::removeRedundantJumps(std::vector<Instruction *> & inst
 
         // 暂时禁用冗余跳转消除，以保护break和continue语句
         // TODO: 实现更智能的跳转分析，区分结构性跳转和控制流跳转
-        /*
-        // 检查是否是冗余的跳转指令
-        if (inst->getOp() == IRInstOperator::IRINST_OP_GOTO) {
-            // 检查是否跳转到下一条指令
-            if (isRedundantJump(instructions, i)) {
-                GotoInstruction * gotoInst = dynamic_cast<GotoInstruction *>(inst);
-                std::cout << "Removing redundant jump at position " << i;
-                if (gotoInst && gotoInst->getTarget()) {
-                    std::cout << " (target: " << gotoInst->getTarget()->getIRName() << ")";
-                }
-                std::cout << std::endl;
-                shouldKeep = false;
-                optimized = true;
-            }
-        }
-        */
+
         // 检查是否是return后的死代码（只对return语句后的代码进行死代码消除）
         if (i > 0 && isReturnInstruction(instructions[i - 1]) && !isLabelInstruction(inst)) {
             // 前一条指令是return指令，当前指令不是标签，则是死代码
             shouldKeep = false;
             optimized = true;
-            std::cout << "Removing dead instruction after return at position " << i << std::endl;
         }
 
         if (shouldKeep) {

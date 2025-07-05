@@ -203,10 +203,6 @@ public:
     /// @param tmp_reg_No
     void allocStack(Function * func, int tmp_reg_No);
 
-    /// @brief 加载函数的参数到寄存器
-    /// @param fun
-    void ldr_args(Function * fun);
-
     /// @brief NOP操作
     void nop();
 
@@ -230,9 +226,5 @@ public:
     /// @brief 生成neg指令（取负）
     /// @param dest_reg 目标寄存器编号
     /// @param src_reg 源寄存器编号
-
-    /// @brief 设置当前函数的栈帧大小
-    /// @param stack_size 栈帧大小
-    void setCurrentFuncStackSize(int stack_size);
     void neg(int dest_reg, int src_reg);
 };

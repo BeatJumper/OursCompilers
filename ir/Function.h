@@ -202,6 +202,16 @@ public:
     ///
     void setStackFrameSize(int size);
 
+    /// @brief 设置函数调用栈传参而引入的栈空间大小
+    /// @param size
+    void setmaxExtraStackSize(int size);
+
+    ///
+    /// @brief 获取函数调用栈传参而引入的栈空间大小
+    /// @return int
+    ///
+    int getmaxExtraStackSize();
+
     ///
     /// @brief 获取栈帧大小
     /// @param size

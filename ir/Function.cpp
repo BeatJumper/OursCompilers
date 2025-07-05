@@ -308,7 +308,6 @@ void Function::renameIR()
         return;
     }
 
-    // printf("==== Starting renameIR for function %s ====\n", this->name.c_str());
 
     // 每个函数维护两个独立的计数器
     int32_t variableCounter = 0; // 变量计数器：参数、局部变量、临时值
@@ -318,8 +317,6 @@ void Function::renameIR()
     for (auto & param: this->params) {
         param->setIRName(IR_TEMP_VARNAME_PREFIX + std::to_string(variableCounter));
         variableCounter++;
-        // printf("Renamed param: %s -> %s\n", oldName.empty() ? "(empty)" : oldName.c_str(),
-        // param->getIRName().c_str());
     }
 
     // 2. 按照alloca指令在IR中的出现顺序重命名局部变量，确保变量名与alloca指令顺序一致
@@ -337,9 +334,6 @@ void Function::renameIR()
             if (allocaResult) {
                 allocaResult->setIRName(IR_LOCAL_VARNAME_PREFIX + std::to_string(variableCounter));
                 variableCounter++;
-                /*printf("Renamed alloca result var %s: -> %s\n",
-                       allocaResult->getName().c_str(),
-                       allocaResult->getIRName().c_str());*/
             }
         } else if (inst->hasResultValue()) {
             // 其他有结果值的指令：临时值重命名（加%前缀）
@@ -367,7 +361,6 @@ void Function::renameIR()
             }
         }
     }
-    // printf("==== Finished renameIR for function %s ====\n", this->name.c_str());
 }
 
 ///
@@ -445,6 +438,22 @@ void Function::setStackFrameSize(int size)
 int Function::getStackFrameSize()
 {
     return StackFrameSize;
+}
+
+/// @brief 设置函数调用栈传参而引入的栈空间大小
+/// @param size
+void Function::setmaxExtraStackSize(int size)
+{
+    maxExtraStackSize = size;
+}
+
+///
+/// @brief 获取函数调用栈传参而引入的栈空间大小
+/// @return int
+///
+int Function::getmaxExtraStackSize()
+{
+    return maxExtraStackSize;
 }
 
 /// @brief 设置函数调用栈空间大小而引入的栈空间大小

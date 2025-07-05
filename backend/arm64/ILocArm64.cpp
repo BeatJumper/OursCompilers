@@ -188,7 +188,6 @@ void ILocArm64::outPut(FILE * file, bool outputEmpty)
             fprintf(file, "\n");
         }
     }
-    printf("循环完毕\n");
 }
 
 /// @brief 获取当前的代码序列
@@ -332,8 +331,6 @@ void ILocArm64::load_symbol(int rs_reg_no, std::string name)
 /// @param offset 偏移
 void ILocArm64::load_base(int rs_reg_no, int base_reg_no, int64_t offset)
 {
-    printf("Debug: load_base - 输入参数: rs_reg_no=%d, base_reg_no=%d, offset=%ld\n", rs_reg_no, base_reg_no, offset);
-
     // 检查是否是调用者栈帧中的参数（使用负的基址寄存器编号标记）
     if (base_reg_no < 0) {
         // 这是调用者栈帧中的参数
@@ -349,11 +346,6 @@ void ILocArm64::load_base(int rs_reg_no, int base_reg_no, int64_t offset)
         // 计算调用者栈帧的实际偏移
         // 当前函数分配了栈空间，所以调用者的参数位于 sp + 栈帧大小 + 参数偏移
         int64_t actual_offset = current_func_stack_size + offset;
-
-        printf("Debug: load_base - 调用者栈帧参数: actual_offset=%ld (栈帧大小=%d + 参数偏移=%ld)\n",
-               actual_offset,
-               current_func_stack_size,
-               offset);
 
         // 生成正确的ldr指令
         if (actual_offset >= 0 && actual_offset <= 4095) {
@@ -375,9 +367,6 @@ void ILocArm64::load_base(int rs_reg_no, int base_reg_no, int64_t offset)
     if (base[0] == 'w') {
         base[0] = 'x';
     }
-
-    printf("Debug: load_base - 获取的寄存器名称: rsReg='%s', base='%s'\n", rsReg.c_str(), base.c_str());
-    std::cout << "基址寻址中,结果寄存器" << rsReg << "\n";
 
     // 检查偏移量是否在ldr指令的有效范围内
     // ARM64 ldr指令的立即数偏移范围：0到4095（12位无符号）
@@ -494,10 +483,6 @@ void ILocArm64::mov_reg(int rs_reg_no, int src_reg_no)
 /// @param src_var 源操作数
 void ILocArm64::load_var(int rs_reg_no, Value * src_var)
 {
-    printf("Debug: load_var - rs_reg_no=%d, src_var=%p\n", rs_reg_no, src_var);
-
-    printf("Debug: load_var - src_var name=%s, IRName=%s\n", src_var->getName().c_str(), src_var->getIRName().c_str());
-
     if (Instanceof(constVal, ConstInt *, src_var)) {
         // 整型常量
         // mov w8,#100
@@ -508,15 +493,12 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
         load_float_imm(rs_reg_no, constFloat->getVal());
     } else if (src_var->getRegId() == -2) {
         // 处理溢出变量（regId == -2）
-        printf("Debug: load_var - src_var is spilled variable\n");
         int32_t src_base_reg = -1;
         int64_t src_offset = -1;
         if (src_var->getMemoryAddr(&src_base_reg, &src_offset)) {
-            printf("Debug: load_var - loading spilled variable from memory\n");
             load_base(rs_reg_no, src_base_reg, src_offset);
             return;
         } else {
-            printf("Debug: load_var - ERROR: spilled variable has no memory address\n");
             minic_log(LOG_ERROR, "Spilled variable has no memory address");
         }
     } else if (src_var->getRegId() != -1) {
@@ -524,7 +506,6 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
         int32_t src_base_reg = -1;
         int64_t src_offset = -1;
         if (src_var->getMemoryAddr(&src_base_reg, &src_offset)) {
-            printf("Debug: load_var - src_var is in memory\n");
             load_base(rs_reg_no, src_base_reg, src_offset);
             return;
         }
@@ -534,7 +515,6 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
         int32_t src_regId = src_var->getRegId();
 
         if (src_var->getType()->isPointerType()) {
-            printf("Debug: load_var - src_var is pointer type, loading from address\n");
             // 对于指针类型，寄存器中存储的是地址，需要从地址加载数据
 
             // 确保使用64位寄存器进行地址访问
@@ -547,7 +527,6 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
             // ldr w8, [x2] - 从寄存器中的地址加载数据
             emit("ldr", result_reg_name, "[" + src_reg_name + "]");
         } else {
-            printf("Debug: load_var - src_var is value type, direct register move\n");
             // 对于非指针类型，寄存器中存储的是值，直接移动寄存器
             std::string src_reg_name = PlatformArm64::regName[src_regId];
             std::string result_reg_name = PlatformArm64::regName[rs_reg_no];
@@ -624,13 +603,11 @@ void ILocArm64::store_var(int src_reg_no, Value * dest_var, int tmp_reg_no)
     if (dest_var->getRegId() != -1) {
 
         // 寄存器变量
-
         // -1表示非寄存器，其他表示寄存器的索引值
         int dest_reg_id = dest_var->getRegId();
 
         // 寄存器不一样才需要mov操作
         if (src_reg_no != dest_reg_id) {
-            printf("赋值，寄存器到寄存器\n");
             // mov x2,x8 | 这里有优化空间——消除x8
             emit("mov", PlatformArm64::regName[dest_reg_id], PlatformArm64::regName[src_reg_no]);
         }
@@ -707,26 +684,18 @@ void ILocArm64::leaStack(int rs_reg_no, int base_reg_no, int64_t off)
 void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 {
     // 计算栈帧加上保护寄存器的栈空间总大小
-    int64_t maxOffset = func->getMaxDep();
+    int64_t totalSize = func->getMaxDep();
 
-    int totalSize = maxOffset;
     int protectedRegNum = 0;
 
     // 保存寄存器空间
     if (func->getExistFuncCall()) {
         protectedRegNum = func->getProtectedReg().size();
-        totalSize += protectedRegNum * 8;
     }
-
-    // 对齐到16字节边界(ARM64要求)
-    totalSize = (totalSize + 15) & ~15;
 
     printf("生成函数序言,总栈空间大小:%d\n", totalSize);
 
     func->setStackFrameSize(totalSize);
-
-    // 设置当前函数的栈帧大小，用于处理调用者栈帧中的参数
-    setCurrentFuncStackSize(totalSize);
 
     // 检查栈空间大小是否超出立即数范围
     if (totalSize <= 4095) {
@@ -863,10 +832,4 @@ void ILocArm64::emitFunctionEpilogue(Function * func)
 
     // 返回
     emit("ret");
-}
-
-void ILocArm64::setCurrentFuncStackSize(int stack_size)
-{
-    this->current_func_stack_size = stack_size;
-    printf("Debug: 设置当前函数栈帧大小为 %d\n", stack_size);
 }

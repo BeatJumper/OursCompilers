@@ -135,7 +135,7 @@ void Instruction::transfer()
             if (index > 7 && index < 16) {
                 continue;
             }
-            def_set.insert(PlatformArm64::intRegVal[index + 63]);
+            def_set.insert(PlatformArm64::intRegVal[index + 64]);
         }
         // 最后再在DEF集上添加FuncCallInstruction自己
         def_set.insert(this);
@@ -150,7 +150,6 @@ void Instruction::transfer()
         }
         // 后8个数是仅仅在内存里的，不占寄存器，所以就不进USE了。
     } else if (Instanceof(inst, Instruction *, this)) {
-        // printf("其它指令\n");
         if (inst->hasResultValue()) {
             def_set.insert(inst);
         }

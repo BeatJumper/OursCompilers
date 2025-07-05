@@ -34,14 +34,10 @@ void InterferenceGraph::add_edge(node_IG * node1, node_IG * node2)
 
 void InterferenceGraph::remove_node(node_IG * node)
 {
-    // printf("删除节点\n");
-    // assert(node->neighbors.size());
     for (node_IG * neighbor: node->neighbors) {
         neighbor->remove_neighbor(node);
     }
-    // printf("从未染色列表里删除节点\n");
     uncolored_node_set.erase(node);
-    // printf("删除完成\n");
 }
 
 void InterferenceGraph::restore_node(node_IG * node)
@@ -62,19 +58,15 @@ InterferenceGraph::InterferenceGraph(Function * func, bool is_float)
     // 生成控制流图
     graph_cfg = new ControlFlowGraph(func);
 
-    // printf("已生成控制流图\n");
     //  用完基本块表之后就可以删了节省空间
     func->clearBasicBlocks();
-    printf("已删除不用的基本块表\n");
 
     // 加完新指令后也该重新调整IR编号
     func->renameIR();
 
-    // printf("已释放临时基本块表\n");
     //  进行活跃变量分析，获得每条语句的DEF和USE集合
     LiveVariableAnalysis(graph_cfg);
 
-    // printf("已经活跃变量分析\n");
     //  完成干涉图构建
     ExecuteCFG(graph_cfg);
 }
@@ -101,23 +93,6 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
     std::map<Value *, node_IG *> value_to_ig;
     std::set<Value *> all_value_in_cfg;
 
-    // printf("所有指令列表:\n");
-    for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
-        printval(inst);
-        /*
-        printf("NUM OF OPERANDS:%d\n", inst->getOperandsNum());
-        printf("DEF:\n");
-        printset(inst->get_def_set());
-        printf("USE:\n");
-        printset(inst->get_use_set());
-        printf("LIVEOUT:\n");
-        printset(inst->get_liveout());
-        printf("LIVEIN\n");
-        printset(inst->get_livein());
-        printf("\n");
-        */
-    }
-    // printf("指令列表结束\n");
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
         for (Value * val: inst->get_def_set()) {
             if ((val->getType() == FloatType::getTypeFloat()) == is_float) {
@@ -129,16 +104,6 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
                 all_value_in_cfg.insert(val);
             }
         }
-        /*printf("node:");
-        printval(inst);
-        printf("size of def_set:%d\n", int(inst->get_def_set().size()));
-        printset(inst->get_def_set());
-        printf("size of use_set:%d\n", int(inst->get_use_set().size()));
-        printset(inst->get_use_set());
-        printf("size of livein:%d\n", int(inst->get_livein().size()));
-        printset(inst->get_livein());
-        printf("size of liveout:%d\n", int(inst->get_liveout().size()));
-        printset(inst->get_liveout());*/
     }
 
     // 为每个Value都创建一个干涉图节点
@@ -152,37 +117,15 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
         value_to_ig[val] = newnode;
         node_set.insert(newnode);
         // 已经提前指定了寄存器的Value对应的干涉图节点应该预先染色
-        // printf("当前变量：");
-        // printval(val);
-        // printf("寄存器ID：%d\n", val->getRegId());
         newnode->color = RegIdToColor(val->getRegId());
-        /*
-        if (newnode->color == 28) {
-            // printval(newnode->val);
-            // std::cout << (is_float ? "true" : "false") << std::endl;
-            assert(val == PlatformArm64::intRegVal[91]);
-            assert(FloatType::getTypeFloat());
-            assert(PlatformArm64::intRegVal[0]->getType());
-            assert(PlatformArm64::intRegVal[91]->getType());
-            std::cout << PlatformArm64::intRegVal[91]->getType()->getTypeID() << std::endl;
-            // assert(PlatformArm64::intRegVal[91]->getType() == IntegerType::getTypeInt());
-            assert(PlatformArm64::intRegVal[91]->getType() == FloatType::getTypeFloat());
-            assert(val->getType() == FloatType::getTypeFloat());
-        }
-        */
-        // assert(newnode->color != 28);
-        // printf("newnode->color = val->getRegId(); %d\n", val->getRegId());
+        
         if (newnode->color == -1) {
             uncolored_node_set.insert(newnode);
         }
     }
-    // printf("所有干涉节点创建完成\n");
-    //  std::cout <<　uncolored_node_set.size() << std::endl;
 
     // 这是std::set版本的干涉图构建过程，时间复杂度是O(N * M * M * logN)，其中N为指令数目，M为活跃集合的size上限
     // 扫描函数里每条指令，获取每个时刻的活跃变量集合
-    int i = 1;
-    // printf("size of insts:%zu\n", graph->get_func()->getInterCode().getCode().size());
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
         std::set<Value *> value_occupy = inst->get_liveout();
         merge_set(value_occupy, inst->get_def_set());
@@ -194,76 +137,15 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
                 ++it;
             }
         }
-        // std::cout << "size of occupy:" << value_occupy.size() << std::endl;
-
-        // printf("第%d次获取DEF、SET集合\n", i++);
-        //  if (i == 2) {
-        //  break;
-        // }
         //   这些不同的量两两之间都是互斥的，不能在同一寄存器
         FOR_EACH_PAIR_IN_SET(value_occupy)
         {
             if (((*it1)->getRegId() != -1) && (*it2)->getRegId() != -1) {
                 continue;
             }
-            // printval(*it1);
-            // printval(*it2);
-            // assert(value_to_ig[*it1] && value_to_ig[*it2]);
             add_edge(value_to_ig[*it1], value_to_ig[*it2]);
         }
-        /*
-        for (auto it1 = (value_occupy).begin(); it1 != (value_occupy).end(); ++it1) {
-            if ((*it1)->getRegId() != -1) {
-                continue;
-            }
-            for (auto it2 = (value_occupy).begin(); it2 != (value_occupy).end(); ++it2) {
-                // assert(it1 != it2);
-                if (it1 == it2) {
-                    continue;
-                }
-                // 因此在干涉图中连上一条边
-                add_edge(value_to_ig[*it1], value_to_ig[*it2]);
-            }
-        }
-        */
-        // std::cout << "干涉边添加完毕" << std::endl;
     }
-
-    // 下面的干涉图构建方法弃用，用回上面的。
-    // 下面是BitSet版本的干涉图构建，时间复杂度O(N * N * (N/W + logN))，其中N是指令数，W = 32
-    /*
-    // 优化版本的干涉图产生过程
-    // 每个Value都有一个位图，位图中每一位表示其是否在对应语句的活跃集合中出现
-    std::map<Value *, std::bitset<10000>> live_set_of_value;
-
-    // 集合所对应的位图坐标
-    int index = 0;
-    for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
-        std::set<Value *> value_occupy = inst->get_liveout();
-        merge_set(value_occupy, inst->get_def_set());
-        // std::set<Value *> value_occupy = inst->get_livein();
-        for (Value * val: value_occupy) {
-            live_set_of_value[val].set(index);
-        }
-        index++;
-    }
-    printf("干涉图正在产生\n");
-    for (Value * val1: all_value_in_cfg) {
-        for (Value * val2: all_value_in_cfg) {
-            if (val1 == val2) {
-                continue;
-            }
-            if ((val1->getType() != val2->getType()) &&
-                (val1->getType() == FloatType::getTypeFloat() || val2->getType() == FloatType::getTypeFloat())) {
-                continue;
-            }
-            auto &bit1 = live_set_of_value[val1], &bit2 = live_set_of_value[val2];
-            if ((bit1 & bit2).any()) {
-                add_edge(value_to_ig[val1], value_to_ig[val2]);
-            }
-        }
-    }
-    */
 }
 
 void InterferenceGraph::flush_all_color()
@@ -281,14 +163,6 @@ void InterferenceGraph::GenBasicBlocks(Function * func)
     // 遍历func所有指令
     for (auto inst: func->getInterCode().getInsts()) {
         // 找出所有首指令
-
-        // 没有函数入口指令了
-        /*
-        // 函数入口指令
-        if (inst->getOp() == IRInstOperator::IRINST_OP_ENTRY) {
-            BasicBlock->addInst(inst);
-        }
-        */
         BasicBlock->addInst(inst);
         // 遇到跳转指令就分块
         if (inst->getOp() == IRInstOperator::IRINST_OP_GOTO || inst->getOp() == IRInstOperator::IRINST_OP_BRANCH) {
@@ -304,12 +178,6 @@ void InterferenceGraph::GenBasicBlocks(Function * func)
 
 static int least_color_for_node(node_IG * node, int color_size)
 {
-    /*
-    bool used[color_size];
-    for (int i = 0; i < color_size; i++) {
-        used[i] = false;
-    }
-    */
     std::vector<bool> used(color_size, false);
     for (node_IG * neighbor: node->neighbors) {
         if (neighbor->color != -1) {
@@ -317,13 +185,10 @@ static int least_color_for_node(node_IG * node, int color_size)
         }
     }
     for (int color = 0; color < color_size; color++) {
-        // printf("%d\n", color);
         if (!used[color]) {
-            // printf("找到了\n");
             return color;
         }
     }
-    // printf("没找到\n");
     return -1;
 }
 
@@ -336,20 +201,14 @@ static bool welsh_powell(InterferenceGraph * graph, int color_size)
         return a->degree() > b->degree();
     });
 
-    // assert(remain_nodes.empty());
-    //  std::cout << "最大度数" << remain_nodes[0]->degree() << std::endl;
     //   按照某序列依次给每个节点染上目前能染的最小编号颜色
     //   时间复杂度：O(m + n * min(c,n))，m为边数，c为颜色数，n为节点数
     for (node_IG * node: remain_nodes) {
-        // printf("发生循环\n");
 
         // 尝试染上目前能染的最小编号颜色
         node->color = least_color_for_node(node, color_size);
-        // printf("里程碑\n");
         //  中途有某个节点无颜色可用，则染色失败
         if (node->color == -1) {
-            // printval(node->val);
-            //  printf("%d\n", node->degree());
             return false;
         }
     }
@@ -358,7 +217,6 @@ static bool welsh_powell(InterferenceGraph * graph, int color_size)
 
 static bool backtrack_color(InterferenceGraph * graph, int color_size, std::set<node_IG *>::iterator iter)
 {
-    // printf("回溯法\n");
 
     // 目前回溯法之时间复杂度：O(m * c^n)，是指数级别，所以节点数只能为个位数，否则时间复杂度无法支持
     // 同时，不需要修改成非递归形式，因为递归深度很浅
@@ -386,7 +244,6 @@ static bool backtrack_color(InterferenceGraph * graph, int color_size, std::set<
 
 bool InterferenceGraph::color_graph(InterferenceGraph * graph, int color_size)
 {
-    // printf("开始染色\n");
     //  暂时被移出干涉图的小度节点
     std::stack<node_IG *> removed_nodes;
 
@@ -413,15 +270,12 @@ bool InterferenceGraph::color_graph(InterferenceGraph * graph, int color_size)
     }
 
     // 然后，恢复小度节点并对这些小度节点着色
-    // assert(removed_nodes.size() == 15);
     while (!removed_nodes.empty()) {
         node_IG * node = removed_nodes.top();
         removed_nodes.pop();
         graph->restore_node(node);
         if (suc) {
-            // std::cout << node->neighbors.size() << std::endl;
             node->color = least_color_for_node(node, color_size);
-            // assert(node->color != -1);
         }
     }
     return suc;
@@ -431,7 +285,7 @@ int InterferenceGraph::ColorToRegId(int color, bool is_float)
 {
     assert(color < 32);
     if (is_float) {
-        return color + 63;
+        return color + 64;
     } else {
         if (color < PlatformArm64::CallerSaveRegNum) {
             return color;
@@ -446,8 +300,8 @@ int InterferenceGraph::RegIdToColor(int regid)
     if (regid == -1) {
         return -1;
     }
-    if (regid >= 63) {
-        return regid - 63;
+    if (regid >= 64) {
+        return regid - 64;
     } else {
         if (regid >= PlatformArm64::CallerSaveRegNum) {
             return regid - 1;
