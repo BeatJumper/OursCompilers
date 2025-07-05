@@ -503,7 +503,7 @@ void InstSelectorArm64::translate_call(Instruction * inst)
     if (callInst->hasResultValue()) {
         operandNum--;
     }
-    printf("callInst_operandNum：%d\n", operandNum);
+    // printf("callInst_operandNum：%d\n", operandNum);
 
     if (operandNum != realArgCount) {
 
@@ -645,7 +645,7 @@ void InstSelectorArm64::translate_alloca(Instruction * inst)
     int64_t offset;
     if (!result->getMemoryAddr(&baseRegId, &offset)) {
         // 若未分配，记录错误（正常情况下不应发生）
-        minic_log(LOG_ERROR, "Alloca variable not allocated on stack: %s", result->getName().c_str());
+        // minic_log(LOG_ERROR, "Alloca variable not allocated on stack: %s", result->getName().c_str());
     }
 
     // alloca指令不应该生成地址加载指令

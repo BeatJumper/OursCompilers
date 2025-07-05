@@ -46,11 +46,11 @@ bool CodeGeneratorAsm::run()
 
     // 产生代码段，即CPU指令，以函数为单位
     genCodeSection();
-    printf("代码段已产生\n");
+    // printf("代码段已产生\n");
 
     // 产生数据段，含初始化和未初始化数据
     genDataSection();
-    printf("数据段已产生\n");
+    // printf("数据段已产生\n");
 
     return true;
 }

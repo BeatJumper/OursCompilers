@@ -586,7 +586,7 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
 
         bool result = src_var->getMemoryAddr(&var_baseRegId, &var_offset);
         if (!result) {
-            minic_log(LOG_ERROR, "BUG");
+            // minic_log(LOG_ERROR, "BUG");
         }
 
         // 对于栈内分配的局部数组，可直接在栈指针上进行移动与运算
@@ -613,7 +613,7 @@ void ILocArm64::lea_var(int rs_reg_no, Value * var)
 
     bool result = var->getMemoryAddr(&var_baseRegId, &var_offset);
     if (!result) {
-        minic_log(LOG_ERROR, "BUG");
+        // minic_log(LOG_ERROR, "BUG");
     }
 
     // lea x8, [fp,#8]
@@ -666,7 +666,7 @@ void ILocArm64::store_var(int src_reg_no, Value * dest_var, int tmp_reg_no)
 
         bool result = dest_var->getMemoryAddr(&dest_baseRegId, &dest_offset);
         if (!result) {
-            minic_log(LOG_ERROR, "BUG");
+            // minic_log(LOG_ERROR, "BUG");
         }
 
         // str x8,[x9]
@@ -727,7 +727,7 @@ void ILocArm64::allocStack(Function * func, int tmp_reg_no)
         protectedRegNum = func->getProtectedReg().size();
     }
 
-    printf("生成函数序言,总栈空间大小:%d\n", totalSize);
+    // printf("生成函数序言,总栈空间大小:%d\n", totalSize);
 
     func->setStackFrameSize(totalSize);
 

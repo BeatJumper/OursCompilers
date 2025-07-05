@@ -223,14 +223,14 @@ void CodeGeneratorArm64::genCodeSection(Function * func)
 {
     // 获取函数的指令列表
     std::vector<Instruction *> & IrInsts = func->getInterCode().getInsts();
-    printf("成功获取指令列表，指令数量：%d\n", int(IrInsts.size()));
+    // printf("成功获取指令列表，指令数量：%d\n", int(IrInsts.size()));
 
     // 标签已经在前端IR生成时确保全局唯一，无需重新编号
     // ILOC代码序列
     ILocArm64 iloc(module);
     // 寄存器分配以及栈空间分配
     registerAllocation(func);
-    printf("寄存器分配完成\n");
+    // printf("寄存器分配完成\n");
 
     iloc.allocStack(func, ARM64_TMP_REG_NO);
 
@@ -238,7 +238,7 @@ void CodeGeneratorArm64::genCodeSection(Function * func)
     InstSelectorArm64 instSelector(IrInsts, iloc, func);
     instSelector.setShowLinearIR(this->showLinearIR);
     instSelector.run();
-    printf("汇编已生成\n");
+    // printf("汇编已生成\n");
 
     // 删除无用的Label指令
     iloc.deleteUsedLabel();
@@ -359,7 +359,7 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     adjustFuncCallInsts(func);
 
     auto & params = func->getParams();
-    printf("params: %d\n", int(params.size()));
+    // printf("params: %d\n", int(params.size()));
 
     // 形参的前8个通过寄存器来传值X0-X7
     for (int k = 0; k < (int) params.size() && k <= 7; k++) {
@@ -442,7 +442,7 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
 
     adjustFormalParamInsts(func);
 
-    printf("为局部变量和临时变量在栈内分配空间\n");
+    // printf("为局部变量和临时变量在栈内分配空间\n");
 }
 
 /// @brief 寄存器分配前对常数进行扫描，对一些常数提前追加MOV指令
@@ -595,7 +595,7 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
             // 实参前8个要寄存器传值，其它参数通过栈传递
             Function * f = module->findFunction(callInst->getCalledName());
             int32_t argNum = f->getParams().size();
-            printf("初始函数参数个数：%d\n", argNum);
+            // printf("初始函数参数个数：%d\n", argNum);
 
             // 除前8个整数寄存器外，后面的参数采用栈传递
             int esp = 0;
@@ -668,7 +668,7 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
     // 这里对临时变量和局部变量都在栈上进行分配,但形参对应实参的临时变量(FormalParam类型)不需要考虑
 
     int64_t sp_esp = func->getmaxExtraStackSize();
-    printf("stackAlloc开始时,由于栈传参数所造成的栈空间大小:%d\n", int(sp_esp));
+    // printf("stackAlloc开始时,由于栈传参数所造成的栈空间大小:%d\n", int(sp_esp));
 
     // 为数组分配栈空间
     for (auto inst: func->getInterCode().getInsts()) {
