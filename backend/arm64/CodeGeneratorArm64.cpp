@@ -93,8 +93,15 @@ void CodeGeneratorArm64::genDataSection()
                 int totalSize = actualType->getSize();
                 int wordCount = (totalSize + 3) / 4; // 向上取整到字边界
                 printf("Debug: 总大小: %d字节，需要 %d 个word\n", totalSize, wordCount);
-                for (int i = 0; i < wordCount; i++) {
-                    fprintf(fp, "	.word 0\n");
+
+                // 对于大数组，使用.space指令而不是逐个.word 0
+                if (wordCount > 1000) {
+                    fprintf(fp, "	.space %d\n", totalSize);
+                    printf("Debug: BSS段使用.space指令分配 %d 字节的零初始化内存\n", totalSize);
+                } else {
+                    for (int i = 0; i < wordCount; i++) {
+                        fprintf(fp, "	.word 0\n");
+                    }
                 }
                 fprintf(fp, ".size %s, %d\n", var->getName().c_str(), totalSize);
             } else {
@@ -156,14 +163,28 @@ void CodeGeneratorArm64::genDataSection()
                         if (storageType && storageType->isArrayType()) {
                             ArrayType * arrayType = static_cast<ArrayType *>(storageType);
                             int totalElements = arrayType->getTotalElements();
-                            for (int i = 0; i < totalElements; i++) {
-                                fprintf(fp, "	.word 0\n");
+                            // 对于大数组，使用.space指令而不是逐个.word 0
+                            if (totalElements > 1000) {
+                                int totalBytes = totalElements * 4; // 每个元素4字节
+                                fprintf(fp, "	.space %d\n", totalBytes);
+                                printf("Debug: 使用.space指令分配 %d 字节的零初始化内存\n", totalBytes);
+                            } else {
+                                for (int i = 0; i < totalElements; i++) {
+                                    fprintf(fp, "	.word 0\n");
+                                }
                             }
                         } else if (var->getType()->isArrayType()) {
                             ArrayType * arrayType = static_cast<ArrayType *>(var->getType());
                             int totalElements = arrayType->getTotalElements();
-                            for (int i = 0; i < totalElements; i++) {
-                                fprintf(fp, "	.word 0\n");
+                            // 对于大数组，使用.space指令而不是逐个.word 0
+                            if (totalElements > 1000) {
+                                int totalBytes = totalElements * 4; // 每个元素4字节
+                                fprintf(fp, "	.space %d\n", totalBytes);
+                                printf("Debug: 使用.space指令分配 %d 字节的零初始化内存\n", totalBytes);
+                            } else {
+                                for (int i = 0; i < totalElements; i++) {
+                                    fprintf(fp, "	.word 0\n");
+                                }
                             }
                         }
                     }
@@ -850,8 +871,17 @@ void CodeGeneratorArm64::expandAndOutputInitValues(const std::vector<Value *> & 
                     int totalElements = nestedArrayType->getTotalElements();
                     printf("Debug: zeroinitializer对应的数组元素个数:%d\n", totalElements);
 
-                    for (int i = 0; i < totalElements; i++) {
-                        fprintf(fp, "	.word 0\n");
+                    // 对于大数组，使用.space指令而不是逐个.word 0
+                    if (totalElements > 1000) {
+                        // 使用.space指令分配大块零初始化内存
+                        int totalBytes = totalElements * 4; // 每个元素4字节
+                        fprintf(fp, "	.space %d\n", totalBytes);
+                        printf("Debug: 使用.space指令分配 %d 字节的零初始化内存\n", totalBytes);
+                    } else {
+                        // 对于小数组，仍然使用.word 0
+                        for (int i = 0; i < totalElements; i++) {
+                            fprintf(fp, "	.word 0\n");
+                        }
                     }
                 }
             }
