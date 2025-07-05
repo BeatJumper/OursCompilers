@@ -387,11 +387,12 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     // 主要染色过程（不断尝试染色直至成功）
     bool forfloat[] = {false, true};
     for (bool is_float: forfloat) {
+        int color_size = is_float ? PlatformArm64::maxVecRegNum : PlatformArm64::maxUsableRegNum;
         while (true) {
             // 创建干涉图
-            InterferenceGraph * graph_ig1 = new InterferenceGraph(func, is_float);
+            // InterferenceGraph * graph_ig1 = new InterferenceGraph(func, is_float);
 
-            spill(func, graph_ig1);
+            // spill(func, graph_ig1);
 
             InterferenceGraph * graph_ig = new InterferenceGraph(func, is_float);
 
@@ -399,23 +400,33 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
 
             std::cout << "完成干涉图构建" << std::endl;
 
+            while (true) {
+                graph_ig->simplify(color_size);
+                // std::cout << "完成simplify" << std::endl;
+                // break;
+                bool suc_coalesce = graph_ig->coalesce(color_size);
+                if (suc_coalesce == false) {
+                    break;
+                }
+            }
+
+            std::cout << "完成接合" << std::endl;
             // 尝试进行染色
             // 染色是否成功
-            bool suc =
-                InterferenceGraph::color_graph(graph_ig,
-                                               is_float ? PlatformArm64::maxVecRegNum : PlatformArm64::maxUsableRegNum);
+            bool suc = graph_ig->color_graph(color_size);
 
             if (suc) {
                 // assert(graph_ig->node_set.size());
+                graph_ig->select(color_size);
                 for (node_IG * node: graph_ig->node_set) {
                     // assert(node->color != -1);
                     // std::cout << InterferenceGraph::ColorToRegId(node->color) << std::endl;
                     // printval(func->getParams()[0]);
                     // printval(node->val);
-                    node->val->setRegId(
-                        InterferenceGraph::ColorToRegId(node->color,
-                                                        node->val->getType() == FloatType::getTypeFloat()));
-
+                    for (Value * val: node->vals) {
+                        val->setRegId(
+                            InterferenceGraph::ColorToRegId(node->color, val->getType() == FloatType::getTypeFloat()));
+                    }
                     // std::cout << node->val->getRegId() << std::endl;
                 }
                 // std::cout << "染色成功" << std::endl;

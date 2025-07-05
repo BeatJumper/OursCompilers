@@ -1,17 +1,23 @@
 #ifndef InterferenceGraph_H
 #define InterferenceGraph_H
 
+#include <stack>
 #include "Liveness.h"
 
 /// @brief 干涉图的节点
 struct node_IG {
-    /// @brief 干涉图节点对应的Value
+    /// @brief 干涉图节点对应的Value的表
+    std::set<Value *> vals;
+    /// @brief 作为原始节点对应的Value
     Value * val;
     /// @brief 干涉图节点的邻接表
     std::set<node_IG *> neighbors;
+    /// @brief 干涉图关于移动边的邻接表
+    std::set<node_IG *> mov_neigh;
     /// @brief 构造函数
     /// @param _val 节点对应的Value
     node_IG(Value * _val);
+    node_IG();
     /// @brief 给干涉图节点添加邻居
     /// @param neighbor 邻居的指针
     void add_neighbor(node_IG * neighbor);
@@ -23,6 +29,8 @@ struct node_IG {
     int degree();
     /// @brief 目前的颜色（-1表示还没涂色）
     int color = -1;
+    /// @brief 是否已经从图中暂时删除了
+    bool is_deleted = false;
 };
 /// @brief 干涉图
 struct InterferenceGraph {
@@ -32,10 +40,37 @@ struct InterferenceGraph {
     std::set<node_IG *> node_set;
     /// @brief 没有被预染色的节点的列表
     std::set<node_IG *> uncolored_node_set;
+    /// @brief 移动边的列表
+    std::set<std::pair<node_IG *, node_IG *>> mov_set;
     /// @brief 干涉图中添加一条无向边
     /// @param node1 干涉图的一个节点
     /// @param node2 干涉图的另一个节点
     void add_edge(node_IG * node1, node_IG * node2);
+    /// @brief 干涉图中添加一条移动边
+    /// @param node1 干涉图的一个节点
+    /// @param node2 干涉图的另一个节点
+    void add_mov_edge(node_IG * node1, node_IG * node2);
+    /// @brief 删除一条移动边
+    /// @param node1 干涉图的一个节点
+    /// @param node2 干涉图的另一个节点
+    void remove_mov_edge(node_IG * node1, node_IG * node2);
+    /// @brief 尝试按照briggs策略进行接合
+    /// @param node1 干涉图的一个节点
+    /// @param node2 干涉图的另一个节点
+    /// @param color_size 颜色种类数
+    /// @return 接合是否成功
+    bool merge_node_briggs(node_IG * node1, node_IG * node2, int color_size);
+    /// @brief 尝试按照george策略进行接合
+    /// @param node1 干涉图的一个节点
+    /// @param node2 干涉图的另一个节点
+    /// @param color_size 颜色种类数
+    /// @return 接合是否成功
+    bool merge_node_george(node_IG * node1, node_IG * node2, int color_size);
+    /// @brief 将两个节点进行接合
+    /// @param node1 节点1
+    /// @param node2 节点2
+    /// @return 接合后的节点
+    node_IG * merge_node(node_IG * node1, node_IG * node2);
     /// @brief 将一个节点从图中删除（可恢复）
     /// @param node 要删除的节点
     void remove_node(node_IG * node);
@@ -53,6 +88,16 @@ struct InterferenceGraph {
     InterferenceGraph(Function * func, bool is_float);
     /// @brief 一个布尔量，表示是否是为浮点量创建的
     bool is_float = false;
+    /// @brief 删除小度节点的函数
+    /// @param color_size 颜色种类数
+    void simplify(int color_size);
+    /// @brief 恢复小度节点的函数
+    /// @param color_size 颜色种类数
+    void select(int color_size);
+    /// @brief 尝试接合的函数
+    /// @param color_size 颜色种类
+    /// @return 是否发生了接合
+    bool coalesce(int color_size);
     /// @brief 对一个活跃分析后的控制流图创建干涉图
     /// @param graph 控制流图
     void ExecuteCFG(ControlFlowGraph * graph);
@@ -62,7 +107,7 @@ struct InterferenceGraph {
     /// @param graph 干涉图
     /// @param color_size 颜色种类
     /// @return 是否染色成功
-    static bool color_graph(InterferenceGraph * graph, int color_size);
+    bool color_graph(int color_size);
     /// @brief 现有的主要染色算法是 Welsh-Powell算法、回溯法
     enum class color_method { WELSH_POWELL, BACKTRACK };
     /// @brief 目前选择的染色算法（默认是WELSH_POWELL算法）
@@ -77,6 +122,12 @@ struct InterferenceGraph {
     /// @param regid 寄存器号码
     /// @return 对应的颜色
     static int RegIdToColor(int regid);
+
+    //  暂时被移出干涉图的小度节点
+    std::stack<node_IG *> removed_nodes;
+
+    // 从Value到干涉图节点的映射
+    std::map<Value *, node_IG *> value_to_ig;
 };
 
 /// @brief 对一个干涉图节点，寻找其目前能染的编号最小的颜色

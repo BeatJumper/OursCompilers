@@ -1,14 +1,23 @@
 #include <stack>
 #include <algorithm>
 #include <bitset>
+#include <queue>
 
 #include "InterferenceGraph.h"
 #include "PlatformArm64.h"
 #include "AllocaInstruction.h"
 #include "FuncCallInstruction.h"
 #include "FloatType.h"
+#include "MoveInstruction.h"
+#include "Constant.h"
 
-node_IG::node_IG(Value * _val) : val(_val)
+node_IG::node_IG(Value * _val)
+{
+    val = _val;
+    vals.insert(_val);
+}
+
+node_IG::node_IG()
 {}
 
 int node_IG::degree()
@@ -95,10 +104,22 @@ InterferenceGraph::~InterferenceGraph()
     }
 }
 
+void InterferenceGraph::add_mov_edge(node_IG * node1, node_IG * node2)
+{
+    node1->mov_neigh.insert(node2);
+    node2->mov_neigh.insert(node1);
+}
+
+void InterferenceGraph::remove_mov_edge(node_IG * node1, node_IG * node2)
+{
+    node1->mov_neigh.erase(node2);
+    node2->mov_neigh.erase(node1);
+}
+
 void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
 {
-    // 从Value到干涉图节点的映射
-    std::map<Value *, node_IG *> value_to_ig;
+
+    // 目前染色涉及的所有value
     std::set<Value *> all_value_in_cfg;
 
     // printf("所有指令列表:\n");
@@ -177,6 +198,21 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
         }
     }
     // printf("所有干涉节点创建完成\n");
+
+    // 统计移动边
+    for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
+        if (Instanceof(movinst, MoveInstruction *, inst)) {
+            Value * result = movinst->getOperand(0);
+            Value * src = movinst->getOperand(1);
+            if (Instanceof(constsrc, Constant *, src)) {
+                continue;
+            }
+            if (all_value_in_cfg.count(result) && all_value_in_cfg.count(src)) {
+                mov_set.insert({value_to_ig[result], value_to_ig[src]});
+                add_mov_edge(value_to_ig[result], value_to_ig[src]);
+            }
+        }
+    }
     //  std::cout <<　uncolored_node_set.size() << std::endl;
 
     // 这是std::set版本的干涉图构建过程，时间复杂度是O(N * M * M * logN)，其中N为指令数目，M为活跃集合的size上限
@@ -384,46 +420,149 @@ static bool backtrack_color(InterferenceGraph * graph, int color_size, std::set<
     return false;
 }
 
-bool InterferenceGraph::color_graph(InterferenceGraph * graph, int color_size)
+void InterferenceGraph::simplify(int color_size)
 {
-    // printf("开始染色\n");
-    //  暂时被移出干涉图的小度节点
-    std::stack<node_IG *> removed_nodes;
-
     // 先删除小度节点
-
     // 这里的queue只是为了代码方便，提前存储的一个uncolored_node_set的副本
-    std::vector<node_IG *> uncolored_node_queue(graph->uncolored_node_set.begin(), graph->uncolored_node_set.end());
-    for (node_IG * node: uncolored_node_queue) {
+    std::queue<node_IG *> uncolored_node_queue;
+    for (node_IG * node: uncolored_node_set) {
+        uncolored_node_queue.push(node);
+    }
+    while (uncolored_node_queue.empty() == false) {
+        node_IG * node = uncolored_node_queue.front();
+        uncolored_node_queue.pop();
+
+        if (node->is_deleted || (node->mov_neigh.empty() == false)) {
+            // 已删除的节点不做操作
+            continue;
+        }
+
         if (node->degree() < color_size) {
-            graph->remove_node(node);
+            // 删除操作
+            node->is_deleted = true;
+            this->remove_node(node);
             removed_nodes.push(node);
+            // 再看邻居节点是否会因为度数减小而被删除
+            for (node_IG * neighbor: node->neighbors) {
+                uncolored_node_queue.push(neighbor);
+            }
         }
     }
-    // 染色是否成功
-    bool suc;
+}
 
-    switch (method_chosen) {
-        case color_method::WELSH_POWELL:
-            suc = welsh_powell(graph, color_size);
-            break;
-        case color_method::BACKTRACK:
-            suc = backtrack_color(graph, color_size, graph->uncolored_node_set.begin());
-            break;
+node_IG * InterferenceGraph::merge_node(node_IG * node1, node_IG * node2)
+{
+    node_IG * node_merged = new node_IG();
+    node_merged->neighbors = node1->neighbors;
+    merge_set(node_merged->neighbors, node2->neighbors);
+    for (node_IG * neighbor: node_merged->neighbors) {
+        neighbor->remove_neighbor(node1);
+        neighbor->remove_neighbor(node2);
+        neighbor->add_neighbor(node_merged);
     }
+    return node_merged;
+}
 
+/*
+bool InterferenceGraph::merge_node_briggs(node_IG * node1, node_IG * node2, int color_size)
+{
+    node_IG * node_merged = new node_IG();
+    node_merged->neighbors = iter->first->neighbors;
+    merge_set(node_merged->neighbors, iter->second->neighbors);
+    if (node_merged->degree() < color_size) {
+        merge_node_briggs();
+        suc = true;
+    }
+}
+*/
+
+// 判定两个节点是否满足George条件（两个点有前后顺序差别）
+bool george(node_IG * node1, node_IG * node2, int color_size)
+{
+    /*
+    std::cout << "判定点" << std::endl;
+    printval(node1->val);
+    printval(node2->val);
+    std::cout << std::endl;
+    */
+
+    for (node_IG * neighbor: node1->neighbors) {
+        if (neighbor->degree() >= color_size) {
+            return false;
+        }
+        if (neighbor->neighbors.count(node2) == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool InterferenceGraph::merge_node_george(node_IG * node1, node_IG * node2, int color_size)
+{
+    if (george(node1, node2, color_size) || george(node2, node1, color_size)) {
+        merge_node(node1, node2);
+        node1->is_deleted = true;
+        node2->is_deleted = true;
+        std::cout << "接合了以下两个节点" << std::endl;
+        std::cout << node1 << " " << node2 << std::endl;
+        return true;
+    }
+    return false;
+}
+
+bool InterferenceGraph::coalesce(int color_size)
+{
+    bool suc = false;
+    // assert(mov_set.size() == 1 || mov_set.size() == 0);
+    for (auto iter = mov_set.begin(); iter != mov_set.end(); iter++) {
+        // assert(iter->first);
+        // assert(iter->second);
+        if (iter->first->is_deleted || iter->second->is_deleted || iter->first->neighbors.count(iter->second)) {
+            std::cout << "删除移动边" << std::endl;
+            printval(iter->first->val);
+            printval(iter->second->val);
+            // assert(iter->first->is_deleted == false);
+            // assert(iter->second->is_deleted == false);
+            // assert(iter->first->neighbors.count(iter->second) == 0);
+            std::cout << "完毕" << std::endl;
+            remove_mov_edge(iter->first, iter->second);
+            iter = mov_set.erase(iter);
+            iter--;
+        } else {
+            suc |= merge_node_george(iter->first, iter->second, color_size);
+            // suc = merge_node_briggs(iter->first, iter->second);
+        }
+    }
+    return suc;
+}
+
+void InterferenceGraph::select(int color_size)
+{
     // 然后，恢复小度节点并对这些小度节点着色
     // assert(removed_nodes.size() == 15);
     while (!removed_nodes.empty()) {
         node_IG * node = removed_nodes.top();
         removed_nodes.pop();
-        graph->restore_node(node);
-        if (suc) {
-            // std::cout << node->neighbors.size() << std::endl;
-            node->color = least_color_for_node(node, color_size);
-            // assert(node->color != -1);
-        }
+        this->restore_node(node);
+        node->color = least_color_for_node(node, color_size);
     }
+}
+
+bool InterferenceGraph::color_graph(int color_size)
+{
+    // printf("开始染色\n");
+    // 染色是否成功
+    bool suc;
+
+    switch (method_chosen) {
+        case color_method::WELSH_POWELL:
+            suc = welsh_powell(this, color_size);
+            break;
+        case color_method::BACKTRACK:
+            suc = backtrack_color(this, color_size, this->uncolored_node_set.begin());
+            break;
+    }
+
     return suc;
 }
 
