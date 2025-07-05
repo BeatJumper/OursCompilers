@@ -480,19 +480,27 @@ void CodeGeneratorArm64::adjustLocalToReg(Function * func)
     auto & insts = func->getInterCode().getInsts();
     map<Value *, Value *> replace_list;
 
+    for (LocalVariable * localval: func->getVarValues()) {
+        const PointerType * realType_pointer = dynamic_cast<PointerType *>(localval->getType());
+        Type * realType = const_cast<Type *>(realType_pointer->getPointeeType());
+        assert(realType_pointer->isPointerType());
+        Value * stand = new Value(realType);
+        replace_list[localval] = stand;
+    }
+
     // 先扫描出IR里所有对局部变量进行存取的指令并删除，得出哪些临时变量需要替换为原始的局部变量
     for (size_t i = 0; i < insts.size(); i++) {
         if (Instanceof(inst, StoreInstruction *, insts[i])) {
             Value * ptr = insts[i]->getOperand(1);
             if (Instanceof(localval, LocalVariable *, ptr)) {
                 Value * val = insts[i]->getOperand(0);
-                MoveInstruction * movinst = new MoveInstruction(func, ptr, val);
+                MoveInstruction * movinst = new MoveInstruction(func, replace_list[ptr], val);
                 insts[i] = movinst;
             }
         } else if (Instanceof(inst, LoadInstruction *, insts[i])) {
             Value * ptr = insts[i]->getOperand(0);
             if (Instanceof(localval, LocalVariable *, ptr)) {
-                replace_list[inst] = localval;
+                replace_list[inst] = replace_list[ptr];
             }
             printval(insts[i]);
             insts.erase(insts.begin() + i);
@@ -505,6 +513,7 @@ void CodeGeneratorArm64::adjustLocalToReg(Function * func)
         for (int index = 0; index < insts[i]->getOperandsNum(); index++) {
             Value * operand = insts[i]->getOperand(index);
             if (replace_list.count(operand)) {
+                printval(insts[i]);
                 // printf("被替换的:");
                 // printval(operand);
                 insts[i]->getOperands()[index]->setUsee(replace_list[operand]);

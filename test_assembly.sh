@@ -186,9 +186,9 @@ main() {
     print_info "开始 ARM64 汇编测试流程..."
     
     # 默认参数
-    local source_file="./tests/AddFunction.c"
-    local assembly_file="./tests/AddFunction.s"
-    local executable_file="./tests/AddFunction_test"
+    local source_file="./tests/test1-1.c"
+    local assembly_file="./tests/test1-1.s"
+    local executable_file="./tests/test1-1"
     local input_file="./tests/add.in"
     local expected_output_file="./tests/add.out"
     
