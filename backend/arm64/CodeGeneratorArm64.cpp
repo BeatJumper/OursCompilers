@@ -713,30 +713,20 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
             int64_t size = 4; // 默认大小
             if (Instanceof(arr, ArrayType *, allocatedType)) {
                 // alloca对象为数组
-                printf("局部变量数组首地址:%d\n", int(sp_esp));
                 inst->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
                 // 为alloca指令的结果变量设置相同的内存地址
                 // 尝试将结果变量转换为LocalVariable并设置内存地址
                 if (LocalVariable * localVar = dynamic_cast<LocalVariable *>(result)) {
                     localVar->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
-                    printf("Debug: stackAlloc - 局部变量 %s 设置内存地址: offset=%ld\n",
-                           localVar->getName().c_str(),
-                           sp_esp);
                 }
                 // 使用ArrayType的getSize()方法，它会正确计算所有维度的总大小
                 size = arr->getSize();
-                printf("Debug: stackAlloc - 数组 %s 类型: %s, 总大小: %ld 字节\n",
-                       result->getName().c_str(),
-                       arr->toString().c_str(),
-                       size);
                 sp_esp += size;
             } else if (Instanceof(val, PointerType *, allocatedType)) {
-                printf("检测到Alloca对象为指针类型\n");
                 auto * pointeeType = val->getPointeeType();
                 size = pointeeType->getSize();
                 LocalVariable * localVar = dynamic_cast<LocalVariable *>(result);
                 localVar->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
-                printf("Alloca指向的数据类型的大小:%d\n", int(size));
                 sp_esp += size;
             }
         }
@@ -766,34 +756,24 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
     int inst_count = 0;
     for (auto inst: func->getInterCode().getInsts()) {
         inst_count++;
-        printf("Debug: 检查指令 %d, def_set大小: %zu\n", inst_count, inst->get_def_set().size());
 
         // 检查指令的定义集合中的变量
         for (Value * val: inst->get_def_set()) {
-            printf("Debug: 检查变量 %s, regId=%d\n", val->getIRName().c_str(), val->getRegId());
 
             // 跳过alloca指令
             if (dynamic_cast<AllocaInstruction *>(val)) {
-                printf("Debug: 跳过alloca指令: %s\n", val->getIRName().c_str());
                 continue;
             }
 
             // 只处理溢出的变量（regId=-2）且还没有分配内存地址的变量
             if (val->getRegId() == -2) {
-                printf("Debug: 发现溢出变量: %s\n", val->getIRName().c_str());
                 int64_t offset;
                 if (!val->getMemoryAddr(nullptr, &offset)) {
-                    printf("Debug: 变量 %s 没有内存地址，准备分配\n", val->getIRName().c_str());
                     // 为溢出变量分配栈空间
                     if (Instruction * instVal = dynamic_cast<Instruction *>(val)) {
                         instVal->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
-                        printf("为溢出变量 %s 分配栈空间: offset=%ld\n", val->getIRName().c_str(), sp_esp);
                         sp_esp += 4; // 假设都是4字节的整数
-                    } else {
-                        printf("Debug: 变量 %s 不是Instruction类型\n", val->getIRName().c_str());
                     }
-                } else {
-                    printf("Debug: 变量 %s 已有内存地址: offset=%ld\n", val->getIRName().c_str(), offset);
                 }
             }
         }

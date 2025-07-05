@@ -1044,8 +1044,18 @@ void InstSelectorArm64::translate_store(Instruction * inst)
     if (LoadInstruction * ldrVal = dynamic_cast<LoadInstruction *>(arg1)) {
         auto * val = ldrVal->getOperand(0);
         if (FormalParam * param = dynamic_cast<FormalParam *>(val)) {
-            if (param->getType()->isPointerType()) {
-                iloc.store_var(arg1_regId + 32, arg2, ARM64_TMP_REG_NO);
+            if (PointerType * pTr = dynamic_cast<PointerType *>(param)) {
+                int32_t base_reg_id = -1;
+                int64_t base_offset = -1;
+                arg2->getMemoryAddr(&base_reg_id, &base_offset);
+                std::string s = PlatformArm64::regName[arg1_regId];
+                if (s[0] != 'x') {
+                    s[0] = 'x';
+                }
+                iloc.inst("str",
+                          s,
+                          "[" + PlatformArm64::regName[base_reg_id] + ",#" + std::to_string(base_offset) + "]");
+                // iloc.store_var(arg1_regId + 32, arg2, ARM64_TMP_REG_NO);
                 return;
             }
         }
