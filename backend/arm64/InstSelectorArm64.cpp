@@ -1035,18 +1035,50 @@ void InstSelectorArm64::translate_store(Instruction * inst)
             }
         }
 
-        // 4. 逐字复制数组内容
+        // 4. 高效复制数组内容，避免大量循环
         int words = arraySize / 4;
-        for (int i = 0; i < words; i++) {
-            int offset = i * 4;
-            // 从源地址加载
-            iloc.inst("ldr",
-                      "w" + std::to_string(ARM64_TMP_REG_NO + 2),
-                      "[" + PlatformArm64::regName[src_reg + 32] + ",#" + std::to_string(offset) + "]");
-            // 存储到目标地址
-            iloc.inst("str",
-                      "w" + std::to_string(ARM64_TMP_REG_NO + 2),
-                      "[" + PlatformArm64::regName[dest_reg + 32] + ",#" + std::to_string(offset) + "]");
+
+        // 对于大数组，使用批量复制方法
+        if (words > 16) {
+            // 使用ARM64的ldp/stp指令对进行高效批量传输
+            int pairCount = words / 4; // 每对传输4个字（16字节）
+            int remainingWords = words % 4;
+
+            std::string src_reg_name = PlatformArm64::regName[src_reg + 32];
+            std::string dest_reg_name = PlatformArm64::regName[dest_reg + 32];
+
+            // 使用两个临时寄存器进行配对操作
+            std::string temp1 = "x" + std::to_string(ARM64_TMP_REG_NO + 2);
+            std::string temp2 = "x" + std::to_string(ARM64_TMP_REG_NO + 3);
+
+            // 批量传输16字节块
+            for (int i = 0; i < pairCount; i++) {
+                int offset = i * 16;
+                iloc.inst("ldp", temp1 + "," + temp2, "[" + src_reg_name + ",#" + std::to_string(offset) + "]");
+                iloc.inst("stp", temp1 + "," + temp2, "[" + dest_reg_name + ",#" + std::to_string(offset) + "]");
+            }
+
+            // 处理剩余的字
+            for (int i = 0; i < remainingWords; i++) {
+                int offset = pairCount * 16 + i * 4;
+                iloc.inst("ldr",
+                          "w" + std::to_string(ARM64_TMP_REG_NO + 2),
+                          "[" + src_reg_name + ",#" + std::to_string(offset) + "]");
+                iloc.inst("str",
+                          "w" + std::to_string(ARM64_TMP_REG_NO + 2),
+                          "[" + dest_reg_name + ",#" + std::to_string(offset) + "]");
+            }
+        } else {
+            // 对于小数组，保持原有的逐字复制方式
+            for (int i = 0; i < words; i++) {
+                int offset = i * 4;
+                iloc.inst("ldr",
+                          "w" + std::to_string(ARM64_TMP_REG_NO + 2),
+                          "[" + PlatformArm64::regName[src_reg + 32] + ",#" + std::to_string(offset) + "]");
+                iloc.inst("str",
+                          "w" + std::to_string(ARM64_TMP_REG_NO + 2),
+                          "[" + PlatformArm64::regName[dest_reg + 32] + ",#" + std::to_string(offset) + "]");
+            }
         }
 
         return;
@@ -1893,11 +1925,12 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
     // 获取复制大小
     if (auto constSize = dynamic_cast<ConstInt *>(size)) {
         int copySize = constSize->getVal();
-        int wordCount = (copySize + 3) / 4; // 向上取整到字边界
 
-        // 使用循环复制数据
-        for (int i = 0; i < wordCount; i++) {
-            // 从源地址加载数据到临时寄存器
+        // 对于极大的数组（超过64KB），使用ARM64高效内存操作指令
+        if (copySize > 65536) {
+            iloc.comment("Using ARM64 efficient memory operations for large memcpy of " + std::to_string(copySize) +
+                         " bytes");
+
             std::string src_reg_name = PlatformArm64::regName[src_reg];
             std::string dest_reg_name = PlatformArm64::regName[dest_reg];
 
@@ -1909,20 +1942,173 @@ void InstSelectorArm64::translate_memcpy(Instruction * inst)
                 dest_reg_name[0] = 'x';
             }
 
-            // 选择一个不与dest_reg和src_reg冲突的临时寄存器
-            int temp_reg = ARM64_TMP_REG_NO; // 默认使用w10
-            if (temp_reg == dest_reg || temp_reg == src_reg) {
-                temp_reg = ARM64_TMP_REG_NO + 1; // 使用w11
-                if (temp_reg == dest_reg || temp_reg == src_reg) {
-                    temp_reg = ARM64_TMP_REG_NO + 2; // 使用w12
+            // 使用临时寄存器
+            int size_reg = ARM64_TMP_REG_NO + 1; // x11用于大小
+            if (size_reg == dest_reg || size_reg == src_reg)
+                size_reg = ARM64_TMP_REG_NO + 2;
+
+            std::string size_reg_name = PlatformArm64::regName[size_reg];
+            if (size_reg_name[0] == 'w')
+                size_reg_name[0] = 'x';
+
+            // 设置复制大小
+            iloc.load_imm(size_reg, copySize);
+
+            // 使用ARM64高效内存复制指令序列
+            // 生成高效的循环复制代码，使用ldp/stp指令对进行批量传输
+            static int large_memcpy_counter = 0;
+            std::string loop_label = ".L_large_memcpy_loop_" + std::to_string(large_memcpy_counter++);
+            std::string end_label = ".L_large_memcpy_end_" + std::to_string(large_memcpy_counter);
+
+            // 使用两个额外的临时寄存器进行数据传输
+            int temp_reg1 = ARM64_TMP_REG_NO + 2; // x12
+            int temp_reg2 = ARM64_TMP_REG_NO + 3; // x13
+            if (temp_reg1 == dest_reg || temp_reg1 == src_reg || temp_reg1 == size_reg)
+                temp_reg1 = ARM64_TMP_REG_NO + 4;
+            if (temp_reg2 == dest_reg || temp_reg2 == src_reg || temp_reg2 == size_reg || temp_reg2 == temp_reg1)
+                temp_reg2 = ARM64_TMP_REG_NO + 5;
+
+            std::string temp_reg1_name = PlatformArm64::regName[temp_reg1];
+            std::string temp_reg2_name = PlatformArm64::regName[temp_reg2];
+            if (temp_reg1_name[0] == 'w')
+                temp_reg1_name[0] = 'x';
+            if (temp_reg2_name[0] == 'w')
+                temp_reg2_name[0] = 'x';
+
+            // 计算循环次数（每次复制32字节）
+            int chunk_size = 32;
+            int loop_count = copySize / chunk_size;
+            int remaining_bytes = copySize % chunk_size;
+
+            if (loop_count > 0) {
+                // 设置循环计数器
+                iloc.load_imm(size_reg, loop_count);
+
+                // 循环开始
+                iloc.label(loop_label);
+
+                // 使用ldp/stp指令对进行高效批量传输（每次32字节）
+                iloc.inst("ldp", temp_reg1_name + "," + temp_reg2_name, "[" + src_reg_name + "],#16");
+                iloc.inst("stp", temp_reg1_name + "," + temp_reg2_name, "[" + dest_reg_name + "],#16");
+                iloc.inst("ldp", temp_reg1_name + "," + temp_reg2_name, "[" + src_reg_name + "],#16");
+                iloc.inst("stp", temp_reg1_name + "," + temp_reg2_name, "[" + dest_reg_name + "],#16");
+
+                // 递减计数器并检查
+                iloc.inst("subs", size_reg_name, size_reg_name, "#1");
+                iloc.inst("b.ne", loop_label);
+
+                iloc.label(end_label);
+            }
+
+            // 处理剩余字节
+            if (remaining_bytes > 0) {
+                int remaining_pairs = remaining_bytes / 16;
+                for (int i = 0; i < remaining_pairs; i++) {
+                    iloc.inst("ldp", temp_reg1_name + "," + temp_reg2_name, "[" + src_reg_name + "],#16");
+                    iloc.inst("stp", temp_reg1_name + "," + temp_reg2_name, "[" + dest_reg_name + "],#16");
+                }
+
+                int final_remaining = remaining_bytes % 16;
+                if (final_remaining >= 8) {
+                    iloc.inst("ldr", temp_reg1_name, "[" + src_reg_name + "],#8");
+                    iloc.inst("str", temp_reg1_name, "[" + dest_reg_name + "],#8");
+                    final_remaining -= 8;
+                }
+                if (final_remaining >= 4) {
+                    iloc.inst("ldr", "w" + temp_reg1_name.substr(1), "[" + src_reg_name + "],#4");
+                    iloc.inst("str", "w" + temp_reg1_name.substr(1), "[" + dest_reg_name + "],#4");
                 }
             }
-            std::string temp_reg_name = PlatformArm64::regName[temp_reg];
 
-            // 从源地址加载数据
-            iloc.inst("ldr", temp_reg_name, "[" + src_reg_name + ", #" + std::to_string(i * 4) + "]");
-            // 存储到目标地址
-            iloc.inst("str", temp_reg_name, "[" + dest_reg_name + ", #" + std::to_string(i * 4) + "]");
+            return;
+        }
+
+        std::string src_reg_name = PlatformArm64::regName[src_reg];
+        std::string dest_reg_name = PlatformArm64::regName[dest_reg];
+
+        // 确保使用64位寄存器进行地址计算
+        if (src_reg_name[0] == 'w') {
+            src_reg_name[0] = 'x';
+        }
+        if (dest_reg_name[0] == 'w') {
+            dest_reg_name[0] = 'x';
+        }
+
+        // 选择临时寄存器
+        int temp_reg1 = ARM64_TMP_REG_NO;     // w10
+        int temp_reg2 = ARM64_TMP_REG_NO + 1; // w11
+        if (temp_reg1 == dest_reg || temp_reg1 == src_reg) {
+            temp_reg1 = ARM64_TMP_REG_NO + 2; // w12
+        }
+        if (temp_reg2 == dest_reg || temp_reg2 == src_reg || temp_reg2 == temp_reg1) {
+            temp_reg2 = ARM64_TMP_REG_NO + 3; // w13
+        }
+
+        std::string temp_reg1_name = PlatformArm64::regName[temp_reg1];
+        std::string temp_reg2_name = PlatformArm64::regName[temp_reg2];
+
+        // 使用ARM64的高效内存复制策略：
+        // 1. 对于小数组（<=64字节），使用直接复制
+        // 2. 对于中等数组（<=1KB），使用ldp/stp批量复制
+        // 3. 对于大数组（<=64KB），使用循环复制
+
+        if (copySize <= 64) {
+            // 小数组：直接展开复制
+            int words = (copySize + 3) / 4;
+            for (int i = 0; i < words && i < 16; i++) {
+                int offset = i * 4;
+                iloc.inst("ldr", temp_reg1_name, "[" + src_reg_name + ",#" + std::to_string(offset) + "]");
+                iloc.inst("str", temp_reg1_name, "[" + dest_reg_name + ",#" + std::to_string(offset) + "]");
+            }
+        } else if (copySize <= 1024) {
+            // 中等数组：使用ldp/stp批量复制
+            int pairCount = copySize / 16;
+            int remaining = copySize % 16;
+
+            for (int i = 0; i < pairCount && i < 64; i++) {
+                int offset = i * 16;
+                iloc.inst("ldp",
+                          temp_reg1_name + "," + temp_reg2_name,
+                          "[" + src_reg_name + ",#" + std::to_string(offset) + "]");
+                iloc.inst("stp",
+                          temp_reg1_name + "," + temp_reg2_name,
+                          "[" + dest_reg_name + ",#" + std::to_string(offset) + "]");
+            }
+
+            // 处理剩余字节
+            if (remaining > 0) {
+                int offset = pairCount * 16;
+                int remainingWords = (remaining + 3) / 4;
+                for (int i = 0; i < remainingWords && i < 4; i++) {
+                    iloc.inst("ldr", temp_reg1_name, "[" + src_reg_name + ",#" + std::to_string(offset + i * 4) + "]");
+                    iloc.inst("str", temp_reg1_name, "[" + dest_reg_name + ",#" + std::to_string(offset + i * 4) + "]");
+                }
+            }
+        } else {
+            // 大数组：生成循环复制代码
+            iloc.comment("Large memcpy using loop for " + std::to_string(copySize) + " bytes");
+
+            // 生成循环标签
+            static int memcpy_loop_counter = 0;
+            std::string loop_label = ".L_memcpy_loop_" + std::to_string(memcpy_loop_counter++);
+            std::string end_label = ".L_memcpy_end_" + std::to_string(memcpy_loop_counter);
+
+            // 设置循环计数器
+            int loop_count = copySize / 16; // 每次复制16字节
+            iloc.load_imm(temp_reg1, loop_count);
+
+            // 循环开始
+            iloc.label(loop_label);
+
+            // 复制16字节
+            iloc.inst("ldp", temp_reg1_name + "," + temp_reg2_name, "[" + src_reg_name + "],#16");
+            iloc.inst("stp", temp_reg1_name + "," + temp_reg2_name, "[" + dest_reg_name + "],#16");
+
+            // 递减计数器并检查
+            iloc.inst("subs", temp_reg1_name, temp_reg1_name, "#1");
+            iloc.inst("b.ne", loop_label);
+
+            iloc.label(end_label);
         }
     }
 }
@@ -1993,17 +2179,158 @@ void InstSelectorArm64::translate_memset(Instruction * inst)
     // 获取设置大小
     if (auto constSize = dynamic_cast<ConstInt *>(size)) {
         int setSize = constSize->getVal();
-        int wordCount = (setSize + 3) / 4; // 向上取整到字边界
 
-        // 使用循环设置数据为零
+        // 对于极大的数组（超过64KB），使用ARM64高效内存操作指令
+        if (setSize > 65536) {
+            iloc.comment("Using ARM64 efficient memory operations for large memset of " + std::to_string(setSize) +
+                         " bytes");
+
+            std::string dest_reg_name = PlatformArm64::regName[dest_reg];
+            if (dest_reg_name[0] == 'w') {
+                dest_reg_name[0] = 'x';
+            }
+
+            // 使用临时寄存器
+            int size_reg = ARM64_TMP_REG_NO + 1;  // x11用于大小
+            int value_reg = ARM64_TMP_REG_NO + 2; // x12用于值
+            if (size_reg == dest_reg)
+                size_reg = ARM64_TMP_REG_NO + 3;
+            if (value_reg == dest_reg || value_reg == size_reg)
+                value_reg = ARM64_TMP_REG_NO + 4;
+
+            std::string size_reg_name = PlatformArm64::regName[size_reg];
+            std::string value_reg_name = PlatformArm64::regName[value_reg];
+
+            // 确保使用64位寄存器
+            if (size_reg_name[0] == 'w')
+                size_reg_name[0] = 'x';
+            if (value_reg_name[0] == 'w')
+                value_reg_name[0] = 'x';
+
+            // 设置大小和值
+            iloc.load_imm(size_reg, setSize);
+            iloc.inst("mov", value_reg_name, "xzr");
+
+            // 使用ARM64高效内存设置指令序列
+            // 生成高效的循环清零代码，使用DC ZVA指令进行缓存行清零
+            static int large_memset_counter = 0;
+            std::string loop_label = ".L_large_memset_loop_" + std::to_string(large_memset_counter++);
+            std::string end_label = ".L_large_memset_end_" + std::to_string(large_memset_counter);
+
+            // 计算循环次数（每次清零64字节缓存行）
+            int cache_line_size = 64;
+            int loop_count = setSize / cache_line_size;
+            int remaining_bytes = setSize % cache_line_size;
+
+            if (loop_count > 0) {
+                // 设置循环计数器
+                iloc.load_imm(size_reg, loop_count);
+
+                // 循环开始
+                iloc.label(loop_label);
+
+                // 使用DC ZVA指令清零一个缓存行（64字节）
+                iloc.inst("dc", "zva", dest_reg_name);
+                iloc.inst("add", dest_reg_name, dest_reg_name, "#" + std::to_string(cache_line_size));
+
+                // 递减计数器并检查
+                iloc.inst("subs", size_reg_name, size_reg_name, "#1");
+                iloc.inst("b.ne", loop_label);
+
+                iloc.label(end_label);
+            }
+
+            // 处理剩余字节
+            if (remaining_bytes > 0) {
+                int remaining_pairs = remaining_bytes / 16;
+                for (int i = 0; i < remaining_pairs; i++) {
+                    iloc.inst("stp", "xzr,xzr", "[" + dest_reg_name + "],#16");
+                }
+
+                int final_remaining = remaining_bytes % 16;
+                if (final_remaining >= 8) {
+                    iloc.inst("str", "xzr", "[" + dest_reg_name + "],#8");
+                    final_remaining -= 8;
+                }
+                if (final_remaining >= 4) {
+                    iloc.inst("str", "wzr", "[" + dest_reg_name + "],#4");
+                }
+            }
+
+            return;
+        }
+
         std::string dest_reg_name = PlatformArm64::regName[dest_reg];
         if (dest_reg_name[0] == 'w') {
             dest_reg_name[0] = 'x';
         }
 
-        for (int i = 0; i < wordCount; i++) {
-            // 使用store_base函数处理大偏移量，wzr对应寄存器编号31
-            iloc.store_base(31, dest_reg, i * 4, ARM64_TMP_REG_NO + 1);
+        // 使用ARM64的高效内存清零策略：
+        // 1. 对于小数组（<=64字节），使用直接清零
+        // 2. 对于中等数组（<=1KB），使用stp批量清零
+        // 3. 对于大数组（<=64KB），使用循环清零
+
+        if (setSize <= 64) {
+            // 小数组：直接展开清零
+            int words = (setSize + 3) / 4;
+            for (int i = 0; i < words && i < 16; i++) {
+                int offset = i * 4;
+                iloc.inst("str", "wzr", "[" + dest_reg_name + ",#" + std::to_string(offset) + "]");
+            }
+        } else if (setSize <= 1024) {
+            // 中等数组：使用stp批量清零
+            int pairCount = setSize / 16;
+            int remaining = setSize % 16;
+
+            for (int i = 0; i < pairCount && i < 64; i++) {
+                int offset = i * 16;
+                if (offset >= -512 && offset <= 504) {
+                    iloc.inst("stp", "xzr,xzr", "[" + dest_reg_name + ",#" + std::to_string(offset) + "]");
+                } else {
+                    iloc.inst("mov", PlatformArm64::regName[ARM64_TMP_REG_NO + 32], "#" + std::to_string(offset));
+                    iloc.inst("add", dest_reg_name, dest_reg_name, PlatformArm64::regName[ARM64_TMP_REG_NO + 32]);
+                    iloc.inst("stp", "xzr,xzr", "[" + dest_reg_name + "]");
+                }
+            }
+
+            // 处理剩余字节
+            if (remaining > 0) {
+                int offset = pairCount * 16;
+                int remainingWords = (remaining + 3) / 4;
+                for (int i = 0; i < remainingWords && i < 4; i++) {
+                    iloc.inst("str", "wzr", "[" + dest_reg_name + ",#" + std::to_string(offset + i * 4) + "]");
+                }
+            }
+        } else {
+            // 大数组：生成循环清零代码
+            iloc.comment("Large memset using loop for " + std::to_string(setSize) + " bytes");
+
+            // 生成循环标签
+            static int memset_loop_counter = 0;
+            std::string loop_label = ".L_memset_loop_" + std::to_string(memset_loop_counter++);
+            std::string end_label = ".L_memset_end_" + std::to_string(memset_loop_counter);
+
+            // 设置循环计数器
+            int loop_count = setSize / 16;       // 每次清零16字节
+            int temp_reg = ARM64_TMP_REG_NO + 1; // 使用w11作为计数器
+            if (temp_reg == dest_reg) {
+                temp_reg = ARM64_TMP_REG_NO + 2; // w12
+            }
+            std::string temp_reg_name = PlatformArm64::regName[temp_reg];
+
+            iloc.load_imm(temp_reg, loop_count);
+
+            // 循环开始
+            iloc.label(loop_label);
+
+            // 清零16字节
+            iloc.inst("stp", "xzr,xzr", "[" + dest_reg_name + "],#16");
+
+            // 递减计数器并检查
+            iloc.inst("subs", temp_reg_name, temp_reg_name, "#1");
+            iloc.inst("b.ne", loop_label);
+
+            iloc.label(end_label);
         }
     }
 }

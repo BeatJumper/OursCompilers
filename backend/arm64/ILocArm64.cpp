@@ -250,11 +250,11 @@ void ILocArm64::inst(std::string op, std::string rs, std::string arg1, std::stri
 }
 
 ///
-/// @brief 注释指令，不包含分号
+/// @brief 注释指令，使用ARM64标准注释格式
 ///
 void ILocArm64::comment(std::string str)
 {
-    emit("@", str);
+    emit("//", str);
 }
 
 /*
