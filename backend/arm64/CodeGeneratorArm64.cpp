@@ -361,17 +361,19 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
     adjustFuncCallInsts(func);
     printf("调整函数调用指令\n");
 
-    adjustFormalParamInsts(func);
+    auto & params = func->getParams();
+    printf("params: %d\n", int(params.size()));
+
+    // 形参的前8个通过寄存器来传值X0-X7
+    for (int k = 0; k < (int) params.size() && k <= 7; k++) {
+
+        // 前八个设置分配寄存器
+
+        params[k]->setRegId(k);
+    }
 
     // 给一些指令添加临时调整指令
     adjustSomeInsts(func);
-
-    // 目前renameIR在创建干涉图阶段产生，因为renameIR为了能给adjust新建的IR命名需要DEF和USE集
-    // 因此需要调用Instruction类的transfer()来更新DEF和USE集
-    /*
-    // 加完新指令后也该重新调整IR编号
-    func->renameIR();
-    */
 
     // 主要染色过程（不断尝试染色直至成功）
     bool forfloat[] = {false, true};
@@ -417,9 +419,6 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
         }
     }
 
-    // 为局部变量、数组、返回值、保护寄存器分配栈空间
-    stackAlloc(func);
-
     // 这里加一个set临时存储保护寄存器，因为同一个寄存器可能多次加入，这里用set可以去重。
     std::set<int32_t> protectedreg_set;
     // 如果用到了保护寄存器，就加进保护寄存器集合
@@ -443,6 +442,11 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
 
     // 保护寄存器的内存分配见ILocArm64::allocStack和ILocArm64::emitFunctionEpilogue处改动
 
+    // 为局部变量、数组、返回值、保护寄存器分配栈空间
+    stackAlloc(func);
+
+    adjustFormalParamInsts(func);
+
     printf("为局部变量和临时变量在栈内分配空间\n");
 }
 
@@ -459,10 +463,13 @@ void CodeGeneratorArm64::adjustSomeInsts(Function * func)
         if (dynamic_cast<StoreInstruction *>(inst)) {
             //要存入的数
             Value * val1 = inst->getOperand(0);
+            printf("Debug: adjustConstInsts - Store指令检测到，arg1类型: %s\n", typeid(*val1).name());
             //检测要存入的数是否是constant
             if (Instanceof(const_val, ConstInt *, val1)) {
+                printf("Debug: adjustConstInsts - 检测到ConstInt，值: %d\n", const_val->getVal());
                 // 对于常量0，不需要创建MoveInstruction，ARM64有专门的零寄存器
                 if (const_val->getVal() != 0) {
+                    printf("Debug: adjustConstInsts - 非零常量，创建MoveInstruction\n");
                     // 其他常量需要mov到寄存器
                     Value * newval = new Value(val1->getType());
                     // 为constant创建mov指令
@@ -472,6 +479,23 @@ void CodeGeneratorArm64::adjustSomeInsts(Function * func)
 
                     //插入到当前位置
                     insts.insert(insts.begin() + i, (Instruction *) movinst);
+                    //插入后当前位置变为新插入的指令，故i额外+1
+                    i++;
+                } else {
+                    printf("Debug: adjustConstInsts - 常量0，保持ConstInt不变\n");
+                }
+            } else if (Instanceof(param_val, FormalParam *, val1)) {
+                if (val1->getRegId() == -1) {
+                    FormalParam * resVal = new FormalParam(param_val->getType(), param_val->getName());
+                    LoadInstruction * ldrinst = new LoadInstruction(func, resVal, param_val);
+                    insts[i]->getOperands()[0] = new Use(ldrinst, inst);
+                    printf("store的源变量已替换为load指令结果\n");
+                    if (LoadInstruction * ldrVal = dynamic_cast<LoadInstruction *>(insts[i]->getOperand(0))) {
+                        printf("检测到store的arg1为ldr指令的结果\n");
+                    }
+
+                    //插入到当前位置
+                    insts.insert(insts.begin() + i, (Instruction *) ldrinst);
                     //插入后当前位置变为新插入的指令，故i额外+1
                     i++;
                 }
@@ -563,54 +587,22 @@ void CodeGeneratorArm64::adjustFormalParamInsts(Function * func)
     // 请注意这里所得的所有形参都是对应的实参的值关联的临时变量
     // 如果不是不能使用这里的代码
     auto & params = func->getParams();
-    printf("params：%d\n", int(params.size()));
+    printf("params: %d\n", int(params.size()));
 
-    // 形参的前8个通过寄存器来传值X0-X7
-    for (int k = 0; k < (int) params.size() && k <= 7; k++) {
-
-        // 前八个设置分配寄存器
-
-        params[k]->setRegId(k);
-    }
-
-    auto & insts = func->getInterCode().getInsts();
     // 根据ARM版C语言的调用约定，除前8个外的实参进行值传递，逆序入栈
     int64_t maxOffset = func->getMaxDep();
     int64_t fp_esp = maxOffset;
-    int protectedRegNum = 0;
-    // 保存寄存器空间
-    if (func->getExistFuncCall()) {
-        protectedRegNum = func->getProtectedReg().size();
-        fp_esp += protectedRegNum * 8;
-    }
+
     printf("Debug:被调函数传参前检测栈帧大小:%d\n", int(fp_esp));
     for (int k = 8; k < (int) params.size(); k++) {
 
-        // 第9个及之后的参数位于调用者栈帧中
-        // 计算相对于调用者栈帧的偏移：第k个参数的偏移 = (k-8) * 8
-        int64_t caller_stack_offset = (k - 8) * 8;
+        // 第9个及之后的参数位于被调用函数栈帧中
 
-        printf("Debug:第%d个形参位于调用者栈帧偏移:%d\n", k, int(caller_stack_offset));
+        // 设置为被调用函数栈帧中的参数
+        params[k]->setMemoryAddr(ARM64_SP_REG_NO, fp_esp);
 
-        // 设置特殊标记，表示这是调用者栈帧中的参数
-        // 我们使用负的基址寄存器编号来标记这种特殊情况
-        params[k]->setMemoryAddr(-ARM64_SP_REG_NO, caller_stack_offset);
-
-        // 不需要增加fp_esp，因为这些参数不占用当前函数的栈空间
-
-        // 插入ldr指令
-        // 这里创建的resVal仅用来翻译load时获取结果的类型
-        FormalParam * resVal = new FormalParam(params[k]->getType(), params[k]->getName());
-        LoadInstruction * ldrinst = new LoadInstruction(func, resVal, params[k]);
-
-        ldrinst->setRegId(k);
-        params[k]->setRegId(k);
-        // 把原来引用形参的地方替换为ldrinst的引用
-        // params[k]->replaceAllUsesWith(ldrinst);
-        insts.insert(insts.begin(), ldrinst);
-        if (FormalParam * val = dynamic_cast<FormalParam *>(ldrinst->getOperand(0))) {
-            printf("Debug:形参判断逻辑正常\n");
-        }
+        // 更新栈帧大小以包含这些参数 (每个参数占用 8 字节)
+        fp_esp += 8;
     }
 }
 
@@ -690,7 +682,9 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 }
             }
 
-            func->setMaxDep(esp);
+            if (esp > func->getmaxExtraStackSize()) {
+                func->setmaxExtraStackSize(esp);
+            }
             // 有arg指令后可不用参数，展示不删除
             // args.clear();
         }
@@ -705,8 +699,8 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
 
     // 这里对临时变量和局部变量都在栈上进行分配,但形参对应实参的临时变量(FormalParam类型)不需要考虑
 
-    int64_t sp_esp = func->getMaxDep();
-    printf("stackAlloc开始时,已建立的栈空间大小:%d\n", int(sp_esp));
+    int64_t sp_esp = func->getmaxExtraStackSize();
+    printf("stackAlloc开始时,由于栈传参数所造成的栈空间大小:%d\n", int(sp_esp));
 
     // 为数组分配栈空间
     for (auto inst: func->getInterCode().getInsts()) {
@@ -810,10 +804,18 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
     Value * returnVal = func->getReturnValue();
     if (LocalVariable * localVar = dynamic_cast<LocalVariable *>(returnVal)) {
         localVar->setMemoryAddr(ARM64_SP_REG_NO, sp_esp);
+        printf("返回值偏移: %d", int(sp_esp));
         sp_esp += 4;
     }
 
-    // 保护寄存器占用的栈空间在生成函数序言中计算
+    // 保护寄存器
+    int protectedRegNum = 0;
+
+    // 保存寄存器空间
+    if (func->getExistFuncCall()) {
+        protectedRegNum = func->getProtectedReg().size();
+    }
+    sp_esp += protectedRegNum * 8;
 
     //栈空间16字节对齐
     sp_esp = (sp_esp + 15) & ~15;

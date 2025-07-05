@@ -624,7 +624,6 @@ void ILocArm64::store_var(int src_reg_no, Value * dest_var, int tmp_reg_no)
     if (dest_var->getRegId() != -1) {
 
         // 寄存器变量
-
         // -1表示非寄存器，其他表示寄存器的索引值
         int dest_reg_id = dest_var->getRegId();
 
@@ -707,26 +706,18 @@ void ILocArm64::leaStack(int rs_reg_no, int base_reg_no, int64_t off)
 void ILocArm64::allocStack(Function * func, int tmp_reg_no)
 {
     // 计算栈帧加上保护寄存器的栈空间总大小
-    int64_t maxOffset = func->getMaxDep();
+    int64_t totalSize = func->getMaxDep();
 
-    int totalSize = maxOffset;
     int protectedRegNum = 0;
 
     // 保存寄存器空间
     if (func->getExistFuncCall()) {
         protectedRegNum = func->getProtectedReg().size();
-        totalSize += protectedRegNum * 8;
     }
-
-    // 对齐到16字节边界(ARM64要求)
-    totalSize = (totalSize + 15) & ~15;
 
     printf("生成函数序言,总栈空间大小:%d\n", totalSize);
 
     func->setStackFrameSize(totalSize);
-
-    // 设置当前函数的栈帧大小，用于处理调用者栈帧中的参数
-    setCurrentFuncStackSize(totalSize);
 
     // 检查栈空间大小是否超出立即数范围
     if (totalSize <= 4095) {
@@ -863,10 +854,4 @@ void ILocArm64::emitFunctionEpilogue(Function * func)
 
     // 返回
     emit("ret");
-}
-
-void ILocArm64::setCurrentFuncStackSize(int stack_size)
-{
-    this->current_func_stack_size = stack_size;
-    printf("Debug: 设置当前函数栈帧大小为 %d\n", stack_size);
 }

@@ -447,6 +447,22 @@ int Function::getStackFrameSize()
     return StackFrameSize;
 }
 
+/// @brief 设置函数调用栈传参而引入的栈空间大小
+/// @param size
+void Function::setmaxExtraStackSize(int size)
+{
+    maxExtraStackSize = size;
+}
+
+///
+/// @brief 获取函数调用栈传参而引入的栈空间大小
+/// @return int
+///
+int Function::getmaxExtraStackSize()
+{
+    return maxExtraStackSize;
+}
+
 /// @brief 设置函数调用栈空间大小而引入的栈空间大小
 /// @param size 栈空间大小
 void Function::setExtraStackSize(int size)

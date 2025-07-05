@@ -1041,6 +1041,16 @@ void InstSelectorArm64::translate_store(Instruction * inst)
 
     int32_t arg1_regId = arg1->getRegId();
 
+    if (LoadInstruction * ldrVal = dynamic_cast<LoadInstruction *>(arg1)) {
+        auto * val = ldrVal->getOperand(0);
+        if (FormalParam * param = dynamic_cast<FormalParam *>(val)) {
+            if (param->getType()->isPointerType()) {
+                iloc.store_var(arg1_regId + 32, arg2, ARM64_TMP_REG_NO);
+                return;
+            }
+        }
+    }
+
     // 检查是否是数组类型的存储
     if (arg1->getType()->isArrayType()) {
 
