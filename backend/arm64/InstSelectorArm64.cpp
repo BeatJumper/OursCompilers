@@ -1648,8 +1648,8 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                 std::string index_reg_name_64 = PlatformArm64::regName[index_reg_id + 32];
                 std::string result_reg_name_64 = PlatformArm64::regName[res_reg_id + 32];
 
-                // 加载element_size到临时寄存器
-                iloc.inst("mov", temp_reg_name, "#" + std::to_string(element_size));
+                // 加载element_size到临时寄存器（使用load_imm处理大立即数）
+                iloc.load_imm(ARM64_TMP_REG_NO, element_size);
 
                 // 执行64位乘法：result = index * element_size
                 iloc.inst("mul", temp_reg_name_64, index_reg_name_64, temp_reg_name_64);
