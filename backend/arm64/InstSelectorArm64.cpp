@@ -1171,8 +1171,20 @@ void InstSelectorArm64::translate_fptosi(Instruction * inst)
     int src_reg_no = src->getRegId();
     int result_reg_no = inst->getRegId();
 
+    // 处理源操作数
+    std::string src_reg_name;
+    if (src_reg_no == -1) {
+        // 源操作数不在寄存器中，需要先加载到临时寄存器
+        // 对于浮点数，使用浮点临时寄存器
+        int float_tmp_reg = ARM64_TMP_REG_NO + 64;
+        iloc.load_var(float_tmp_reg, src);
+        src_reg_name = PlatformArm64::regName[float_tmp_reg];
+    } else {
+        src_reg_name = PlatformArm64::regName[src_reg_no];
+    }
+
     // 使用fcvtzs指令：浮点数转有符号整数（向零舍入）
-    iloc.inst("fcvtzs", PlatformArm64::regName[result_reg_no], PlatformArm64::regName[src_reg_no]);
+    iloc.inst("fcvtzs", PlatformArm64::regName[result_reg_no], src_reg_name);
 }
 
 /// @brief sitofp指令翻译成ARM64汇编
@@ -1184,8 +1196,18 @@ void InstSelectorArm64::translate_sitofp(Instruction * inst)
     int src_reg_no = src->getRegId();
     int result_reg_no = inst->getRegId();
 
+    // 处理源操作数
+    std::string src_reg_name;
+    if (src_reg_no == -1) {
+        // 源操作数不在寄存器中，需要先加载到临时寄存器
+        iloc.load_var(ARM64_TMP_REG_NO, src);
+        src_reg_name = PlatformArm64::regName[ARM64_TMP_REG_NO];
+    } else {
+        src_reg_name = PlatformArm64::regName[src_reg_no];
+    }
+
     // 使用scvtf指令：有符号整数转浮点数
-    iloc.inst("scvtf", PlatformArm64::regName[result_reg_no], PlatformArm64::regName[src_reg_no]);
+    iloc.inst("scvtf", PlatformArm64::regName[result_reg_no], src_reg_name);
 }
 
 /// @brief getelementptr指令翻译成ARM64汇编
