@@ -768,7 +768,33 @@ void InstSelectorArm64::translate_cmp(Instruction * inst)
         }
     } else {
         // 整数比较使用通用寄存器名称
-        if (arg1_reg_no == -1) {
+        if (Instanceof(constVal, ConstInt *, arg1)) {
+            // 第一个操作数是常量，需要加载到寄存器
+            int64_t const_value = constVal->getVal();
+
+            if (const_value >= 0 && const_value < 4096) {
+                // 小立即数，加载到临时寄存器
+                iloc.load_imm(ARM64_TMP_REG_NO, const_value);
+            } else {
+                // 大立即数，使用movz + movk指令加载
+                uint32_t value = static_cast<uint32_t>(const_value);
+                uint16_t low16 = value & 0xFFFF;          // 低16位
+                uint16_t high16 = (value >> 16) & 0xFFFF; // 高16位
+
+                // 生成movz指令加载低16位
+                char low16_hex[8];
+                sprintf(low16_hex, "#0x%04X", low16);
+                iloc.inst("movz", PlatformArm64::regName[ARM64_TMP_REG_NO], low16_hex);
+
+                // 如果高16位不为0，生成movk指令加载高16位
+                if (high16 != 0) {
+                    char high16_hex[16];
+                    sprintf(high16_hex, "#0x%04X, lsl #16", high16);
+                    iloc.inst("movk", PlatformArm64::regName[ARM64_TMP_REG_NO], high16_hex);
+                }
+            }
+            arg1_str = PlatformArm64::regName[ARM64_TMP_REG_NO];
+        } else if (arg1_reg_no == -1) {
             // 第一个操作数在栈上，需要先加载到临时寄存器
             iloc.load_var(ARM64_TMP_REG_NO, arg1);
             arg1_str = PlatformArm64::regName[ARM64_TMP_REG_NO];
