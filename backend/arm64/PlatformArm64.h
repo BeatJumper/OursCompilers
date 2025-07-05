@@ -25,11 +25,11 @@
 #define ARM64_TMP_REG_NO 17
 
 // 栈寄存器SP和FP
-#define ARM64_SP_REG_NO 31
-#define ARM64_FP_REG_NO 29
+#define ARM64_SP_REG_NO 63
+#define ARM64_FP_REG_NO 61
 
 // 函数跳转寄存器LX
-#define ARM64_LX_REG_NO 30
+#define ARM64_LX_REG_NO 62
 
 /// @brief ARM64平台信息
 class PlatformArm64 {
@@ -60,8 +60,8 @@ public:
     static bool isReg(std::string name);
 
     /// @brief 最大寄存器数目
-    /// @note 目前整数寄存器名有63个，浮点寄存器名有64个
-    static const int maxRegNum = 63 + 64;
+    /// @note 目前整数寄存器名有64个，浮点寄存器名有64个,w31不使用
+    static const int maxRegNum = 64 + 64;
 
     /// @brief 可使用的通用寄存器的个数(w0~w17以及w19~w28)
     static const int maxUsableRegNum = 28;
@@ -106,5 +106,5 @@ static bool is_regid_valid(int32_t regid)
 /// @return 是否在64个浮点寄存器id里
 static bool is_regid_float(int32_t regid)
 {
-    return regid >= 63 && regid < PlatformArm64::maxRegNum;
+    return regid >= 64 && regid < PlatformArm64::maxRegNum;
 }

@@ -945,10 +945,10 @@ void InstSelectorArm64::translate_load(Instruction * inst)
             // 如果寄存器分配器错误地分配了浮点寄存器，需要转换为对应的整数寄存器
             int target_reg = actual_result_reg;
 
-            if (actual_result_reg >= 63) {
+            if (actual_result_reg >= 64) {
                 // 如果分配了浮点寄存器（63-126），需要转换为对应的整数寄存器
                 // 浮点寄存器63对应整数寄存器0，64对应1，以此类推
-                target_reg = actual_result_reg - 63;
+                target_reg = actual_result_reg - 64;
                 printf("Debug: translate_load - 指针错误分配了浮点寄存器%d，转换为整数寄存器%d\n",
                        actual_result_reg,
                        target_reg);

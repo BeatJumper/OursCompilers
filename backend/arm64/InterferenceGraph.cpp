@@ -181,7 +181,6 @@ void InterferenceGraph::ExecuteCFG(ControlFlowGraph * graph)
 
     // 这是std::set版本的干涉图构建过程，时间复杂度是O(N * M * M * logN)，其中N为指令数目，M为活跃集合的size上限
     // 扫描函数里每条指令，获取每个时刻的活跃变量集合
-    int i = 1;
     // printf("size of insts:%zu\n", graph->get_func()->getInterCode().getCode().size());
     for (Instruction * inst: graph->get_func()->getInterCode().getCode()) {
         std::set<Value *> value_occupy = inst->get_liveout();
@@ -431,7 +430,7 @@ int InterferenceGraph::ColorToRegId(int color, bool is_float)
 {
     assert(color < 32);
     if (is_float) {
-        return color + 63;
+        return color + 64;
     } else {
         if (color < PlatformArm64::CallerSaveRegNum) {
             return color;
@@ -446,8 +445,8 @@ int InterferenceGraph::RegIdToColor(int regid)
     if (regid == -1) {
         return -1;
     }
-    if (regid >= 63) {
-        return regid - 63;
+    if (regid >= 64) {
+        return regid - 64;
     } else {
         if (regid >= PlatformArm64::CallerSaveRegNum) {
             return regid - 1;
