@@ -363,6 +363,7 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
 
     // 将一开始IR代码里的局部变量优化，将其彻底当成寄存器变量使用
     adjustLocalToReg(func);
+    printf("局部变量换成临时变量\n");
 
     // 调整函数调用指令，主要是前8个寄存器传值，后面用栈传递
     // 为了更好的进行寄存器分配，可以进行对函数调用的指令进行预处理
@@ -482,6 +483,10 @@ void CodeGeneratorArm64::adjustLocalToReg(Function * func)
 
     for (LocalVariable * localval: func->getVarValues()) {
         const PointerType * realType_pointer = dynamic_cast<PointerType *>(localval->getType());
+        if (realType_pointer == nullptr) {
+            continue;
+        }
+        assert(realType_pointer);
         Type * realType = const_cast<Type *>(realType_pointer->getPointeeType());
         assert(realType_pointer->isPointerType());
         Value * stand = new Value(realType);
