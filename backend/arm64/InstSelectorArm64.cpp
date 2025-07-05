@@ -1680,8 +1680,8 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                 std::string index_reg_name_64 = PlatformArm64::regName[index_reg_id + 32];
                 std::string result_reg_name_64 = PlatformArm64::regName[res_reg_id + 32];
 
-                // 加载element_size到临时寄存器
-                iloc.inst("mov", temp_reg_name, "#" + std::to_string(element_size));
+                // 加载element_size到临时寄存器（使用load_imm处理大立即数）
+                iloc.load_imm(ARM64_TMP_REG_NO, element_size);
 
                 // 执行64位乘法：result = index * element_size
                 iloc.inst("mul", temp_reg_name_64, index_reg_name_64, temp_reg_name_64);
@@ -1792,15 +1792,21 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
             const Type * pointeeType = ptrType->getPointeeType();
             int element_size = pointeeType->getSize();
 
-            // 计算左移位数
+            // 检查是否是2的幂次，如果是则使用左移，否则使用乘法
+            bool is_power_of_2 = (element_size > 0) && ((element_size & (element_size - 1)) == 0);
             int shift = 0;
-            int temp_size = element_size;
-            while (temp_size > 1) {
-                temp_size >>= 1;
-                shift++;
-            }
 
-            printf("Debug: 指针类型变量索引，元素大小: %d 字节，左移位数: %d\n", element_size, shift);
+            if (is_power_of_2) {
+                // 计算左移位数
+                int temp_size = element_size;
+                while (temp_size > 1) {
+                    temp_size >>= 1;
+                    shift++;
+                }
+                printf("Debug: 指针类型变量索引，元素大小: %d 字节是2的幂次，左移位数: %d\n", element_size, shift);
+            } else {
+                printf("Debug: 指针类型变量索引，元素大小: %d 字节不是2的幂次，使用乘法\n", element_size);
+            }
 
             // 检查basePtr是否在寄存器中
             int base_reg_id = basePtr->getRegId();
@@ -1810,13 +1816,31 @@ void InstSelectorArm64::translate_gep(Instruction * inst)
                 std::string index_reg_name = PlatformArm64::regName[index_reg_id + 32];
                 std::string result_reg_name = PlatformArm64::regName[res_reg_id + 32];
 
-                printf("Debug: 指针在寄存器中，地址计算: %s = %s + %s,lsl #%d\n",
-                       result_reg_name.c_str(),
-                       base_reg_name.c_str(),
-                       index_reg_name.c_str(),
-                       shift);
+                if (is_power_of_2) {
+                    // 使用左移优化
+                    printf("Debug: 指针在寄存器中，地址计算: %s = %s + %s,lsl #%d\n",
+                           result_reg_name.c_str(),
+                           base_reg_name.c_str(),
+                           index_reg_name.c_str(),
+                           shift);
+                    iloc.inst("add", result_reg_name, base_reg_name, index_reg_name + ",lsl #" + std::to_string(shift));
+                } else {
+                    // 使用乘法指令
+                    printf("Debug: 指针在寄存器中，使用乘法: %s = %s + index * %d\n",
+                           result_reg_name.c_str(),
+                           base_reg_name.c_str(),
+                           element_size);
 
-                iloc.inst("add", result_reg_name, base_reg_name, index_reg_name + ",lsl #" + std::to_string(shift));
+                    // 加载element_size到临时寄存器
+                    iloc.load_imm(ARM64_TMP_REG_NO, element_size);
+                    std::string temp_reg_name = PlatformArm64::regName[ARM64_TMP_REG_NO + 32];
+
+                    // 执行乘法：temp = index * element_size
+                    iloc.inst("mul", temp_reg_name, index_reg_name, temp_reg_name);
+
+                    // 将偏移量加到基地址上
+                    iloc.inst("add", result_reg_name, base_reg_name, temp_reg_name);
+                }
             } else {
                 // basePtr在内存中，需要先加载
                 int32_t base_reg_id_mem = -1;
