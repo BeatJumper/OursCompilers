@@ -486,8 +486,9 @@ void CodeGeneratorArm64::adjustSomeInsts(Function * func)
                 }
             } else if (Instanceof(param_val, FormalParam *, val1)) {
                 if (val1->getRegId() == -1) {
-                    FormalParam * resVal = new FormalParam(param_val->getType(), param_val->getName());
-                    LoadInstruction * ldrinst = new LoadInstruction(func, resVal, param_val);
+                    // 创建load指令，LoadInstruction本身就是结果Value
+                    // LoadInstruction的构造函数会自动设置正确的类型
+                    LoadInstruction * ldrinst = new LoadInstruction(func, nullptr, param_val);
                     insts[i]->getOperands()[0] = new Use(ldrinst, inst);
                     printf("store的源变量已替换为load指令结果\n");
                     if (LoadInstruction * ldrVal = dynamic_cast<LoadInstruction *>(insts[i]->getOperand(0))) {

@@ -1042,21 +1042,33 @@ void InstSelectorArm64::translate_store(Instruction * inst)
     int32_t arg1_regId = arg1->getRegId();
 
     if (LoadInstruction * ldrVal = dynamic_cast<LoadInstruction *>(arg1)) {
+        printf("Debug: store指令的源是load指令的结果\n");
         auto * val = ldrVal->getOperand(0);
         if (FormalParam * param = dynamic_cast<FormalParam *>(val)) {
-            if (PointerType * pTr = dynamic_cast<PointerType *>(param)) {
+            // 检查形参的类型是否是指针类型
+            if (param->getType()->isPointerType()) {
                 int32_t base_reg_id = -1;
                 int64_t base_offset = -1;
                 arg2->getMemoryAddr(&base_reg_id, &base_offset);
-                std::string s = PlatformArm64::regName[arg1_regId];
-                if (s[0] != 'x') {
-                    s[0] = 'x';
+
+                // 对于指针类型的load结果，需要使用正确的寄存器编号
+                int32_t actual_reg_id = arg1_regId;
+                if (is_regid_float(arg1_regId)) {
+                    // 如果被错误分配了浮点寄存器，转换为对应的整数寄存器
+                    actual_reg_id = arg1_regId - 64;
+                    printf("Debug: translate_store - 指针load结果错误分配了浮点寄存器%d，转换为整数寄存器%d\n",
+                           arg1_regId,
+                           actual_reg_id);
                 }
+
+                // 对于指针类型，使用64位寄存器
                 iloc.inst("str",
-                          s,
+                          PlatformArm64::regName[actual_reg_id + 32],
                           "[" + PlatformArm64::regName[base_reg_id] + ",#" + std::to_string(base_offset) + "]");
-                // iloc.store_var(arg1_regId + 32, arg2, ARM64_TMP_REG_NO);
                 return;
+            } else {
+                // 对于非指针类型（如float），使用正常的store逻辑
+                // 不需要特殊处理，继续执行后面的通用逻辑
             }
         }
     }
