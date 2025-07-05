@@ -301,9 +301,10 @@ void Function::Delete()
 /// @brief 函数内的Value重命名
 /// @param module 模块指针，用于获取全局计数器
 ///
-
+/*
 static int32_t variableCounter = 0; // 变量计数器：参数、局部变量、临时值
 static int32_t labelCounter = 0;    // 标签计数器：标签编号
+*/
 void Function::renameIR()
 {
     // 内置函数忽略
@@ -311,6 +312,8 @@ void Function::renameIR()
         return;
     }
 
+    int32_t variableCounter = 0; // 变量计数器：参数、局部变量、临时值
+    int32_t labelCounter = 0;    // 标签计数器：标签编号
     // printf("==== Starting renameIR for function %s ====\n", this->name.c_str());
 
     // 每个函数维护两个独立的计数器

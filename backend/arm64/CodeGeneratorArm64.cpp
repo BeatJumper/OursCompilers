@@ -295,7 +295,7 @@ void CodeGeneratorArm64::spill(Function * func, InterferenceGraph * graph_ig)
     }
 
     // 为溢出该变量分配的栈空间
-    MemVariable * memval = nullptr;
+    LocalVariable * memval = nullptr;
 
     Value * most_degree_val = most_degree_node->val;
 
@@ -311,14 +311,14 @@ void CodeGeneratorArm64::spill(Function * func, InterferenceGraph * graph_ig)
 
         if (insts[i]->get_def_set().count(most_degree_val)) {
             if (memval == nullptr) {
-                memval = func->newMemVariable(most_degree_val->getType());
+                memval = func->newLocalVarValue(most_degree_val->getType());
             }
             Instruction * strinst = new StoreInstruction(func, most_degree_val, memval);
             insts.insert(insts.begin() + i + 1, strinst);
         }
         if (insts[i]->get_use_set().count(most_degree_val)) {
             if (memval == nullptr) {
-                memval = func->newMemVariable(most_degree_val->getType());
+                memval = func->newLocalVarValue(most_degree_val->getType());
             }
             // regval_read = new Value(most_degree_val->getType());
             // regval_read->setRegId(reg_now);
@@ -481,6 +481,7 @@ void CodeGeneratorArm64::adjustLocalToReg(Function * func)
     auto & insts = func->getInterCode().getInsts();
     map<Value *, Value *> replace_list;
 
+    // 开局alloca的局部变量（除了数组以外）都是指针，所以全部换掉
     for (LocalVariable * localval: func->getVarValues()) {
         const PointerType * realType_pointer = dynamic_cast<PointerType *>(localval->getType());
         if (realType_pointer == nullptr) {
@@ -493,9 +494,20 @@ void CodeGeneratorArm64::adjustLocalToReg(Function * func)
         replace_list[localval] = stand;
     }
 
+    // 被替换的局部变量从列表中删掉
+    auto & varsvector = func->getVarValues();
+    for (int index = 0; index < varsvector.size(); index++) {
+        if (replace_list.count(varsvector[index])) {
+            varsvector.erase(varsvector.begin() + index);
+            index--;
+        }
+    }
+
     // 先扫描出IR里所有对局部变量进行存取的指令并删除，得出哪些临时变量需要替换为原始的局部变量
     for (size_t i = 0; i < insts.size(); i++) {
-        if (Instanceof(inst, StoreInstruction *, insts[i])) {
+        if (Instanceof(inst, AllocaInstruction *, insts[i])) {
+            continue;
+        } else if (Instanceof(inst, StoreInstruction *, insts[i])) {
             Value * ptr = insts[i]->getOperand(1);
             if (Instanceof(localval, LocalVariable *, ptr)) {
                 Value * val = insts[i]->getOperand(0);
@@ -731,7 +743,7 @@ void CodeGeneratorArm64::adjustFuncCallInsts(Function * func)
                 auto * arg = callInst->getOperand(k);
                 // 新建一个内存变量，把实参的值保存到栈中，以便栈传值，其寻址为SP + 非负偏移
 
-                MemVariable * newVal = func->newMemVariable(arg->getType());
+                LocalVariable * newVal = func->newLocalVarValue(arg->getType());
 
                 newVal->setMemoryAddr(ARM64_SP_REG_NO, esp);
                 esp += 8;
@@ -844,7 +856,7 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
     }
 
     // 只处理未分配到寄存器的局部变量
-    for (auto local: func->getMemValues()) {
+    for (auto local: func->getVarValues()) {
         int64_t offset;
         if (local->getMemoryAddr(nullptr, &offset)) {
             continue; // 跳过已分配内存的变量
