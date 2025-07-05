@@ -1117,6 +1117,19 @@ void InstSelectorArm64::translate_store(Instruction * inst)
             } else if (GetelementptrInstruction * gepVal = dynamic_cast<GetelementptrInstruction *>(arg2)) {
                 // 检查目标是否是getelementptr的结果，需要重新计算地址
                 iloc.inst("str", "wzr", "[" + PlatformArm64::regName[gepVal->getRegId() + 32] + "]");
+            } else if (GlobalVariable * globalVar = dynamic_cast<GlobalVariable *>(arg2)) {
+                // 目标是全局变量，需要加载全局变量地址然后存储
+                printf("Debug: storing constant 0 to global variable %s\n", globalVar->getName().c_str());
+
+                // 加载全局变量地址到临时寄存器
+                iloc.inst("adrp", PlatformArm64::regName[ARM64_TMP_REG_NO + 32], globalVar->getName());
+                iloc.inst("add",
+                          PlatformArm64::regName[ARM64_TMP_REG_NO + 32],
+                          PlatformArm64::regName[ARM64_TMP_REG_NO + 32],
+                          ":lo12:" + globalVar->getName());
+
+                // 存储0到全局变量
+                iloc.inst("str", "wzr", "[" + PlatformArm64::regName[ARM64_TMP_REG_NO + 32] + "]");
             }
         }
     } else if (arg1_regId != -1) {
