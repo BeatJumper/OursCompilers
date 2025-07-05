@@ -41,7 +41,12 @@ public:
     ///
     bool getMemoryAddr(int32_t * _regId = nullptr, int64_t * _offset = nullptr) override
     {
-        // 肯定是内存地址
+        if (this->baseRegNo == -1) {
+            return false;
+        }
+        if (this->offset == -1) {
+            return false;
+        }
 
         if (_regId) {
             *_regId = this->baseRegNo;

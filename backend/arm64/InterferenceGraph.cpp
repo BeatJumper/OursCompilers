@@ -485,7 +485,6 @@ bool george(node_IG * node1, node_IG * node2, int color_size)
     printval(node2->val);
     std::cout << std::endl;
     */
-
     for (node_IG * neighbor: node1->neighbors) {
         if (neighbor->degree() >= color_size) {
             return false;
@@ -515,9 +514,11 @@ bool InterferenceGraph::coalesce(int color_size)
     bool suc = false;
     // assert(mov_set.size() == 1 || mov_set.size() == 0);
     for (auto iter = mov_set.begin(); iter != mov_set.end(); iter++) {
+        printf("xunhuan\n");
         // assert(iter->first);
         // assert(iter->second);
         if (iter->first->is_deleted || iter->second->is_deleted || iter->first->neighbors.count(iter->second)) {
+            printf("开始1\n");
             std::cout << "删除移动边" << std::endl;
             printval(iter->first->val);
             printval(iter->second->val);
@@ -527,11 +528,22 @@ bool InterferenceGraph::coalesce(int color_size)
             std::cout << "完毕" << std::endl;
             remove_mov_edge(iter->first, iter->second);
             iter = mov_set.erase(iter);
-            iter--;
+            if (mov_set.empty() == false) {
+                iter--;
+            } else {
+                break;
+            }
+            printf("%lu\n", mov_set.size());
+            printf("完成1\n");
+            assert(iter == mov_set.end());
         } else {
+            printf("开始1\n");
             suc |= merge_node_george(iter->first, iter->second, color_size);
+            printf("完成2\n");
             // suc = merge_node_briggs(iter->first, iter->second);
+            // printf("完成\n");
         }
+        printf("完成\n");
     }
     return suc;
 }

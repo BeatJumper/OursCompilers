@@ -310,7 +310,6 @@ void CodeGeneratorArm64::spill(Function * func, InterferenceGraph * graph_ig)
         // Value * regval_read = nullptr;
 
         if (insts[i]->get_def_set().count(most_degree_val)) {
-            // DEF是其中某一个操作数的情况
             if (memval == nullptr) {
                 memval = func->newMemVariable(most_degree_val->getType());
             }
@@ -408,6 +407,7 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
                 if (suc_coalesce == false) {
                     break;
                 }
+                // printf("循环1\n");
             }
 
             std::cout << "完成接合" << std::endl;
@@ -432,6 +432,7 @@ void CodeGeneratorArm64::registerAllocation(Function * func)
                 // std::cout << "染色成功" << std::endl;
                 break;
             } else {
+                std::cout << "溢出了" << std::endl;
                 // assert(false);
                 spill(func, graph_ig);
                 // 完成变量溢出的工作
@@ -829,7 +830,7 @@ void CodeGeneratorArm64::stackAlloc(Function * func)
     }
 
     // 只处理未分配到寄存器的局部变量
-    for (auto local: func->getVarValues()) {
+    for (auto local: func->getMemValues()) {
         int64_t offset;
         if (local->getMemoryAddr(nullptr, &offset)) {
             continue; // 跳过已分配内存的变量

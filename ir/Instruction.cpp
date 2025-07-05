@@ -117,6 +117,7 @@ void Instruction::transfer()
         }
     } else if (Instanceof(inst, MoveInstruction *, this)) {
         def_set.insert(inst->getOperand(0));
+        // assert(dynamic_cast<MemVariable *>(inst->getOperand(0)) == nullptr);
         Value * source = inst->getOperand(1);
         if (Instanceof(constvar, Constant *, source)) {
             // 什么都不做
