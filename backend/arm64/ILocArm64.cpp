@@ -280,15 +280,11 @@ void ILocArm64::load_imm(int rs_reg_no, int64_t constant)
         uint16_t high16 = (value >> 16) & 0xFFFF; // 高16位
 
         // 生成movz指令加载低16位
-        char low16_hex[16];
-        sprintf(low16_hex, "#0x%04X, lsl #0", low16);
-        emit("movz", reg_name, low16_hex);
+        emit("movz", reg_name, "#" + std::to_string(low16));
 
         // 如果高16位不为0，生成movk指令加载高16位
         if (high16 != 0) {
-            char high16_hex[32];
-            sprintf(high16_hex, "#0x%04X, lsl #16", high16);
-            emit("movk", reg_name, high16_hex);
+            emit("movk", reg_name, "#" + std::to_string(high16) + ", lsl #16");
         }
     }
 }
@@ -305,11 +301,20 @@ void ILocArm64::load_float_imm(int rs_reg_no, float val)
     uint32_t bits;
     std::memcpy(&bits, &val, sizeof(float));
 
+    // 计算对应的整数寄存器编号
+    // 浮点寄存器s0(64) -> 整数寄存器w0(0)
+    int int_reg_no;
+    if (rs_reg_no >= 64) {
+        int_reg_no = rs_reg_no - 64; // s0(64) -> w0(0)
+    } else {
+        int_reg_no = rs_reg_no;
+    }
+
     // 先将位模式加载到通用寄存器
-    emit("mov", "w" + std::to_string(rs_reg_no + 32), "#" + std::to_string(bits));
+    load_imm(int_reg_no, bits);
 
     // 然后从通用寄存器移动到浮点寄存器
-    emit("fmov", "s" + std::to_string(rs_reg_no), "w" + std::to_string(rs_reg_no + 32));
+    emit("fmov", PlatformArm64::regName[rs_reg_no], PlatformArm64::regName[int_reg_no]);
 }
 
 /// @brief 加载符号值 ldr r0,=g ldr r0,=.L1
@@ -475,7 +480,14 @@ void ILocArm64::store_base(int src_reg_no, int base_reg_no, int64_t disp, int tm
 /// @param src_reg_no 源寄存器
 void ILocArm64::mov_reg(int rs_reg_no, int src_reg_no)
 {
-    emit("mov", PlatformArm64::regName[rs_reg_no], PlatformArm64::regName[src_reg_no]);
+    // 检查是否是浮点寄存器之间的移动
+    if (is_regid_float(rs_reg_no) && is_regid_float(src_reg_no)) {
+        // 浮点寄存器之间使用fmov指令
+        emit("fmov", PlatformArm64::regName[rs_reg_no], PlatformArm64::regName[src_reg_no]);
+    } else {
+        // 整数寄存器之间使用mov指令
+        emit("mov", PlatformArm64::regName[rs_reg_no], PlatformArm64::regName[src_reg_no]);
+    }
 }
 
 /// @brief 加载变量到寄存器，保证将变量放到reg中
@@ -533,7 +545,14 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
 
             // 如果源和目标寄存器不同，则需要mov指令
             if (src_regId != rs_reg_no) {
-                emit("mov", result_reg_name, src_reg_name);
+                // 检查是否是浮点寄存器之间的移动
+                if (is_regid_float(src_regId) && is_regid_float(rs_reg_no)) {
+                    // 浮点寄存器之间使用fmov指令
+                    emit("fmov", result_reg_name, src_reg_name);
+                } else {
+                    // 整数寄存器之间使用mov指令
+                    emit("mov", result_reg_name, src_reg_name);
+                }
             }
             // 如果相同，则不需要任何操作
         }
@@ -543,10 +562,19 @@ void ILocArm64::load_var(int rs_reg_no, Value * src_var)
         // 读取全局变量的地址
         // adrp x8, symbol@PAGE
         // add x8, x8, symbol@PAGEOFF
-        load_symbol(rs_reg_no + 32, globalVar->getName());
+        int addr_reg;
+        if (rs_reg_no >= 64) {
+            // 浮点寄存器，使用对应的64位整数寄存器
+            // s0(64) -> x0(32), s1(65) -> x1(33), ...
+            addr_reg = (rs_reg_no - 64) + 32;
+        } else {
+            // 整数寄存器，使用对应的64位版本
+            addr_reg = rs_reg_no + 32;
+        }
+        load_symbol(addr_reg, globalVar->getName());
 
-        // ldr x8, [x8]
-        emit("ldr", PlatformArm64::regName[rs_reg_no], "[" + PlatformArm64::regName[rs_reg_no + 32] + "]");
+        // ldr s0, [x8] 或 ldr w0, [x8]
+        emit("ldr", PlatformArm64::regName[rs_reg_no], "[" + PlatformArm64::regName[addr_reg] + "]");
 
     } else {
 
@@ -608,8 +636,14 @@ void ILocArm64::store_var(int src_reg_no, Value * dest_var, int tmp_reg_no)
 
         // 寄存器不一样才需要mov操作
         if (src_reg_no != dest_reg_id) {
-            // mov x2,x8 | 这里有优化空间——消除x8
-            emit("mov", PlatformArm64::regName[dest_reg_id], PlatformArm64::regName[src_reg_no]);
+            // 检查是否是浮点寄存器之间的移动
+            if (is_regid_float(src_reg_no) && is_regid_float(dest_reg_id)) {
+                // 浮点寄存器之间使用fmov指令
+                emit("fmov", PlatformArm64::regName[dest_reg_id], PlatformArm64::regName[src_reg_no]);
+            } else {
+                // 整数寄存器之间使用mov指令
+                emit("mov", PlatformArm64::regName[dest_reg_id], PlatformArm64::regName[src_reg_no]);
+            }
         }
 
     } else if (Instanceof(globalVar, GlobalVariable *, dest_var)) {
